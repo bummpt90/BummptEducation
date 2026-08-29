@@ -40,14 +40,37 @@ import {
   School,
   Layers,
   Sparkles,
-  ClipboardCheck
+  ClipboardCheck,
+  Lock,
+  Unlock,
+  KeyRound,
+  ShieldAlert,
+  SlidersHorizontal,
+  RefreshCw,
+  Copy,
+  Trash2,
+  UserCheck
 } from 'lucide-react';
 
 import { NavigationPage } from '../types';
+import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
+import { AccessManagementModal } from '../components/AccessManagementModal';
+import {
+  getStoredSession,
+  saveStoredSession,
+  getIssuedPasskeys,
+  issueNewPasskey,
+  revokePasskey,
+  IssuedPasskey,
+  RestrictedWing,
+  generateRandomPasskey,
+  getGlobalReportCardPublicationStatus,
+  setGlobalReportCardPublicationStatus
+} from '../utils/securityContext';
 
 interface AdminDashboardProps {
   students: Student[];
-  initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers';
+  initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security';
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
   onOpenReceiptModal: (payment: FeePayment, student?: Student) => void;
 }
@@ -58,7 +81,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onNavigate,
   onOpenReceiptModal,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers'>(initialTab || 'fees');
+  const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security'>(initialTab || 'fees');
   
   React.useEffect(() => {
     if (initialTab) {
@@ -68,6 +91,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   
   // School Arm Filter for Admin views
   const [selectedArmFilter, setSelectedArmFilter] = useState<'All' | SchoolArm>('All');
+
+  // Security Clearance & Access Passkeys State
+  const [isBursaryUnlocked, setIsBursaryUnlocked] = useState<boolean>(() => {
+    const sess = getStoredSession();
+    return sess.isBursaryUnlocked || sess.isAdminUnlocked;
+  });
+  const [authenticatedStaff, setAuthenticatedStaff] = useState<IssuedPasskey | null>(null);
+  const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState(false);
+  const [passkeys, setPasskeys] = useState<IssuedPasskey[]>(() => getIssuedPasskeys());
+  const [isParentPublished, setIsParentPublished] = useState<boolean>(() => getGlobalReportCardPublicationStatus());
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  // New Passkey Form state for in-page Security Tab
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState('Senior Form Tutor & Exam Officer');
+  const [newStaffWing, setNewStaffWing] = useState<RestrictedWing>('academic');
+  const [newStaffArm, setNewStaffArm] = useState<SchoolArm | 'All'>('All');
+  const [newCustomPasskey, setNewCustomPasskey] = useState('');
+  const [passkeyCreationNotice, setPasskeyCreationNotice] = useState('');
+
+  const refreshPasskeys = () => {
+    setPasskeys(getIssuedPasskeys());
+  };
+
+  const handleGeneratePasskey = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffName.trim()) return;
+
+    const generatedKey = newCustomPasskey.trim() || generateRandomPasskey(
+      newStaffWing === 'academic' ? 'ACAD' : newStaffWing === 'bursary' ? 'BURS' : 'ADM'
+    );
+
+    const created = issueNewPasskey({
+      passkey: generatedKey,
+      staffId: `STF-${Math.floor(100 + Math.random() * 900)}`,
+      staffName: newStaffName.trim(),
+      role: newStaffRole,
+      wing: newStaffWing,
+      arm: newStaffArm,
+      issuedBy: 'General Administrator (Matthew Ternenge Beeun)',
+      issuingOffice: 'Executive Directorate',
+      expiresAt: '2026-12-31',
+      permissions: [newStaffWing],
+      notes: `Authorized access to ${newStaffWing.toUpperCase()} wing operations for ${newStaffArm} arm.`
+    });
+
+    refreshPasskeys();
+    setNewStaffName('');
+    setNewCustomPasskey('');
+    setPasskeyCreationNotice(`Passkey "${created.passkey}" successfully issued to ${created.staffName}!`);
+    setTimeout(() => setPasskeyCreationNotice(''), 5000);
+  };
+
+  const handleRevokePass = (id: string, name: string) => {
+    if (confirm(`Are you sure you want to revoke authorization passkey for ${name}?`)) {
+      revokePasskey(id);
+      refreshPasskeys();
+    }
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopyFeedback(text);
+    setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  const handleToggleParentAccess = () => {
+    const next = !isParentPublished;
+    setIsParentPublished(next);
+    setGlobalReportCardPublicationStatus(next);
+  };
+
+  const handleLockBursary = () => {
+    setIsBursaryUnlocked(false);
+    setAuthenticatedStaff(null);
+    const sess = getStoredSession();
+    saveStoredSession({ ...sess, isBursaryUnlocked: false, isAdminUnlocked: false });
+  };
 
   // Fees State
   const [payments, setPayments] = useState<FeePayment[]>(INITIAL_PAYMENTS);
@@ -224,9 +325,100 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const totalFeeCollected = filteredPayments.reduce((acc, curr) => acc + curr.amountPaid, 0);
   const totalBilled = filteredPayments.reduce((acc, curr) => acc + curr.totalBilled, 0);
 
+  // If attempting to access fees or security while locked, show gatekeeper
+  if (!isBursaryUnlocked && (activeSubTab === 'fees' || activeSubTab === 'security')) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <WingAccessGatekeeper
+          wing="bursary"
+          title="Bursary & Administrative Wing — Clearance Required"
+          subtitle="Official tuition billing schedules, payment receipts, student finance ledgers, and staff authorization passkeys are restricted. Enter your authorized Bursar or Administrative passkey to proceed."
+          onUnlockSuccess={(matchedPass) => {
+            setIsBursaryUnlocked(true);
+            setAuthenticatedStaff(matchedPass || null);
+            const sess = getStoredSession();
+            saveStoredSession({ ...sess, isBursaryUnlocked: true, isAdminUnlocked: true });
+          }}
+          onReturnHome={() => onNavigate?.('home')}
+          onOpenPasskeyManager={() => setActiveSubTab('security')}
+        />
+
+        <AccessManagementModal
+          isOpen={isPasskeyModalOpen}
+          onClose={() => setIsPasskeyModalOpen(false)}
+          initialWingFilter="bursary"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8" id="admin-dashboard-root">
       
+      {/* ==================== INSTITUTIONAL SECURITY CLEARANCE BAR ==================== */}
+      <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 border border-emerald-800/60 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-400/40 flex items-center justify-center text-amber-400 flex-shrink-0">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 uppercase tracking-wider">
+                ADMIN & BURSARY CLEARANCE ACTIVE
+              </span>
+              <span className="text-xs font-bold text-slate-200">
+                {authenticatedStaff ? `${authenticatedStaff.staffName} (${authenticatedStaff.role})` : 'Executive Administration Desk'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-0.5">
+              Authorized access to financial reconciliations, admissions registry, staff audits & authorization passkey generation.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap self-start md:self-auto">
+          {/* Parent Upload Status Toggle */}
+          <button
+            onClick={handleToggleParentAccess}
+            id="admin-toggle-parent-portal-btn"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border shadow-xs ${
+              isParentPublished
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500'
+                : 'bg-amber-600 hover:bg-amber-700 text-white border-amber-500'
+            }`}
+            title="Toggle whether parents can download report cards on the Parent Portal"
+          >
+            {isParentPublished ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            <span>Parent Download: {isParentPublished ? 'Published' : 'Locked'}</span>
+          </button>
+
+          {/* Quick Tab to Security */}
+          <button
+            onClick={() => setActiveSubTab('security')}
+            id="admin-goto-security-tab-btn"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs ${
+              activeSubTab === 'security'
+                ? 'bg-amber-500 text-slate-950 font-black'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+            }`}
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            <span>Generate Passkeys</span>
+          </button>
+
+          {/* Lock Bursary */}
+          <button
+            onClick={handleLockBursary}
+            id="admin-lock-bursary-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition cursor-pointer border border-white/20"
+            title="Lock Bursary & Admin clearance"
+          >
+            <Lock className="h-3.5 w-3.5 text-amber-400" />
+            <span>Lock Desk</span>
+          </button>
+        </div>
+      </div>
+
       {/* Title Header with Central Administrator Governance */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-6">
         <div>
@@ -292,6 +484,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <UserMinus className="h-3.5 w-3.5" />
             <span>Transfers & Clearance</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('security')}
+            id="admin-security-subtab-btn"
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              activeSubTab === 'security' ? 'bg-amber-600 text-white shadow-xs' : 'text-amber-900 bg-amber-100 hover:bg-amber-200'
+            }`}
+          >
+            <KeyRound className="h-3.5 w-3.5 text-amber-300" />
+            <span>Access Passes & Security</span>
           </button>
         </div>
       </div>
@@ -925,6 +1128,320 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* ==================== 6. ACCESS CONTROL & STAFF PASSKEYS GENERATOR ==================== */}
+      {activeSubTab === 'security' && (
+        <div className="space-y-6 animate-in fade-in duration-200" id="admin-security-hub-section">
+          {/* Header Card */}
+          <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-6 text-white border border-slate-700 shadow-lg space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400">
+                  <KeyRound className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                    Staff Authorization Passkeys & Wing Restriction Desk
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Issue cryptographically distinct passkeys to form tutors, exam officers, bursars, and departmental heads.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={refreshPasskeys}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition cursor-pointer border border-white/10"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>Refresh Passes</span>
+                </button>
+                <button
+                  onClick={() => setIsPasskeyModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition cursor-pointer shadow-xs"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  <span>Open Security Modal</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Parent Portal Release Switch */}
+            <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isParentPublished ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                  <span className="font-bold text-xs text-white">Parent Report Card Portal Release Status:</span>
+                  <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
+                    isParentPublished ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                  }`}>
+                    {isParentPublished ? 'ONLINE & READY FOR PARENT DOWNLOAD' : 'RESTRICTED / DRAFT MODE'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-1">
+                  When restricted, parents cannot download terminal report cards until the Academic Board explicitly uploads and publishes the term result batch.
+                </p>
+              </div>
+
+              <button
+                onClick={handleToggleParentAccess}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                  isParentPublished
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
+                }`}
+              >
+                {isParentPublished ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                <span>{isParentPublished ? 'Revoke & Restrict Downloads' : 'Publish & Upload All Report Cards'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Creation Form & Quick Reference */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Form */}
+            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-emerald-600" />
+                  <span>Issue New Staff Authorization Passkey</span>
+                </h4>
+                <span className="text-[11px] text-slate-500 font-mono">Role-Based Clearance</span>
+              </div>
+
+              {passkeyCreationNotice && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 font-medium animate-in fade-in">
+                  <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>{passkeyCreationNotice}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleGeneratePasskey} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Staff / Officer Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Mrs. Blessing Aondoaver"
+                      value={newStaffName}
+                      onChange={(e) => setNewStaffName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Designation / Role
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Form Tutor (SSS 2 Science)"
+                      value={newStaffRole}
+                      onChange={(e) => setNewStaffRole(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Restricted Wing Authorization
+                    </label>
+                    <select
+                      value={newStaffWing}
+                      onChange={(e) => setNewStaffWing(e.target.value as RestrictedWing)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="academic">Academic Wing (Report Cards, Broadsheets, Scoresheets)</option>
+                      <option value="bursary">Bursary Wing (Fee Schedules, Billing Ledgers, Receipts)</option>
+                      <option value="admin">Administrative Wing (Admissions, HR & Student Registers)</option>
+                      <option value="all">Full Executive Access (All Wings)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      School Arm Scope
+                    </label>
+                    <select
+                      value={newStaffArm}
+                      onChange={(e) => setNewStaffArm(e.target.value as SchoolArm | 'All')}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="All">All School Arms (KG, Primary, Secondary)</option>
+                      <option value="kindergarten">Kindergarten Arm Only (KG 1 - 3)</option>
+                      <option value="primary">Primary Arm Only (Basic 1 - 6)</option>
+                      <option value="secondary">Secondary College Arm Only (JSS 1 - SSS 3)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Custom Passkey (Leave blank for automated 8-character generation)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. SSS2-EXAM-2026 or leave blank"
+                    value={newCustomPasskey}
+                    onChange={(e) => setNewCustomPasskey(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none uppercase"
+                  />
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-md"
+                  >
+                    <KeyRound className="h-4 w-4 text-amber-400" />
+                    <span>Generate & Issue Authorized Passkey</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Quick Demo Reference Card */}
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-blue-600" />
+                  <span>Demonstration Passkeys</span>
+                </h4>
+              </div>
+
+              <p className="text-xs text-slate-600">
+                You can copy any of these default administrative demonstration passkeys to instantly test clearance:
+              </p>
+
+              <div className="space-y-2.5">
+                {[
+                  { wing: 'Academic Wing', role: 'VP Academics & Exam Officer', pass: 'ACADEMIC2026', color: 'text-blue-700 bg-blue-50 border-blue-200' },
+                  { wing: 'Bursary Desk', role: 'School Bursar & Accounts Office', pass: 'BURSARY2026', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                  { wing: 'Executive Admin', role: 'General Administrator / Principal', pass: 'BUMMPT2026', color: 'text-purple-700 bg-purple-50 border-purple-200' },
+                  { wing: 'Kindergarten Desk', role: 'Head of Early Years Foundation', pass: 'KG-HEAD-2026', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+                  { wing: 'Primary Wing', role: 'Headmistress (Basic 1-6)', pass: 'PRI-HEAD-2026', color: 'text-teal-700 bg-teal-50 border-teal-200' }
+                ].map((item, idx) => (
+                  <div key={idx} className={`p-2.5 rounded-xl border ${item.color} flex items-center justify-between text-xs`}>
+                    <div>
+                      <span className="font-bold block">{item.wing}</span>
+                      <span className="text-[10px] text-slate-500">{item.role}</span>
+                    </div>
+                    <button
+                      onClick={() => handleCopy(item.pass)}
+                      className="px-2 py-1 rounded-lg bg-white border border-slate-200 font-mono font-bold text-[11px] text-slate-900 hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+                      title="Click to copy passkey"
+                    >
+                      <span>{item.pass}</span>
+                      <Copy className="h-3 w-3 text-slate-400" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Active Issued Passkeys Table */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-2">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">Issued Staff Access Passkeys Registry ({passkeys.length})</h4>
+                <p className="text-xs text-slate-500">Live registry of authorized personnel passkeys. Passkeys can be copied or revoked at any time.</p>
+              </div>
+              {copyFeedback && (
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 animate-in fade-in">
+                  ✓ Copied "{copyFeedback}" to clipboard!
+                </span>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 uppercase">
+                    <th className="py-2.5 px-3">Passkey ID / Code</th>
+                    <th className="py-2.5 px-3">Staff Holder & Designation</th>
+                    <th className="py-2.5 px-3">Wing Clearance</th>
+                    <th className="py-2.5 px-3">Arm Scope</th>
+                    <th className="py-2.5 px-3">Issued Date</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {passkeys.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50 transition">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-1.5">
+                          <code className="px-2 py-0.5 rounded bg-slate-900 text-amber-400 font-mono font-bold text-[11px]">
+                            {p.passkey}
+                          </code>
+                          <button
+                            onClick={() => handleCopy(p.passkey)}
+                            className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+                            title="Copy passkey"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <strong className="text-slate-900 block font-bold">{p.staffName}</strong>
+                        <span className="text-[10px] text-slate-500">{p.role}</span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          p.wing === 'academic' ? 'bg-blue-100 text-blue-800' :
+                          p.wing === 'bursary' ? 'bg-emerald-100 text-emerald-800' :
+                          p.wing === 'admin' ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800'
+                        }`}>
+                          {p.wing}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="text-[11px] font-bold text-slate-700 uppercase">
+                          {p.arm}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[10px]">
+                        {p.issuedDate}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          <Check className="h-3 w-3" />
+                          Active
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          onClick={() => handleRevokePass(p.id, p.staffName)}
+                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] border border-rose-200 transition cursor-pointer"
+                          title="Revoke passkey"
+                        >
+                          Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Access Management Modal */}
+      <AccessManagementModal
+        isOpen={isPasskeyModalOpen}
+        onClose={() => {
+          setIsPasskeyModalOpen(false);
+          refreshPasskeys();
+        }}
+        initialWingFilter="bursary"
+      />
     </div>
   );
 };

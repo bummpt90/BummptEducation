@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BummptechLogo } from './BummptechLogo';
-import { NavigationPage } from '../types';
+import { NavigationPage, AcademicYear, Term, ClassLevel, getSchoolArm } from '../types';
 import { 
   GraduationCap, 
   LayoutDashboard, 
@@ -28,7 +28,15 @@ import {
   Search,
   SlidersHorizontal,
   Lock,
-  ArrowRight
+  ArrowRight,
+  Calendar,
+  KeyRound,
+  Unlock,
+  Landmark,
+  MapPin,
+  Code2,
+  Terminal,
+  Database
 } from 'lucide-react';
 
 export type ActivePage = NavigationPage;
@@ -40,6 +48,14 @@ interface HeaderProps {
   userRole?: string;
   setUserRole?: (role: any) => void;
   onRoleChange?: (role: any) => void;
+  academicYear?: AcademicYear;
+  onAcademicYearChange?: (year: AcademicYear) => void;
+  selectedTerm?: Term;
+  onTermChange?: (term: Term) => void;
+  selectedClass?: ClassLevel;
+  onClassChange?: (classLevel: ClassLevel) => void;
+  onOpenSecurityModal?: () => void;
+  onOpenParentPortalModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -49,15 +65,27 @@ export const Header: React.FC<HeaderProps> = ({
   userRole = 'principal',
   setUserRole,
   onRoleChange,
+  academicYear = '2025/2026',
+  onAcademicYearChange,
+  selectedTerm = '2nd Term',
+  onTermChange,
+  selectedClass = 'SSS 2 Science',
+  onClassChange,
+  onOpenSecurityModal,
+  onOpenParentPortalModal,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [armsDropdownOpen, setArmsDropdownOpen] = useState(false);
   const [academicDropdownOpen, setAcademicDropdownOpen] = useState(false);
+  const [academicContextDropdownOpen, setAcademicContextDropdownOpen] = useState(false);
+  const [docsDropdownOpen, setDocsDropdownOpen] = useState(false);
 
   const roleDropdownRef = useRef<HTMLDivElement>(null);
   const armsDropdownRef = useRef<HTMLDivElement>(null);
   const academicDropdownRef = useRef<HTMLDivElement>(null);
+  const academicContextDropdownRef = useRef<HTMLDivElement>(null);
+  const docsDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -70,6 +98,12 @@ export const Header: React.FC<HeaderProps> = ({
       }
       if (academicDropdownRef.current && !academicDropdownRef.current.contains(event.target as Node)) {
         setAcademicDropdownOpen(false);
+      }
+      if (academicContextDropdownRef.current && !academicContextDropdownRef.current.contains(event.target as Node)) {
+        setAcademicContextDropdownOpen(false);
+      }
+      if (docsDropdownRef.current && !docsDropdownRef.current.contains(event.target as Node)) {
+        setDocsDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -99,12 +133,14 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navItems = [
     { id: 'home' as NavigationPage, label: 'Home', icon: GraduationCap },
+    { id: 'state-hq' as NavigationPage, label: 'Benue State HQ', icon: Landmark, badge: '23 LGAs' },
     { id: 'academic' as NavigationPage, label: 'Academic Wing', icon: LayoutDashboard, badge: 'CA 40/60', hasDropdown: true },
     { id: 'lesson-notes' as NavigationPage, label: 'Lesson Notes (PDF)', icon: FileText, badge: 'Parents' },
     { id: 'admin' as NavigationPage, label: 'Bursary & Admin', icon: Building2 },
     { id: 'organogram' as NavigationPage, label: 'Organogram', icon: GitFork },
     { id: 'about' as NavigationPage, label: 'About Executive', icon: UserCheck },
-    { id: 'docs' as NavigationPage, label: 'Documentation', icon: BookOpen },
+    { id: 'docs' as NavigationPage, label: 'User Guide', icon: BookOpen },
+    { id: 'dev-docs' as NavigationPage, label: 'Developer Specs', icon: Code2, badge: 'Tech/DB' },
     { id: 'contact' as NavigationPage, label: 'Contact', icon: PhoneCall },
   ];
 
@@ -182,30 +218,212 @@ export const Header: React.FC<HeaderProps> = ({
 
   const currentRoleObj = roles.find(r => r.id === userRole) || roles[0];
   const isArmPageActive = ['kindergarten-arm', 'primary-arm', 'secondary-arm', 'student-leadership'].includes(activePage);
+  const currentClassArm = getSchoolArm(selectedClass);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md transition-all duration-200 shadow-xs" id="main-app-header">
       {/* Top Utility Micro-Bar */}
-      <div className="bg-slate-950 text-slate-300 border-b border-slate-800/80 px-4 py-1.5 text-[11px] select-none">
+      <div className="bg-slate-950 text-slate-300 border-b border-slate-800/80 px-3 sm:px-4 py-1.5 text-[11px] select-none">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 sm:gap-4">
           
-          {/* Left Session & Accreditation Indicators */}
-          <div className="flex items-center gap-3 overflow-hidden">
-            <span className="inline-flex items-center gap-1.5 font-bold text-amber-400 shrink-0">
+          {/* Left Session, Term & Dynamic Active Class Indicators */}
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-0.5">
+            {/* Pulsing indicator with Live Session & Term */}
+            <div className="inline-flex items-center gap-1.5 font-bold text-amber-400 shrink-0" id="header-live-session-term-indicator">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
-              2025/2026 Session • 2nd Term
-            </span>
-            <span className="hidden md:inline text-slate-600">|</span>
-            <span className="hidden md:inline text-slate-300 truncate font-medium">
-              Unified Multi-Arm System: <strong className="text-white">KG (1–3)</strong> • <strong className="text-white">Primary (1–6)</strong> • <strong className="text-white">Secondary (JSS–SSS)</strong>
-            </span>
+              <span className="text-amber-400">{academicYear} Session</span>
+              <span className="text-amber-500/70">•</span>
+              <span className="text-amber-300 font-extrabold">{selectedTerm}</span>
+            </div>
+
+            <span className="text-slate-700">|</span>
+
+            {/* Dynamic Active Class Badge with Arm Styling */}
+            <div className="inline-flex items-center gap-1.5 shrink-0" id="header-active-class-badge">
+              <span className="text-slate-400 text-[10px] uppercase font-semibold hidden md:inline">Active:</span>
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black border transition-all ${
+                currentClassArm === 'kindergarten'
+                  ? 'bg-purple-950/80 text-purple-200 border-purple-500/50'
+                  : currentClassArm === 'primary'
+                  ? 'bg-emerald-950/80 text-emerald-200 border-emerald-500/50'
+                  : 'bg-blue-950/80 text-blue-200 border-blue-500/50'
+              }`}>
+                {currentClassArm === 'kindergarten' && <Baby className="h-3 w-3 text-purple-400" />}
+                {currentClassArm === 'primary' && <BookOpen className="h-3 w-3 text-emerald-400" />}
+                {currentClassArm === 'secondary' && <School className="h-3 w-3 text-blue-400" />}
+                <span>{selectedClass}</span>
+              </span>
+            </div>
+
+            {/* Quick Context Switcher Dropdown */}
+            <div className="relative" ref={academicContextDropdownRef}>
+              <button
+                onClick={() => setAcademicContextDropdownOpen(!academicContextDropdownOpen)}
+                id="header-academic-context-btn"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition text-[10.5px] font-bold cursor-pointer"
+                title="Change Academic Year, Term & Active Class"
+              >
+                <SlidersHorizontal className="h-3 w-3 text-amber-400" />
+                <span className="hidden sm:inline">Switch Context</span>
+                <span className="sm:hidden">Switch</span>
+                <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${academicContextDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {academicContextDropdownOpen && (
+                <div className="absolute left-0 mt-2 w-80 rounded-2xl bg-white p-3.5 shadow-2xl border border-slate-200 text-slate-800 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <div>
+                      <div className="text-[11px] font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                        <span>Academic Context Settings</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Instantly updates session, term & active class across all dashboards.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAcademicContextDropdownOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    {/* Academic Session */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">
+                        Academic Session / Year:
+                      </label>
+                      <select
+                        value={academicYear}
+                        onChange={(e) => onAcademicYearChange?.(e.target.value as AcademicYear)}
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        id="header-select-session"
+                      >
+                        <option value="2024/2025">2024/2025 Session (Previous)</option>
+                        <option value="2025/2026">2025/2026 Session (Current Active)</option>
+                        <option value="2026/2027">2026/2027 Session (Next Academic Year)</option>
+                      </select>
+                    </div>
+
+                    {/* School Term */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">
+                        Current Term:
+                      </label>
+                      <select
+                        value={selectedTerm}
+                        onChange={(e) => onTermChange?.(e.target.value as Term)}
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-blue-700 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        id="header-select-term"
+                      >
+                        <option value="1st Term">1st Term (Advent / Resumption)</option>
+                        <option value="2nd Term">2nd Term (Mid-Session Active)</option>
+                        <option value="3rd Term">3rd Term (Promotional & Final)</option>
+                      </select>
+                    </div>
+
+                    {/* Active Class */}
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">
+                        Active Class Level:
+                      </label>
+                      <select
+                        value={selectedClass}
+                        onChange={(e) => onClassChange?.(e.target.value as ClassLevel)}
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        id="header-select-class"
+                      >
+                        <optgroup label="Early Childhood & Kindergarten (KG 1–3)">
+                          <option value="KG 1">KG 1 (Early Foundation • Age 2-3)</option>
+                          <option value="KG 2">KG 2 (Montessori Discovery • Age 3-4)</option>
+                          <option value="KG 3">KG 3 (Transition to Primary • Age 4-5)</option>
+                        </optgroup>
+                        <optgroup label="Primary Basic Education (Basic 1–6)">
+                          <option value="Basic 1">Basic 1 (Primary 1)</option>
+                          <option value="Basic 2">Basic 2 (Primary 2)</option>
+                          <option value="Basic 3">Basic 3 (Primary 3)</option>
+                          <option value="Basic 4">Basic 4 (Primary 4)</option>
+                          <option value="Basic 5">Basic 5 (Primary 5)</option>
+                          <option value="Basic 6">Basic 6 (Primary 6 - Common Entrance NCEE)</option>
+                        </optgroup>
+                        <optgroup label="Junior Secondary (JSS 1–3)">
+                          <option value="JSS 1">JSS 1 (Junior Year 1)</option>
+                          <option value="JSS 2">JSS 2 (Junior Year 2)</option>
+                          <option value="JSS 3">JSS 3 (BECE / Junior WAEC / Checkpoint)</option>
+                        </optgroup>
+                        <optgroup label="Senior Secondary (SSS 1–3)">
+                          <option value="SSS 1 Science">SSS 1 Science</option>
+                          <option value="SSS 1 Arts">SSS 1 Arts</option>
+                          <option value="SSS 1 Commercial">SSS 1 Commercial</option>
+                          <option value="SSS 2 Science">SSS 2 Science</option>
+                          <option value="SSS 2 Arts">SSS 2 Arts</option>
+                          <option value="SSS 2 Commercial">SSS 2 Commercial</option>
+                          <option value="SSS 3 Science">SSS 3 Science (WAEC / NECO / IGCSE / UTME)</option>
+                          <option value="SSS 3 Arts">SSS 3 Arts (WAEC / NECO / IGCSE / UTME)</option>
+                          <option value="SSS 3 Commercial">SSS 3 Commercial (WAEC / NECO / IGCSE / UTME)</option>
+                        </optgroup>
+                      </select>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
+                      <span>Live Sync Enabled</span>
+                      <button
+                        onClick={() => setAcademicContextDropdownOpen(false)}
+                        className="px-3 py-1 bg-slate-900 text-white rounded-lg font-bold hover:bg-blue-600 transition cursor-pointer"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right Hotline & Role Switcher */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Developer Architecture Quick Link */}
+            <button
+              onClick={() => navigateTo('dev-docs')}
+              id="header-micro-dev-docs-btn"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 hover:text-white hover:bg-emerald-900 border border-emerald-700/60 transition text-[10.5px] font-bold cursor-pointer"
+              title="System Architecture, Database Schemas & Developer Documentation"
+            >
+              <Code2 className="h-3 w-3 text-emerald-400" />
+              <span className="hidden sm:inline">Dev Specs</span>
+              <span className="sm:hidden">Dev</span>
+            </button>
+
+            {/* Parent Result Portal button in micro-bar */}
+            <button
+              onClick={onOpenParentPortalModal}
+              id="header-micro-parent-portal-btn"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-950 text-indigo-300 hover:text-white hover:bg-indigo-900 border border-indigo-700/60 transition text-[10.5px] font-bold cursor-pointer"
+              title="Parent Report Card Verification & Download Portal"
+            >
+              <FileText className="h-3 w-3 text-indigo-400" />
+              <span className="hidden sm:inline">Parent Portal</span>
+              <span className="sm:hidden">Parents</span>
+            </button>
+
+            {/* Security Passkeys Quick Button */}
+            <button
+              onClick={onOpenSecurityModal}
+              id="header-micro-security-btn"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 hover:text-white hover:bg-amber-900 border border-amber-700/60 transition text-[10.5px] font-bold cursor-pointer"
+              title="Staff Authorization Passkeys & Wing Clearance"
+            >
+              <KeyRound className="h-3 w-3 text-amber-400" />
+              <span className="hidden sm:inline">Passkeys</span>
+            </button>
+
+            <span className="hidden sm:inline text-slate-700">|</span>
+
             <a 
               href="tel:+2348115231834" 
               className="hidden sm:inline-flex items-center gap-1 text-slate-300 hover:text-emerald-400 transition"
@@ -307,6 +525,23 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <GraduationCap className={`h-4 w-4 ${activePage === 'home' ? 'text-white' : 'text-slate-500'}`} />
             <span>Home</span>
+          </button>
+
+          {/* Benue State HQ (23 LGAs Command Portal) */}
+          <button
+            onClick={() => navigateTo('state-hq')}
+            id="nav-link-state-hq"
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+              activePage === 'state-hq'
+                ? 'bg-emerald-800 text-white shadow-xs'
+                : 'text-emerald-800 bg-emerald-50/90 hover:bg-emerald-100/90 hover:text-emerald-950 border border-emerald-300/80'
+            }`}
+          >
+            <Landmark className={`h-4 w-4 ${activePage === 'state-hq' ? 'text-amber-300' : 'text-emerald-700'}`} />
+            <span>Benue State HQ</span>
+            <span className="rounded px-1.5 py-0.2 bg-amber-400 text-slate-950 text-[9px] font-black uppercase shadow-2xs">
+              23 LGAs
+            </span>
           </button>
 
           {/* Academic Wing (With Quick Sub-Links Dropdown) */}
@@ -510,19 +745,85 @@ export const Header: React.FC<HeaderProps> = ({
             <span>About</span>
           </button>
 
-          {/* Documentation */}
-          <button
-            onClick={() => navigateTo('docs')}
-            id="nav-link-docs"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
-              activePage === 'docs'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-          >
-            <BookOpen className={`h-4 w-4 ${activePage === 'docs' ? 'text-white' : 'text-slate-500'}`} />
-            <span>Docs</span>
-          </button>
+          {/* Documentation & Developer Architecture Mega Dropdown */}
+          <div className="relative" ref={docsDropdownRef}>
+            <button
+              onClick={() => {
+                if (activePage !== 'docs' && activePage !== 'dev-docs' && activePage !== 'developer-docs') {
+                  navigateTo('docs');
+                } else {
+                  setDocsDropdownOpen(!docsDropdownOpen);
+                }
+              }}
+              onMouseEnter={() => setDocsDropdownOpen(true)}
+              id="nav-link-docs"
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+                activePage === 'docs' || activePage === 'dev-docs' || activePage === 'developer-docs'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <BookOpen className={`h-4 w-4 ${activePage === 'docs' || activePage === 'dev-docs' || activePage === 'developer-docs' ? 'text-white' : 'text-slate-500'}`} />
+              <span>Docs</span>
+              <ChevronDown className="h-3 w-3 opacity-60" />
+            </button>
+
+            {docsDropdownOpen && (
+              <div 
+                className="absolute right-0 mt-1.5 w-72 rounded-2xl bg-white p-2 shadow-2xl border border-slate-200 text-slate-800 z-50 animate-in fade-in duration-150"
+                onMouseLeave={() => setDocsDropdownOpen(false)}
+              >
+                <div className="px-3 py-1.5 border-b border-slate-100 mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    System Documentation Hub
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => {
+                    navigateTo('docs');
+                    setDocsDropdownOpen(false);
+                  }}
+                  className={`w-full text-left p-2.5 rounded-xl transition flex items-start gap-2.5 cursor-pointer ${
+                    activePage === 'docs' ? 'bg-blue-50 text-blue-900 border border-blue-200' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="p-1.5 rounded-lg bg-blue-100 text-blue-700 shrink-0 mt-0.5">
+                    <BookOpen className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs">1. User Operational Guide</div>
+                    <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">
+                      Navigating continuous assessment, broadsheets, fee receipts, organogram & 23 LGAs.
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    navigateTo('dev-docs');
+                    setDocsDropdownOpen(false);
+                  }}
+                  className={`w-full text-left p-2.5 rounded-xl transition flex items-start gap-2.5 cursor-pointer mt-1 ${
+                    activePage === 'dev-docs' || activePage === 'developer-docs' ? 'bg-emerald-50 text-emerald-950 border border-emerald-200' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 shrink-0 mt-0.5">
+                    <Code2 className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs flex items-center gap-1.5">
+                      <span>2. Developer & Tech Docs</span>
+                      <span className="text-[9px] bg-emerald-600 text-white font-mono px-1.5 py-0.2 rounded font-bold">New</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">
+                      React/Vite/Express stack, TypeScript types, database schemas & onboarding playbook.
+                    </span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Contact */}
           <button
@@ -540,7 +841,17 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Right CTA Action Button (Desktop) */}
-        <div className="hidden lg:flex items-center gap-2.5">
+        <div className="hidden lg:flex items-center gap-2">
+          <button
+            onClick={onOpenParentPortalModal}
+            id="header-desktop-parent-portal-btn"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200/90 px-3 py-2 text-xs font-bold hover:bg-indigo-100 transition cursor-pointer shadow-xs"
+            title="Parent Report Card Verification & Download Portal"
+          >
+            <FileText className="h-3.5 w-3.5 text-indigo-600" />
+            <span>Parent Portal</span>
+          </button>
+
           <button
             onClick={() => navigateTo('academic', 'reports')}
             className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition cursor-pointer"
@@ -580,6 +891,26 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Quick Actions in Mobile Drawer */}
           <div className="grid grid-cols-2 gap-2 pb-3 border-b border-slate-100">
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenParentPortalModal?.();
+              }}
+              className="p-2.5 rounded-xl bg-indigo-50 text-indigo-800 font-bold text-xs border border-indigo-200 flex items-center justify-center gap-1.5"
+            >
+              <FileText className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Parent Portal</span>
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenSecurityModal?.();
+              }}
+              className="p-2.5 rounded-xl bg-amber-50 text-amber-900 font-bold text-xs border border-amber-200 flex items-center justify-center gap-1.5"
+            >
+              <KeyRound className="h-3.5 w-3.5 text-amber-600" />
+              <span>Passkeys</span>
+            </button>
             <button
               onClick={() => navigateTo('academic', 'reports')}
               className="p-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
@@ -657,6 +988,85 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               );
             })}
+          </div>
+
+          {/* Academic Context (Session, Term, Class) in Mobile Drawer */}
+          <div className="pt-2 border-t border-slate-100 space-y-2">
+            <div className="flex items-center justify-between px-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Academic Context Settings
+              </span>
+              <span className="text-[10px] font-extrabold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                {academicYear} • {selectedTerm}
+              </span>
+            </div>
+            
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Session:</label>
+                  <select
+                    value={academicYear}
+                    onChange={(e) => onAcademicYearChange?.(e.target.value as AcademicYear)}
+                    className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                  >
+                    <option value="2024/2025">2024/2025</option>
+                    <option value="2025/2026">2025/2026</option>
+                    <option value="2026/2027">2026/2027</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Term:</label>
+                  <select
+                    value={selectedTerm}
+                    onChange={(e) => onTermChange?.(e.target.value as Term)}
+                    className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white text-blue-700"
+                  >
+                    <option value="1st Term">1st Term</option>
+                    <option value="2nd Term">2nd Term</option>
+                    <option value="3rd Term">3rd Term</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Active Class:</label>
+                <select
+                  value={selectedClass}
+                  onChange={(e) => onClassChange?.(e.target.value as ClassLevel)}
+                  className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                >
+                  <optgroup label="Kindergarten (KG 1–3)">
+                    <option value="KG 1">KG 1</option>
+                    <option value="KG 2">KG 2</option>
+                    <option value="KG 3">KG 3</option>
+                  </optgroup>
+                  <optgroup label="Primary (Basic 1–6)">
+                    <option value="Basic 1">Basic 1</option>
+                    <option value="Basic 2">Basic 2</option>
+                    <option value="Basic 3">Basic 3</option>
+                    <option value="Basic 4">Basic 4</option>
+                    <option value="Basic 5">Basic 5</option>
+                    <option value="Basic 6">Basic 6</option>
+                  </optgroup>
+                  <optgroup label="Junior Secondary">
+                    <option value="JSS 1">JSS 1</option>
+                    <option value="JSS 2">JSS 2</option>
+                    <option value="JSS 3">JSS 3</option>
+                  </optgroup>
+                  <optgroup label="Senior Secondary">
+                    <option value="SSS 1 Science">SSS 1 Science</option>
+                    <option value="SSS 1 Arts">SSS 1 Arts</option>
+                    <option value="SSS 1 Commercial">SSS 1 Commercial</option>
+                    <option value="SSS 2 Science">SSS 2 Science</option>
+                    <option value="SSS 2 Arts">SSS 2 Arts</option>
+                    <option value="SSS 2 Commercial">SSS 2 Commercial</option>
+                    <option value="SSS 3 Science">SSS 3 Science</option>
+                    <option value="SSS 3 Arts">SSS 3 Arts</option>
+                    <option value="SSS 3 Commercial">SSS 3 Commercial</option>
+                  </optgroup>
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Role Switcher in Mobile Drawer */}

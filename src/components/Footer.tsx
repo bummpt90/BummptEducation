@@ -24,7 +24,10 @@ import {
   Lock,
   Sparkles,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Landmark,
+  Code2,
+  Terminal
 } from 'lucide-react';
 
 interface FooterProps {
@@ -61,12 +64,12 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
   };
 
   const accreditations = [
+    { title: 'Benue MOE & SUBEB', desc: 'State Ministry & 23 LGAs' },
     { title: 'WAEC WASSCE', desc: 'West African Exams Council' },
     { title: 'NECO SSCE / BECE', desc: 'National Exams Council' },
     { title: 'Cambridge IGCSE', desc: 'International Assessment' },
-    { title: 'College Board SAT', desc: 'Global Scholastic Aptitude' },
-    { title: 'JAMB UTME', desc: 'Joint Admissions Board' },
-    { title: 'UBE Curriculum', desc: 'Universal Basic Education' },
+    { title: 'JAMB UTME / UBE', desc: 'Basic Education & Tertiary' },
+    { title: 'TRCN Certified', desc: 'Teachers Registration Council' },
   ];
 
   return (
@@ -197,6 +200,18 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
                 <button 
+                  onClick={() => navigateTo('benue-state-hq')} 
+                  className="hover:text-white transition cursor-pointer text-left flex items-center justify-between group w-full p-1.5 rounded-lg bg-emerald-950/40 border border-emerald-800/60 hover:bg-emerald-900/40 text-emerald-300 hover:text-white"
+                >
+                  <span className="flex items-center gap-2 font-bold">
+                    <Landmark className="h-3.5 w-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span>Benue State HQ (23 LGAs)</span>
+                  </span>
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">HQ Desk</span>
+                </button>
+              </li>
+              <li>
+                <button 
                   onClick={() => navigateTo('kindergarten-arm')} 
                   className="hover:text-white transition cursor-pointer text-left flex items-center gap-2 group w-full"
                 >
@@ -250,6 +265,15 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
               Academic Portals
             </h4>
             <ul className="space-y-2 text-xs text-slate-400">
+              <li>
+                <button 
+                  onClick={() => navigateTo('benue-state-hq')} 
+                  className="hover:text-white transition cursor-pointer text-left flex items-center gap-1.5 group font-bold text-emerald-400"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 group-hover:scale-150 transition-transform"></span>
+                  <span className="text-emerald-300 hover:text-white">23 LGAs Institutional Audit (MOE/SUBEB)</span>
+                </button>
+              </li>
               <li>
                 <button 
                   onClick={() => navigateTo('lesson-notes')} 
@@ -310,7 +334,19 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
                   className="hover:text-white transition cursor-pointer text-left flex items-center gap-1.5 group"
                 >
                   <span className="h-1 w-1 rounded-full bg-purple-500 group-hover:scale-150 transition-transform"></span>
-                  <span>Grading Scale & System Manual</span>
+                  <span>User Operational Manual</span>
+                </button>
+              </li>
+              <li>
+                <button 
+                  onClick={() => navigateTo('dev-docs')} 
+                  className="hover:text-emerald-300 transition cursor-pointer text-left flex items-center justify-between group w-full p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-emerald-500/40 text-emerald-400"
+                >
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <Code2 className="h-3.5 w-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span>Developer Architecture (Code/DB)</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Dev</span>
                 </button>
               </li>
             </ul>
@@ -369,8 +405,46 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
 
         </div>
 
+        {/* Statewide Benue State Ministry & SUBEB 23 LGAs Institutional Portal Banner */}
+        <div className="mt-10 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900/90 to-blue-950/70 border border-emerald-800/50 p-4 sm:p-5">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+            <div className="space-y-1.5 max-w-3xl">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider border border-emerald-500/30">
+                <Landmark className="h-3 w-3 text-emerald-400" />
+                Statewide Governance & SUBEB Basic Education
+              </div>
+              <h3 className="text-sm sm:text-base font-black text-white">
+                Benue State HQ & 23 Local Government Areas Institutional Portal
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Comprehensive statutory performance auditing covering all 23 LGAs across Zones A, B, and C. Unified tracking for State Government Primary Schools (SUBEB/LGEA Basic 1–6) and Secondary Colleges, WAEC/NCEE/PSLE benchmarks, UBEC subventions, and automated Governor's Executive Memoranda.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="inline-flex items-center gap-1 text-[10px] bg-slate-800/80 px-2 py-0.5 rounded-md text-slate-300 border border-slate-700">
+                  <MapPin className="h-2.5 w-2.5 text-emerald-400" /> Zone A (7 LGAs • Benue North-East)
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] bg-slate-800/80 px-2 py-0.5 rounded-md text-slate-300 border border-slate-700">
+                  <MapPin className="h-2.5 w-2.5 text-blue-400" /> Zone B (7 LGAs • Benue North-West)
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] bg-slate-800/80 px-2 py-0.5 rounded-md text-slate-300 border border-slate-700">
+                  <MapPin className="h-2.5 w-2.5 text-amber-400" /> Zone C (9 LGAs • Benue South)
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigateTo('benue-state-hq')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition-all shadow-lg hover:shadow-emerald-900/40 shrink-0 cursor-pointer border border-emerald-400/40"
+            >
+              <Landmark className="h-4 w-4" />
+              <span>Launch 23 LGAs State Portal</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
         {/* Security, Compliance & Trust Badges Strip */}
-        <div className="mt-12 rounded-2xl bg-slate-900/60 border border-slate-800/80 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+        <div className="mt-8 rounded-2xl bg-slate-900/60 border border-slate-800/80 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
           <div className="flex flex-wrap items-center gap-4 text-slate-400">
             <div className="flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4 text-emerald-400" />
@@ -401,6 +475,10 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
           <p>© {new Date().getFullYear()} BummptEducation • Unified Multi-Arm School Management System. Engineered by Bummptech Global Concepts.</p>
           
           <div className="flex flex-wrap items-center gap-4">
+            <button onClick={() => navigateTo('benue-state-hq')} className="text-emerald-400 hover:text-emerald-300 font-bold transition cursor-pointer">
+              Benue State HQ (23 LGAs)
+            </button>
+            <span>•</span>
             <button onClick={() => navigateTo('privacy')} className="hover:text-slate-300 transition cursor-pointer">
               Privacy Policy
             </button>
@@ -410,7 +488,11 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
             </button>
             <span>•</span>
             <button onClick={() => navigateTo('docs')} className="hover:text-slate-300 transition cursor-pointer">
-              Grading Scheme Standards
+              User Manual
+            </button>
+            <span>•</span>
+            <button onClick={() => navigateTo('dev-docs')} className="text-emerald-400 hover:text-emerald-300 font-mono font-bold transition cursor-pointer">
+              Developer Specs (Code/DB)
             </button>
             <span>•</span>
             <button onClick={() => navigateTo('contact')} className="hover:text-slate-300 transition cursor-pointer">

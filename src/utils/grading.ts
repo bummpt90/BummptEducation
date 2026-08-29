@@ -227,6 +227,67 @@ export function evaluatePromotionStatus(
   };
 }
 
+export function getDomainRatingDescription(rating: number): { label: string; short: string; stars: number; color: string; badgeColor: string } {
+  const r = Math.max(1, Math.min(5, Math.round(rating || 3)));
+  switch (r) {
+    case 5:
+      return {
+        label: 'Exceptional / Model Standard (5/5)',
+        short: 'Exceptional (5)',
+        stars: 5,
+        color: 'text-emerald-700 font-bold',
+        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      };
+    case 4:
+      return {
+        label: 'Commendable / Very Good (4/5)',
+        short: 'Commendable (4)',
+        stars: 4,
+        color: 'text-blue-700 font-bold',
+        badgeColor: 'bg-blue-100 text-blue-800 border-blue-300',
+      };
+    case 3:
+      return {
+        label: 'Satisfactory / Fair (3/5)',
+        short: 'Satisfactory (3)',
+        stars: 3,
+        color: 'text-slate-700 font-bold',
+        badgeColor: 'bg-slate-100 text-slate-800 border-slate-300',
+      };
+    case 2:
+      return {
+        label: 'Developing / Needs Encouragement (2/5)',
+        short: 'Developing (2)',
+        stars: 2,
+        color: 'text-amber-700 font-bold',
+        badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
+      };
+    case 1:
+    default:
+      return {
+        label: 'Weak / Needs Urgent Remediation (1/5)',
+        short: 'Weak (1)',
+        stars: 1,
+        color: 'text-rose-700 font-bold',
+        badgeColor: 'bg-rose-100 text-rose-800 border-rose-300',
+      };
+  }
+}
+
+export function calculateGpa(scores: { totalScore: number }[]): number {
+  if (scores.length === 0) return 0;
+  const gradePoints = scores.map((s) => {
+    if (s.totalScore >= 80) return 5.0;
+    if (s.totalScore >= 70) return 4.0;
+    if (s.totalScore >= 60) return 3.0;
+    if (s.totalScore >= 50) return 2.0;
+    if (s.totalScore >= 40) return 1.0;
+    return 0.0;
+  });
+  const sum = gradePoints.reduce((a, b) => a + b, 0);
+  return Math.round((sum / scores.length) * 100) / 100;
+}
+
 export function formatNaira(amount: number): string {
   return new Intl.NumberFormat('en-NG', {
     style: 'currency',

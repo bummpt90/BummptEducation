@@ -24,7 +24,9 @@ import {
   Baby,
   School,
   FileText,
-  Download
+  Download,
+  Landmark,
+  MapPin
 } from 'lucide-react';
 import { INITIAL_ANNOUNCEMENTS } from '../data/mockData';
 
@@ -35,6 +37,8 @@ interface HomePageProps {
   assessments?: AssessmentScore[];
   onOpenReportCard?: (studentId: string) => void;
   onOpenReportCardModal?: (student: Student, reportCard: StudentReportCard) => void;
+  onOpenParentPortalModal?: () => void;
+  onOpenSecurityModal?: () => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({ 
@@ -43,7 +47,9 @@ export const HomePage: React.FC<HomePageProps> = ({
   students = [],
   assessments = [],
   onOpenReportCard,
-  onOpenReportCardModal
+  onOpenReportCardModal,
+  onOpenParentPortalModal,
+  onOpenSecurityModal
 }) => {
   const [announcementFilter, setAnnouncementFilter] = useState<'All' | 'Academic' | 'Administrative' | 'Sports & Events' | 'Examination'>('All');
 
@@ -93,17 +99,26 @@ export const HomePage: React.FC<HomePageProps> = ({
         classAverage: 68.4,
         positionInClass: 1,
         totalStudentsInClass: 38,
-        psychomotor: {
+        affective: {
           punctuality: 5,
           neatness: 5,
           politeness: 5,
           honesty: 5,
           peerRelationship: 5,
           leadership: 5,
+          emotionalStability: 5,
+          obedience: 5,
+          attentiveness: 5,
+          perseverance: 5,
+        },
+        psychomotor: {
           handwriting: 4,
           sportsAndGames: 4,
           craftsAndPractical: 5,
-          attentiveness: 5,
+          verbalFluency: 5,
+          musicalDramatic: 4,
+          handlingOfTools: 5,
+          physicalAgility: 5,
         },
         formTutorRemark: isKg 
           ? 'Exceptional sensory milestones, phonic blending, and joyful peer interaction.'
@@ -157,6 +172,18 @@ export const HomePage: React.FC<HomePageProps> = ({
               </p>
 
               <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  onClick={() => navigateTo('state-hq')}
+                  id="hero-benue-state-hq-btn"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-emerald-500 transition active:scale-95 cursor-pointer border border-emerald-400/40"
+                >
+                  <Landmark className="h-5 w-5 text-amber-300" />
+                  <span>Benue State Command (23 LGAs)</span>
+                  <span className="rounded px-1.5 py-0.2 bg-amber-400 text-slate-950 text-[10px] font-black uppercase">
+                    HQ
+                  </span>
+                </button>
+
                 <button
                   onClick={() => navigateTo('academic', 'reports')}
                   id="hero-academic-portal-btn"
@@ -246,6 +273,54 @@ export const HomePage: React.FC<HomePageProps> = ({
                 </div>
 
                 <div className="space-y-3">
+                  {/* Parent Portal Direct Access */}
+                  <button
+                    onClick={onOpenParentPortalModal}
+                    className="w-full group flex items-center justify-between p-3 rounded-xl bg-indigo-950/70 hover:bg-indigo-900/90 border border-indigo-500/50 hover:border-indigo-400 transition text-left cursor-pointer shadow-md"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-indigo-600/30 p-2 text-indigo-300 group-hover:bg-indigo-600 group-hover:text-white transition">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-white group-hover:text-indigo-200">
+                            Parent Report Card Verification Portal
+                          </h4>
+                          <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-indigo-500/40 text-indigo-200 uppercase">
+                            Secure
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-indigo-300/80">Authorized batch download with access passcode</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-indigo-300 group-hover:text-white transition" />
+                  </button>
+
+                  {/* Staff Security Passkeys */}
+                  <button
+                    onClick={onOpenSecurityModal}
+                    className="w-full group flex items-center justify-between p-3 rounded-xl bg-amber-950/50 hover:bg-amber-900/70 border border-amber-500/40 hover:border-amber-400 transition text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-amber-600/30 p-2 text-amber-300 group-hover:bg-amber-600 group-hover:text-white transition">
+                        <ShieldCheck className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-white group-hover:text-amber-200">
+                            Staff Authorization Passkeys Hub
+                          </h4>
+                          <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-500/40 text-amber-200 uppercase">
+                            Staff Desk
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-300/80">Academic, Bursary & Admin wing clearance management</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-amber-300 group-hover:text-white transition" />
+                  </button>
+
                   <button
                     onClick={() => handleQuickReportCard('STU-001')}
                     className="w-full group flex items-center justify-between p-3 rounded-xl bg-slate-800/60 hover:bg-blue-600/20 border border-slate-700/60 hover:border-blue-500/50 transition text-left cursor-pointer"
@@ -345,6 +420,41 @@ export const HomePage: React.FC<HomePageProps> = ({
       {/* Main Content Containers */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-12">
         
+        {/* State-Level Command & 23 LGAs Monitoring Hub */}
+        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-900 p-6 sm:p-8 text-white border border-emerald-800 shadow-xl" id="home-state-hq-banner">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            <div className="lg:col-span-8 space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-800/80 px-3 py-1 text-xs font-bold text-emerald-200 border border-emerald-600/60">
+                <Landmark className="h-3.5 w-3.5 text-amber-300" />
+                <span>Benue State Ministry of Education & Headquarters Portal</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-white tracking-tight">
+                23 Local Government Areas • Unified School Performance & Executive Reporting
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed max-w-3xl">
+                Real-time terminal supervision across all 23 Benue LGAs (Makurdi, Gboko, Otukpo, Vandeikya, Katsina-Ala, Gwer, and beyond). Monitor Teachers KPI (TRCN & Lesson Notes), Student Pass Rates (WAEC & BECE), and Subvention Financial Statements directly for the Executive Governor of Benue State.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-semibold text-emerald-300">
+                <span className="bg-emerald-900/60 px-2.5 py-1 rounded-lg border border-emerald-700/60">✓ 23 LGAs Mapped</span>
+                <span className="bg-emerald-900/60 px-2.5 py-1 rounded-lg border border-emerald-700/60">✓ 550+ Government Schools</span>
+                <span className="bg-emerald-900/60 px-2.5 py-1 rounded-lg border border-emerald-700/60">✓ Real-time Term Progression Tracker</span>
+                <span className="bg-emerald-900/60 px-2.5 py-1 rounded-lg border border-emerald-700/60">✓ Governor Executive Brief Generator</span>
+              </div>
+            </div>
+            <div className="lg:col-span-4 flex flex-col items-start lg:items-end justify-center">
+              <button
+                onClick={() => navigateTo('state-hq')}
+                id="home-open-state-hq-btn"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-6 py-4 text-sm shadow-xl transition-all duration-150 cursor-pointer active:scale-95"
+              >
+                <Landmark className="h-5 w-5 text-slate-950" />
+                <span>Enter Benue State HQ</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* Core Educational Wings: KG 1-3, Basic 1-6, JSS 1-3, SSS 1-3 */}
         <section className="space-y-6">
           <div className="text-center max-w-2xl mx-auto">
