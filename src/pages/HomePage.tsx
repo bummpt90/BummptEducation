@@ -195,6 +195,18 @@ export const HomePage: React.FC<HomePageProps> = ({
                 </button>
 
                 <button
+                  onClick={() => navigateTo('academic', 'attendance')}
+                  id="hero-attendance-btn"
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-amber-500 transition active:scale-95 cursor-pointer border border-amber-400/30"
+                >
+                  <Calendar className="h-5 w-5 text-amber-100" />
+                  <span>Attendance Register (Academic Wing)</span>
+                  <span className="rounded px-1.5 py-0.2 bg-amber-900 text-amber-200 text-[10px] font-black uppercase">
+                    KG–SSS3
+                  </span>
+                </button>
+
+                <button
                   onClick={() => navigateTo('lesson-notes')}
                   id="hero-lesson-notes-btn"
                   className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-indigo-500 transition active:scale-95 cursor-pointer"

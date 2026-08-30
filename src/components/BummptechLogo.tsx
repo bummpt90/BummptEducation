@@ -15,19 +15,19 @@ export const BummptechLogo: React.FC<LogoProps> = ({ variant = 'full', size = 'm
   };
 
   const iconSizes = {
-    sm: { w: 32, h: 32, bi: 'text-[11px]' },
-    md: { w: 42, h: 42, bi: 'text-[14px]' },
-    lg: { w: 56, h: 56, bi: 'text-[18px]' },
-    xl: { w: 80, h: 80, bi: 'text-[26px]' }
+    sm: { w: 28, h: 28, bi: 'text-[10px]' },
+    md: { w: 36, h: 36, bi: 'text-[12px]' },
+    lg: { w: 50, h: 50, bi: 'text-[16px]' },
+    xl: { w: 72, h: 72, bi: 'text-[24px]' }
   };
 
   const currentIcon = iconSizes[size];
 
   return (
-    <div className={`inline-flex items-center gap-3 ${className}`} id="bummptech-brand-logo">
+    <div className={`inline-flex items-center gap-2 ${className}`} id="bummptech-brand-logo">
       {/* SVG Icon matching the Bummptech "BI" Circuit Star & Wings Logo */}
       <div 
-        className="relative flex items-center justify-center rounded-xl bg-slate-950 p-1 shadow-md border border-slate-800 shrink-0"
+        className="relative flex items-center justify-center rounded-lg bg-slate-950 p-0.5 shadow-xs border border-slate-800 shrink-0"
         style={{ width: currentIcon.w, height: currentIcon.h }}
       >
         <svg viewBox="0 0 100 100" className="w-full h-full">

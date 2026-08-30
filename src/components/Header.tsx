@@ -134,11 +134,9 @@ export const Header: React.FC<HeaderProps> = ({
   const navItems = [
     { id: 'home' as NavigationPage, label: 'Home', icon: GraduationCap },
     { id: 'state-hq' as NavigationPage, label: 'Benue State HQ', icon: Landmark, badge: '23 LGAs' },
-    { id: 'academic' as NavigationPage, label: 'Academic Wing', icon: LayoutDashboard, badge: 'CA 40/60', hasDropdown: true },
+    { id: 'academic' as NavigationPage, label: 'Academic Wing', icon: LayoutDashboard, hasDropdown: true },
     { id: 'lesson-notes' as NavigationPage, label: 'Lesson Notes (PDF)', icon: FileText, badge: 'Parents' },
     { id: 'admin' as NavigationPage, label: 'Bursary & Admin', icon: Building2 },
-    { id: 'organogram' as NavigationPage, label: 'Organogram', icon: GitFork },
-    { id: 'about' as NavigationPage, label: 'About Executive', icon: UserCheck },
     { id: 'docs' as NavigationPage, label: 'User Guide', icon: BookOpen },
     { id: 'dev-docs' as NavigationPage, label: 'Developer Specs', icon: Code2, badge: 'Tech/DB' },
     { id: 'contact' as NavigationPage, label: 'Contact', icon: PhoneCall },
@@ -223,8 +221,8 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md transition-all duration-200 shadow-xs" id="main-app-header">
       {/* Top Utility Micro-Bar */}
-      <div className="bg-slate-950 text-slate-300 border-b border-slate-800/80 px-3 sm:px-4 py-1.5 text-[11px] select-none">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 sm:gap-4">
+      <div className="bg-slate-950 text-slate-300 border-b border-slate-800/80 px-3 sm:px-4 lg:px-6 py-1 text-[11px] select-none">
+        <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between gap-2 sm:gap-4">
           
           {/* Left Session, Term & Dynamic Active Class Indicators */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-0.5">
@@ -498,12 +496,12 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Main Navbar */}
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6">
+      <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between px-3 sm:px-4 lg:px-6 py-2">
         
         {/* Left: Brand Identity */}
         <button 
           onClick={() => navigateTo('home')} 
-          className="text-left focus:outline-none cursor-pointer group pr-4 sm:pr-6 lg:pr-8 xl:pr-10 shrink-0"
+          className="text-left focus:outline-none cursor-pointer group shrink-0 mr-2 lg:mr-3"
           id="brand-home-link"
           aria-label="BummptEducation Home"
         >
@@ -511,19 +509,19 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Desktop Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-1.5">
+        <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5">
           
           {/* Home */}
           <button
             onClick={() => navigateTo('home')}
             id="nav-link-home"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activePage === 'home'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            <GraduationCap className={`h-4 w-4 ${activePage === 'home' ? 'text-white' : 'text-slate-500'}`} />
+            <GraduationCap className={`h-3.5 w-3.5 ${activePage === 'home' ? 'text-white' : 'text-slate-500'}`} />
             <span>Home</span>
           </button>
 
@@ -531,13 +529,13 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => navigateTo('state-hq')}
             id="nav-link-state-hq"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activePage === 'state-hq'
                 ? 'bg-emerald-800 text-white shadow-xs'
                 : 'text-emerald-800 bg-emerald-50/90 hover:bg-emerald-100/90 hover:text-emerald-950 border border-emerald-300/80'
             }`}
           >
-            <Landmark className={`h-4 w-4 ${activePage === 'state-hq' ? 'text-amber-300' : 'text-emerald-700'}`} />
+            <Landmark className={`h-3.5 w-3.5 ${activePage === 'state-hq' ? 'text-amber-300' : 'text-emerald-700'}`} />
             <span>Benue State HQ</span>
             <span className="rounded px-1.5 py-0.2 bg-amber-400 text-slate-950 text-[9px] font-black uppercase shadow-2xs">
               23 LGAs
@@ -556,19 +554,14 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               onMouseEnter={() => setAcademicDropdownOpen(true)}
               id="nav-link-academic"
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 activePage === 'academic'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
-              <LayoutDashboard className={`h-4 w-4 ${activePage === 'academic' ? 'text-white' : 'text-slate-500'}`} />
+              <LayoutDashboard className={`h-3.5 w-3.5 ${activePage === 'academic' ? 'text-white' : 'text-slate-500'}`} />
               <span>Academic Wing</span>
-              <span className={`rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-tight ${
-                activePage === 'academic' ? 'bg-blue-800 text-blue-100' : 'bg-blue-100 text-blue-800'
-              }`}>
-                CA 40/60
-              </span>
               <ChevronDown className="h-3 w-3 opacity-60" />
             </button>
 
@@ -603,6 +596,19 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </button>
                 <button
+                  onClick={() => navigateTo('academic', 'attendance')}
+                  className="w-full text-left p-2 rounded-xl hover:bg-slate-50 transition flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                >
+                  <Calendar className="h-4 w-4 text-amber-600" />
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span>Daily Attendance Register</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">KG-SSS3</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-normal">Form master roll call, 65 days & automated totals</span>
+                  </div>
+                </button>
+                <button
                   onClick={() => navigateTo('academic', 'reports')}
                   className="w-full text-left p-2 rounded-xl hover:bg-slate-50 transition flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"
                 >
@@ -622,16 +628,16 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => setArmsDropdownOpen(!armsDropdownOpen)}
               onMouseEnter={() => setArmsDropdownOpen(true)}
               id="header-arms-dropdown-btn"
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 isArmPageActive
                   ? 'bg-purple-700 text-white shadow-xs'
                   : 'text-purple-700 bg-purple-50/80 hover:bg-purple-100/90 border border-purple-200/80'
               }`}
               aria-expanded={armsDropdownOpen}
             >
-              <Layers className="h-4 w-4" />
+              <Layers className="h-3.5 w-3.5" />
               <span>School Arms & Wings</span>
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${armsDropdownOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${armsDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {armsDropdownOpen && (
@@ -707,42 +713,14 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => navigateTo('admin')}
             id="nav-link-admin"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activePage === 'admin'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            <Building2 className={`h-4 w-4 ${activePage === 'admin' ? 'text-white' : 'text-slate-500'}`} />
+            <Building2 className={`h-3.5 w-3.5 ${activePage === 'admin' ? 'text-white' : 'text-slate-500'}`} />
             <span>Bursary & Admin</span>
-          </button>
-
-          {/* Organogram */}
-          <button
-            onClick={() => navigateTo('organogram')}
-            id="nav-link-organogram"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
-              activePage === 'organogram'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-          >
-            <GitFork className={`h-4 w-4 ${activePage === 'organogram' ? 'text-white' : 'text-slate-500'}`} />
-            <span>Organogram</span>
-          </button>
-
-          {/* About Founder & School */}
-          <button
-            onClick={() => navigateTo('about')}
-            id="nav-link-about"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
-              activePage === 'about'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-          >
-            <UserCheck className={`h-4 w-4 ${activePage === 'about' ? 'text-white' : 'text-slate-500'}`} />
-            <span>About</span>
           </button>
 
           {/* Documentation & Developer Architecture Mega Dropdown */}
@@ -757,13 +735,13 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               onMouseEnter={() => setDocsDropdownOpen(true)}
               id="nav-link-docs"
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 activePage === 'docs' || activePage === 'dev-docs' || activePage === 'developer-docs'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
-              <BookOpen className={`h-4 w-4 ${activePage === 'docs' || activePage === 'dev-docs' || activePage === 'developer-docs' ? 'text-white' : 'text-slate-500'}`} />
+              <BookOpen className={`h-3.5 w-3.5 ${activePage === 'docs' || activePage === 'dev-docs' || activePage === 'developer-docs' ? 'text-white' : 'text-slate-500'}`} />
               <span>Docs</span>
               <ChevronDown className="h-3 w-3 opacity-60" />
             </button>
@@ -829,23 +807,23 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => navigateTo('contact')}
             id="nav-link-contact"
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
               activePage === 'contact'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            <PhoneCall className={`h-4 w-4 ${activePage === 'contact' ? 'text-white' : 'text-slate-500'}`} />
+            <PhoneCall className={`h-3.5 w-3.5 ${activePage === 'contact' ? 'text-white' : 'text-slate-500'}`} />
             <span>Contact</span>
           </button>
         </nav>
 
         {/* Right CTA Action Button (Desktop) */}
-        <div className="hidden lg:flex items-center gap-2">
+        <div className="hidden lg:flex items-center gap-1.5 xl:gap-2 shrink-0">
           <button
             onClick={onOpenParentPortalModal}
             id="header-desktop-parent-portal-btn"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200/90 px-3 py-2 text-xs font-bold hover:bg-indigo-100 transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200/90 px-2.5 py-1.5 text-xs font-bold hover:bg-indigo-100 transition cursor-pointer shadow-xs whitespace-nowrap"
             title="Parent Report Card Verification & Download Portal"
           >
             <FileText className="h-3.5 w-3.5 text-indigo-600" />
@@ -854,7 +832,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => navigateTo('academic', 'reports')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer whitespace-nowrap"
             title="Generate Official Terminal Report Card"
           >
             <Award className="h-3.5 w-3.5 text-amber-400" />
@@ -863,7 +841,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => navigateTo('admin', 'admissions')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/80 px-3 py-2 text-xs font-bold hover:bg-blue-100 transition cursor-pointer"
+            className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/80 px-2.5 py-1.5 text-xs font-bold hover:bg-blue-100 transition cursor-pointer whitespace-nowrap"
             title="Admissions Portal & Entrance Applications"
           >
             <span>Admissions</span>

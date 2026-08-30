@@ -33,7 +33,8 @@ import {
   HelpCircle,
   RefreshCw,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  MessageSquare
 } from 'lucide-react';
 import { 
   BenueLGA, 
@@ -53,6 +54,7 @@ import {
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { AccessManagementModal } from '../components/AccessManagementModal';
 import { MinistryUpdatesCommand } from '../components/MinistryUpdatesCommand';
+import { HeadquartersLiveChat } from '../components/HeadquartersLiveChat';
 import { 
   IssuedPasskey, 
   getStoredSession, 
@@ -91,7 +93,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
   const [selectedLGA, setSelectedLGA] = useState<BenueLGA>('Makurdi');
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('SCH-MKD-001');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeReviewTab, setActiveReviewTab] = useState<'teachers' | 'students' | 'finances' | 'governor-brief' | 'ministry-command'>('teachers');
+  const [activeReviewTab, setActiveReviewTab] = useState<'teachers' | 'students' | 'finances' | 'governor-brief' | 'ministry-command' | 'live-chat'>('teachers');
   
   // Term Progression Simulator (Week 1 to 13)
   const [currentWeek, setCurrentWeek] = useState<number>(8);
@@ -448,6 +450,17 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {/* School Heads Live Chat Quick Link */}
+              <button
+                onClick={() => setActiveReviewTab('live-chat')}
+                id="hq-live-chat-quick-btn"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition cursor-pointer"
+                title="Open Live Chat between School Heads and Ministry Headquarters"
+              >
+                <MessageSquare className="h-3.5 w-3.5 fill-slate-950" />
+                <span>School Heads Live Chat (23 LGAs)</span>
+              </button>
+
               {/* Live Session Telemetry Counter */}
               <button
                 onClick={handleSyncLiveSessions}
@@ -1129,6 +1142,21 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                       2-WAY HUB
                     </span>
                   </button>
+
+                  <button
+                    onClick={() => setActiveReviewTab('live-chat')}
+                    className={`pb-3 px-3 text-xs font-extrabold transition border-b-2 whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+                      activeReviewTab === 'live-chat'
+                        ? 'border-emerald-700 text-emerald-800'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <MessageSquare className="h-4 w-4 text-emerald-600" />
+                    <span>6. Heads of School ↔ Ministry Live Chat & Grievance Console</span>
+                    <span className="bg-emerald-600 text-white font-black text-[9px] px-2 py-0.5 rounded-full animate-pulse">
+                      LIVE CHAT
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -1701,6 +1729,17 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                     currentZone={activeSchool.zone}
                     authenticatedStaffName={authenticatedPasskey?.staffName || 'Prof. Frederick Ikyaan'}
                     authenticatedStaffRole={authenticatedPasskey?.role || 'Hon. Commissioner for Education, Science & Technology'}
+                  />
+                </div>
+              )}
+
+              {/* ==================== TAB 6: HEADS OF SCHOOL ↔ MINISTRY LIVE CHAT CONSOLE ==================== */}
+              {activeReviewTab === 'live-chat' && (
+                <div className="p-4 sm:p-6 space-y-6 animate-in fade-in">
+                  <HeadquartersLiveChat
+                    currentLga={selectedLGA}
+                    activeSchool={activeSchool}
+                    onSelectSchool={(id) => setSelectedSchoolId(id)}
                   />
                 </div>
               )}

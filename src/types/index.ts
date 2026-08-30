@@ -3,6 +3,7 @@ export type NavigationPage =
   | 'state-hq'
   | 'benue-state-hq'
   | 'academic' 
+  | 'attendance'
   | 'lesson-notes'
   | 'admin' 
   | 'organogram' 
@@ -167,6 +168,77 @@ export interface Student {
   isPrefect?: boolean;
   prefectRole?: string;
   avatarUrl?: string;
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
+
+export interface DailyAttendanceEntry {
+  status: AttendanceStatus;
+  arrivalTime?: string; // e.g. "07:42 AM"
+  reason?: string; // e.g. "Malaria illness", "Hospital appointment", "Approved family travel"
+  note?: string;
+  markedAt?: string; // timestamp
+}
+
+export interface TermCalendarDay {
+  date: string; // "YYYY-MM-DD"
+  weekNumber: number; // 1 to 13
+  dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday';
+  dayNumberInTerm: number; // 1 to 65
+  isSchoolDay: boolean;
+  isHoliday?: boolean;
+  holidayName?: string;
+  isMidTermBreak?: boolean;
+  label: string; // e.g. "Mon, Jan 5, 2026"
+}
+
+export interface StudentAttendanceSummary {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  gender: 'Male' | 'Female';
+  currentClass: ClassLevel;
+  house?: string;
+  timesSchoolOpened: number;
+  timesPresent: number;
+  timesAbsent: number;
+  timesLate: number;
+  timesExcused: number;
+  attendancePercentage: number; // 0 - 100%
+  punctualityScore: number; // 0 - 100%
+  consecutivePresentStreak: number;
+  status: 'Outstanding' | 'Satisfactory' | 'Needs Improvement' | 'Critical Warning';
+  unexcusedAbsences: number;
+}
+
+export interface ClassAttendanceSessionSummary {
+  classLevel: ClassLevel;
+  term: Term;
+  academicYear: AcademicYear;
+  termOpenDate: string; // "2026-01-05"
+  termCloseDate: string; // "2026-04-03"
+  statutoryDaysOpened: number; // e.g. 65
+  daysElapsed: number; // e.g. 48
+  daysRemaining: number; // e.g. 17
+  selectedDate: string;
+  selectedWeek: number;
+  totalEnrolledStudents: number;
+  presentToday: number;
+  absentToday: number;
+  lateToday: number;
+  excusedToday: number;
+  todayAttendanceRate: number; // %
+  cumulativeClassAttendanceRate: number; // %
+  boysAttendanceRate: number; // %
+  girlsAttendanceRate: number; // %
+  formMaster: {
+    fullName: string;
+    staffId: string;
+    designation: string;
+    phone: string;
+    email: string;
+    qualifications: string;
+  };
 }
 
 export interface AttendanceRecord {

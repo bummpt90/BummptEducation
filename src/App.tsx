@@ -16,6 +16,7 @@ import { SecondaryCollegePage } from './pages/SecondaryCollegePage';
 import { StudentLeadershipPage } from './pages/StudentLeadershipPage';
 import { LessonNotesPage } from './pages/LessonNotesPage';
 import { BenueStateHQPage } from './pages/BenueStateHQPage';
+import { AttendancePage } from './pages/AttendancePage';
 import { ReportCardModal } from './components/ReportCardModal';
 import { FeeReceiptModal } from './components/FeeReceiptModal';
 import { AiRemarkModal } from './components/AiRemarkModal';
@@ -152,13 +153,13 @@ export function App() {
           />
         )}
 
-        {activePage === 'academic' && (
+        {(activePage === 'academic' || activePage === 'attendance') && (
           <AcademicDashboard
-            key={`academic-${activeSubTab || 'default'}-${activeParam || ''}`}
+            key={`academic-${activeSubTab || (activePage === 'attendance' ? 'attendance' : 'default')}-${activeParam || ''}`}
             students={INITIAL_STUDENTS}
             subjects={INITIAL_SUBJECTS}
             assessments={INITIAL_ASSESSMENTS}
-            initialTab={activeSubTab as any}
+            initialTab={(activePage === 'attendance' ? 'attendance' : activeSubTab) as any}
             initialClass={selectedClass}
             academicYear={academicYear}
             onAcademicYearChange={setAcademicYear}

@@ -952,6 +952,58 @@ const dynamicSubventionExecuted = Math.round(allocatedSubvention * (0.3 + 0.7 * 
               </div>
             </section>
 
+            {/* Section 11: Passkey & Wing Gatekeeper Security */}
+            <section id="section-security" className="space-y-4 pt-6">
+              <div className="flex items-center gap-2 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider">
+                <ShieldCheck className="h-4 w-4" /> Section 11
+              </div>
+              <h2 className="text-2xl font-black text-white">Role-Based Passkey & Wing Gatekeeper Security</h2>
+
+              <div className="p-5 bg-slate-950 rounded-2xl border border-slate-800 space-y-4">
+                <p className="text-sm text-slate-300">
+                  BummptEducation employs cryptographic-style role-based passkeys to safeguard sensitive academic data, bursary records, and the Benue State Ministry of Education Command Portal.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
+                    <span className="font-bold text-purple-300 block">Academic Wing Gatekeeper</span>
+                    <p className="text-slate-400 text-[11px]">Enforces clearance before modifying Continuous Assessment (40/60) scores, submitting broadsheets, or locking terminal grades.</p>
+                  </div>
+                  <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
+                    <span className="font-bold text-amber-300 block">Bursary & Accounts Gatekeeper</span>
+                    <p className="text-slate-400 text-[11px]">Guards financial ledgers, fee invoice generation, and state subvention grants from unauthorized manipulation.</p>
+                  </div>
+                  <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
+                    <span className="font-bold text-emerald-300 block">Benue MOE & SUBEB Gatekeeper</span>
+                    <p className="text-slate-400 text-[11px]">Restricted to authorized executive state officials for statewide audits, teacher deployments, and dispatching live updates.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Section 12: Ministry Directives & Telemetry Ingestion */}
+            <section id="section-directives" className="space-y-4 pt-6">
+              <div className="flex items-center gap-2 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider">
+                <Landmark className="h-4 w-4" /> Section 12
+              </div>
+              <h2 className="text-2xl font-black text-white">Ministry Directives, Live HQ Chat & Telemetry Ingestion</h2>
+
+              <div className="p-5 bg-slate-950 rounded-2xl border border-slate-800 space-y-4">
+                <p className="text-sm text-slate-300">
+                  Headquarters representatives and Heads of Schools communicate seamlessly through the two-way command hub, live school heads dispatch chat, and multi-session telemetry sync.
+                </p>
+
+                <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 text-xs space-y-2 text-slate-300">
+                  <div className="font-bold text-white text-sm">Key Capabilities:</div>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-400">
+                    <li><strong className="text-slate-200">Live School Heads ↔ HQ Chat</strong>: Two-way communication for circular clarifications, teacher requests, facility emergencies, and statutory subvention queries.</li>
+                    <li><strong className="text-slate-200">Direct Commissioner Escalation</strong>: School complaints can be escalated straight to the Executive Governor’s memorandum queue.</li>
+                    <li><strong className="text-slate-200">Statewide Telemetry</strong>: Aggregates real-time continuous assessment scores, TRCN staff punctuality, and bursary subventions across all 23 Benue State LGAs.</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
           </main>
         </div>
       </div>

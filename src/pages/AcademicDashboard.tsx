@@ -46,6 +46,7 @@ import {
   Baby,
   BookOpen,
   School,
+  Calendar,
   HeartHandshake,
   UserCheck,
   Activity,
@@ -85,6 +86,7 @@ import {
   Cell 
 } from 'recharts';
 import { NavigationPage } from '../types';
+import { AttendancePage } from './AttendancePage';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { AccessManagementModal } from '../components/AccessManagementModal';
 import { 
@@ -99,7 +101,7 @@ interface AcademicDashboardProps {
   students: Student[];
   subjects: Subject[];
   assessments: AssessmentScore[];
-  initialTab?: 'reports' | 'domains' | 'broadsheet' | 'scoresheet' | 'analytics' | 'transcript' | 'promotions';
+  initialTab?: 'reports' | 'domains' | 'broadsheet' | 'scoresheet' | 'analytics' | 'transcript' | 'promotions' | 'attendance';
   initialClass?: ClassLevel;
   academicYear?: AcademicYear;
   onAcademicYearChange?: (year: AcademicYear) => void;
@@ -128,7 +130,7 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
   onOpenReportCardModal,
   onOpenAiRemarkModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'reports' | 'domains' | 'broadsheet' | 'scoresheet' | 'analytics' | 'transcript' | 'promotions'>(initialTab || 'reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'domains' | 'broadsheet' | 'scoresheet' | 'analytics' | 'transcript' | 'promotions' | 'attendance'>(initialTab || 'reports');
   const [selectedArm, setSelectedArm] = useState<'All' | SchoolArm>('All');
   const [selectedClass, setSelectedClass] = useState<ClassLevel>(propSelectedClass || initialClass || 'SSS 2 Science');
   const [selectedTerm, setSelectedTerm] = useState<Term>(propSelectedTerm);
@@ -958,6 +960,25 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
         >
           <CheckCircle2 className="h-4 w-4" />
           <span>Promotions & Transitions</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('attendance')}
+          id="tab-attendance-btn"
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'attendance'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+          title="Form Master Daily Attendance Register (KG 1 to SSS 3)"
+        >
+          <Calendar className="h-4 w-4" />
+          <span>Daily Attendance (KG–SSS3)</span>
+          <span className={`rounded px-1.5 py-0.2 text-[9px] font-black uppercase ${
+            activeTab === 'attendance' ? 'bg-blue-800 text-blue-100' : 'bg-amber-100 text-amber-900'
+          }`}>
+            65 Days
+          </span>
         </button>
 
         <button
@@ -2364,6 +2385,19 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 7: FORM MASTER DAILY ATTENDANCE REGISTER ==================== */}
+      {activeTab === 'attendance' && (
+        <div className="space-y-6 animate-in fade-in duration-200" id="academic-attendance-tab-content">
+          <AttendancePage
+            key={`academic-attendance-${selectedClass}-${selectedTerm}-${selectedSession}`}
+            onNavigate={onNavigate}
+            initialClass={selectedClass}
+            initialTerm={selectedTerm}
+            initialAcademicYear={selectedSession}
+          />
         </div>
       )}
 

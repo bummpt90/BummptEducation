@@ -27,7 +27,8 @@ import {
   ChevronRight,
   Landmark,
   Code2,
-  Terminal
+  Terminal,
+  UserCheck
 } from 'lucide-react';
 
 interface FooterProps {
@@ -249,10 +250,25 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
               <li>
                 <button 
                   onClick={() => navigateTo('organogram')} 
-                  className="hover:text-white transition cursor-pointer text-left flex items-center gap-2 group w-full pt-1"
+                  className="hover:text-white transition cursor-pointer text-left flex items-center justify-between group w-full p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-blue-500/50 text-slate-300 hover:text-white mt-1"
                 >
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Central School Organogram</span>
+                  <span className="flex items-center gap-2 font-bold text-xs">
+                    <ChevronRight className="h-3.5 w-3.5 text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+                    <span>Central School Organogram</span>
+                  </span>
+                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">Hierarchy</span>
+                </button>
+              </li>
+              <li>
+                <button 
+                  onClick={() => navigateTo('about')} 
+                  className="hover:text-white transition cursor-pointer text-left flex items-center justify-between group w-full p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 text-slate-300 hover:text-white"
+                >
+                  <span className="flex items-center gap-2 font-bold text-xs">
+                    <UserCheck className="h-3.5 w-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                    <span>About Executive & Vision</span>
+                  </span>
+                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">Profile</span>
                 </button>
               </li>
             </ul>
@@ -272,6 +288,18 @@ export const Footer: React.FC<FooterProps> = ({ setActivePage, onNavigate }) => 
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 group-hover:scale-150 transition-transform"></span>
                   <span className="text-emerald-300 hover:text-white">23 LGAs Institutional Audit (MOE/SUBEB)</span>
+                </button>
+              </li>
+              <li>
+                <button 
+                  onClick={() => navigateTo('academic', 'attendance')} 
+                  className="hover:text-white transition cursor-pointer text-left flex items-center justify-between group w-full p-1.5 rounded-lg bg-amber-950/40 border border-amber-800/60 hover:bg-amber-900/40 text-amber-300 hover:text-white"
+                >
+                  <span className="flex items-center gap-2 font-bold">
+                    <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+                    <span>Daily Attendance Register (KG–SSS3)</span>
+                  </span>
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Academic Wing</span>
                 </button>
               </li>
               <li>
