@@ -55,6 +55,7 @@ import {
 import { NavigationPage } from '../types';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { AccessManagementModal } from '../components/AccessManagementModal';
+import { AccountRequestsManager } from '../components/AccountRequestsManager';
 import {
   getStoredSession,
   saveStoredSession,
@@ -70,7 +71,7 @@ import {
 
 interface AdminDashboardProps {
   students: Student[];
-  initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security';
+  initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests';
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
   onOpenReceiptModal: (payment: FeePayment, student?: Student) => void;
 }
@@ -81,7 +82,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onNavigate,
   onOpenReceiptModal,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security'>(initialTab || 'fees');
+  const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests'>(initialTab || 'fees');
   
   React.useEffect(() => {
     if (initialTab) {
@@ -495,6 +496,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <KeyRound className="h-3.5 w-3.5 text-amber-300" />
             <span>Access Passes & Security</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('account-requests')}
+            id="admin-account-requests-subtab-btn"
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              activeSubTab === 'account-requests' ? 'bg-blue-600 text-white shadow-xs' : 'text-blue-950 bg-blue-100 hover:bg-blue-200 border border-blue-200 font-bold'
+            }`}
+          >
+            <UserCheck className="h-3.5 w-3.5 text-blue-700" />
+            <span>Account Requests</span>
           </button>
         </div>
       </div>
@@ -1430,6 +1442,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ==================== 7. CONTROLLED ACCOUNT REQUESTS ==================== */}
+      {activeSubTab === 'account-requests' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <AccountRequestsManager />
         </div>
       )}
 

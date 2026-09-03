@@ -1,0 +1,265 @@
+/**
+ * BummptEducation — Role-Permission Matrix
+ * 
+ * Maps business operations to fine-grained, enforceable permissions.
+ * Prevents naive `user.role === 'admin'` checks across the server.
+ */
+
+import { AuthRole, Permission } from './types';
+
+const ALL_SYSTEM_PERMISSIONS: Permission[] = [
+  'users.view',
+  'users.create',
+  'users.update',
+  'users.disable',
+  'schools.view',
+  'schools.manage',
+  'staff.view',
+  'staff.create',
+  'staff.update',
+  'staff.delete',
+  'students.view',
+  'students.create',
+  'students.update',
+  'students.delete',
+  'attendance.view',
+  'attendance.mark',
+  'allocations.view',
+  'allocations.manage',
+  'assessments.view',
+  'assessments.enter',
+  'assessments.edit',
+  'results.view',
+  'results.publish',
+  'fees.view',
+  'fees.create',
+  'fees.manage',
+  'invoices.view',
+  'invoices.create',
+  'payments.record',
+  'payments.reconcile',
+  'bursary.view',
+  'bursary.manage',
+  'lesson_notes.view',
+  'lesson_notes.create',
+  'lesson_notes.publish',
+  'admissions.view',
+  'admissions.create',
+  'admissions.manage',
+  'state_hq.view',
+  'state_hq.dispatch',
+  'directives.view',
+  'directives.publish',
+  'system.manage',
+  'account_requests.view',
+  'account_requests.manage',
+];
+
+const ROLE_PERMISSIONS_MAP: Record<AuthRole, Permission[]> = {
+  super_admin: [...ALL_SYSTEM_PERMISSIONS],
+
+  state_officer: [
+    'schools.view',
+    'staff.view',
+    'allocations.view',
+    'state_hq.view',
+    'state_hq.dispatch',
+    'directives.view',
+    'directives.publish',
+    'students.view',
+    'attendance.view',
+    'results.view',
+    'fees.view',
+    'invoices.view',
+    'bursary.view',
+    'admissions.view',
+    'lesson_notes.view',
+    'users.view',
+    'account_requests.view',
+  ],
+
+  principal: [
+    'schools.view',
+    'schools.manage',
+    'staff.view',
+    'staff.create',
+    'staff.update',
+    'allocations.view',
+    'allocations.manage',
+    'users.view',
+    'account_requests.view',
+    'account_requests.manage',
+    'students.view',
+    'students.create',
+    'students.update',
+    'attendance.view',
+    'attendance.mark',
+    'assessments.view',
+    'assessments.enter',
+    'assessments.edit',
+    'results.view',
+    'results.publish',
+    'fees.view',
+    'fees.create',
+    'fees.manage',
+    'invoices.view',
+    'invoices.create',
+    'payments.record',
+    'payments.reconcile',
+    'bursary.view',
+    'bursary.manage',
+    'lesson_notes.view',
+    'lesson_notes.create',
+    'lesson_notes.publish',
+    'admissions.view',
+    'admissions.create',
+    'admissions.manage',
+    'directives.view',
+  ],
+
+  vice_principal: [
+    'schools.view',
+    'staff.view',
+    'allocations.view',
+    'allocations.manage',
+    'students.view',
+    'students.create',
+    'students.update',
+    'attendance.view',
+    'attendance.mark',
+    'assessments.view',
+    'assessments.enter',
+    'assessments.edit',
+    'results.view',
+    'results.publish',
+    'lesson_notes.view',
+    'lesson_notes.create',
+    'lesson_notes.publish',
+    'directives.view',
+  ],
+
+  headmistress: [
+    'schools.view',
+    'staff.view',
+    'allocations.view',
+    'allocations.manage',
+    'students.view',
+    'students.create',
+    'students.update',
+    'attendance.view',
+    'attendance.mark',
+    'assessments.view',
+    'assessments.enter',
+    'assessments.edit',
+    'results.view',
+    'results.publish',
+    'lesson_notes.view',
+    'lesson_notes.create',
+    'lesson_notes.publish',
+    'directives.view',
+  ],
+
+  head_kindergarten: [
+    'schools.view',
+    'staff.view',
+    'allocations.view',
+    'allocations.manage',
+    'students.view',
+    'students.create',
+    'students.update',
+    'attendance.view',
+    'attendance.mark',
+    'assessments.view',
+    'assessments.enter',
+    'assessments.edit',
+    'results.view',
+    'results.publish',
+    'lesson_notes.view',
+    'lesson_notes.create',
+    'directives.view',
+  ],
+
+  exam_officer: [
+    'schools.view',
+    'staff.view',
+    'allocations.view',
+    'students.view',
+    'assessments.view',
+    'assessments.enter',
+    'assessments.edit',
+    'results.view',
+    'results.publish',
+    'directives.view',
+  ],
+
+  bursar: [
+    'schools.view',
+    'staff.view',
+    'students.view',
+    'fees.view',
+    'fees.create',
+    'fees.manage',
+    'invoices.view',
+    'invoices.create',
+    'payments.record',
+    'payments.reconcile',
+    'bursary.view',
+    'bursary.manage',
+    'directives.view',
+  ],
+
+  admissions_officer: [
+    'schools.view',
+    'staff.view',
+    'students.view',
+    'students.create',
+    'students.update',
+    'admissions.view',
+    'admissions.create',
+    'admissions.manage',
+    'directives.view',
+  ],
+
+  teacher: [
+    'schools.view',
+    'staff.view',
+    'allocations.view',
+    'students.view',
+    'attendance.view',
+    'attendance.mark',
+    'assessments.view',
+    'assessments.enter',
+    'lesson_notes.view',
+    'lesson_notes.create',
+    'directives.view',
+  ],
+
+  parent: [
+    'students.view',
+    'results.view',
+    'fees.view',
+    'lesson_notes.view',
+  ],
+
+  student: [
+    'attendance.view',
+    'results.view',
+    'lesson_notes.view',
+  ],
+};
+
+/**
+ * Returns all permissions granted to a given role
+ */
+export function getPermissionsForRole(role: AuthRole): Permission[] {
+  return ROLE_PERMISSIONS_MAP[role] || [];
+}
+
+/**
+ * Checks if a specific role possesses a required permission
+ */
+export function hasPermission(role: AuthRole, requiredPermission: Permission): boolean {
+  if (role === 'super_admin') return true;
+  const permissions = ROLE_PERMISSIONS_MAP[role];
+  return permissions ? permissions.includes(requiredPermission) : false;
+}

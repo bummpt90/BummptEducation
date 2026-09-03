@@ -540,3 +540,37 @@ export function revokePasskey(passkeyId: string): boolean {
   return false;
 }
 
+export function lockAllWings(): void {
+  saveStoredSession({
+    isAcademicUnlocked: false,
+    isBursaryUnlocked: false,
+    isAdminUnlocked: false,
+    isBenueHQUnlocked: false,
+  });
+}
+
+export function unlockAllWings(): void {
+  saveStoredSession({
+    isAcademicUnlocked: true,
+    isBursaryUnlocked: true,
+    isAdminUnlocked: true,
+    isBenueHQUnlocked: true,
+  });
+}
+
+export function updateSecuritySessionStaff(staff: SecuritySession['authenticatedStaff']): void {
+  const current = getStoredSession();
+  saveStoredSession({
+    ...current,
+    authenticatedStaff: staff,
+  });
+}
+
+export function clearSecuritySession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY_SESSION);
+  } catch (e) {
+    console.error('Failed to clear security session from storage', e);
+  }
+}
+

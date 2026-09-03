@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BummptechLogo } from './BummptechLogo';
 import { NavigationPage, AcademicYear, Term, ClassLevel, getSchoolArm } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { 
   GraduationCap, 
   LayoutDashboard, 
@@ -36,7 +37,8 @@ import {
   MapPin,
   Code2,
   Terminal,
-  Database
+  Database,
+  LogOut
 } from 'lucide-react';
 
 export type ActivePage = NavigationPage;
@@ -56,6 +58,7 @@ interface HeaderProps {
   onClassChange?: (classLevel: ClassLevel) => void;
   onOpenSecurityModal?: () => void;
   onOpenParentPortalModal?: () => void;
+  onOpenAuthModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -73,7 +76,9 @@ export const Header: React.FC<HeaderProps> = ({
   onClassChange,
   onOpenSecurityModal,
   onOpenParentPortalModal,
+  onOpenAuthModal,
 }) => {
+  const { currentUser, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [armsDropdownOpen, setArmsDropdownOpen] = useState(false);
@@ -419,6 +424,52 @@ export const Header: React.FC<HeaderProps> = ({
               <KeyRound className="h-3 w-3 text-amber-400" />
               <span className="hidden sm:inline">Passkeys</span>
             </button>
+
+            {/* Production Server Identity / Auth Button */}
+            <button
+              onClick={onOpenAuthModal}
+              id="header-micro-auth-btn"
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border transition text-[10.5px] font-bold cursor-pointer ${
+                isAuthenticated && currentUser
+                  ? 'bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border-emerald-700/60'
+                  : 'bg-blue-950 text-blue-300 hover:bg-blue-900 border-blue-700/60'
+              }`}
+              title={
+                isAuthenticated && currentUser
+                  ? `Authenticated: ${currentUser.fullName} (${currentUser.role})`
+                  : 'Sign in with Production Credentials'
+              }
+            >
+              {isAuthenticated && currentUser ? (
+                <>
+                  <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                  <span className="max-w-[100px] truncate">{currentUser.fullName.split(' ')[0]}</span>
+                  <span className="hidden sm:inline px-1 py-0.2 rounded bg-emerald-900/90 text-[9px] text-emerald-200 border border-emerald-600/40 uppercase">
+                    {currentUser.role.replace('_', ' ')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-3 w-3 text-blue-400" />
+                  <span>Sign In</span>
+                </>
+              )}
+            </button>
+
+            {isAuthenticated && currentUser && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await logout();
+                }}
+                id="header-signout-btn"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-950/80 text-rose-300 hover:bg-rose-900 border border-rose-700/60 transition text-[10.5px] font-bold cursor-pointer"
+                title="Sign Out of Secure Session"
+              >
+                <LogOut className="h-3 w-3 text-rose-400" />
+                <span className="hidden sm:inline">Sign Out</span>
+              </button>
+            )}
 
             <span className="hidden sm:inline text-slate-700">|</span>
 
@@ -878,6 +929,16 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="h-3.5 w-3.5 text-indigo-600" />
               <span>Parent Portal</span>
+            </button>
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenAuthModal?.();
+              }}
+              className="p-2.5 rounded-xl bg-blue-50 text-blue-900 font-bold text-xs border border-blue-200 flex items-center justify-center gap-1.5"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+              <span>{isAuthenticated && currentUser ? currentUser.fullName.split(' ')[0] : 'Sign In'}</span>
             </button>
             <button
               onClick={() => {

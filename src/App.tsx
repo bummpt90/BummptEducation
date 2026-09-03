@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { HomePage } from './pages/HomePage';
@@ -17,11 +17,15 @@ import { StudentLeadershipPage } from './pages/StudentLeadershipPage';
 import { LessonNotesPage } from './pages/LessonNotesPage';
 import { BenueStateHQPage } from './pages/BenueStateHQPage';
 import { AttendancePage } from './pages/AttendancePage';
+import { AuthenticationGateway } from './pages/AuthenticationGateway';
 import { ReportCardModal } from './components/ReportCardModal';
 import { FeeReceiptModal } from './components/FeeReceiptModal';
 import { AiRemarkModal } from './components/AiRemarkModal';
 import { AccessManagementModal } from './components/AccessManagementModal';
 import { ParentReportPortalModal } from './components/ParentReportPortalModal';
+import { AuthLoginModal } from './components/AuthLoginModal';
+import { useAuth } from './context/AuthContext';
+import { GraduationCap, ShieldCheck } from 'lucide-react';
 import { 
   INITIAL_STUDENTS, 
   INITIAL_SUBJECTS, 
@@ -40,10 +44,18 @@ import {
 } from './types';
 
 export function App() {
+  const { currentUser, isAuthenticated, isLoading } = useAuth();
   const [activePage, setActivePage] = useState<NavigationPage>('home');
   const [activeSubTab, setActiveSubTab] = useState<string | undefined>(undefined);
   const [activeParam, setActiveParam] = useState<any>(undefined);
   const [userRole, setUserRole] = useState<UserRole>('principal');
+
+  // Synchronize userRole with verified server identity
+  useEffect(() => {
+    if (currentUser?.role) {
+      setUserRole(currentUser.role as UserRole);
+    }
+  }, [currentUser]);
 
   // Global Academic Context State
   const [academicYear, setAcademicYear] = useState<AcademicYear>('2025/2026');
@@ -68,6 +80,7 @@ export function App() {
 
   const [isGlobalPasskeyModalOpen, setIsGlobalPasskeyModalOpen] = useState(false);
   const [isGlobalParentPortalOpen, setIsGlobalParentPortalOpen] = useState(false);
+  const [isGlobalAuthModalOpen, setIsGlobalAuthModalOpen] = useState(false);
 
   const handleNavigate = (page: NavigationPage, subTab?: string, param?: any) => {
     setActivePage(page);
@@ -116,6 +129,31 @@ export function App() {
     }
   };
 
+  // Loading screen during initial session verification
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white" id="auth-loading-screen">
+        <div className="flex items-center gap-3 mb-4">
+          <GraduationCap className="h-10 w-10 text-blue-400 animate-pulse" />
+          <span className="text-2xl font-black tracking-tight text-white">
+            Bummpt<span className="text-blue-400">Education</span>
+          </span>
+        </div>
+        <div className="w-56 h-1.5 bg-slate-800 rounded-full overflow-hidden mb-3">
+          <div className="w-full h-full bg-blue-500 animate-pulse" />
+        </div>
+        <p className="text-xs text-slate-400 font-semibold tracking-wider uppercase">
+          Verifying Institutional Clearance & Session...
+        </p>
+      </div>
+    );
+  }
+
+  // Authentication Gateway Gatekeeper: Unauthenticated users are directed to the Gateway
+  if (!isAuthenticated) {
+    return <AuthenticationGateway />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white" id="bummpt-education-app">
       {/* Global Navigation Header */}
@@ -132,6 +170,7 @@ export function App() {
         onClassChange={setSelectedClass}
         onOpenSecurityModal={() => setIsGlobalPasskeyModalOpen(true)}
         onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
+        onOpenAuthModal={() => setIsGlobalAuthModalOpen(true)}
       />
 
       {/* Main Dynamic Viewport */}
@@ -295,6 +334,12 @@ export function App() {
           setIsGlobalParentPortalOpen(false);
           handleOpenReportCard(student, reportCard);
         }}
+      />
+
+      {/* Production Identity & RBAC Authentication Modal */}
+      <AuthLoginModal
+        isOpen={isGlobalAuthModalOpen}
+        onClose={() => setIsGlobalAuthModalOpen(false)}
       />
 
       {/* Global Footer */}

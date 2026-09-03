@@ -92,11 +92,23 @@
 
 ---
 
-## 🔒 Security & Access Control Architecture
+## 🔒 Security, Authentication Gateway & RBAC Architecture
 
-- **Wing Access Gatekeeper**: Restricts sensitive administrative areas (Headquarters Command, Bursary, Academic Broadsheets) behind cryptographically validated passkeys.
-- **Passkeys Management Hub**: Generate, revoke, and manage time-limited staff passkeys with custom role privileges (e.g., *Headquarters Executive*, *Principal / Head of School*, *Examination Officer*, *Bursar*).
-- **Role-Based Routing**: Dynamic navigation and state guards preventing unauthorized broadsheet modifications.
+- **Phase 7 Authentication Gateway**: Unauthenticated visitors are directed to the secure gateway featuring verified Login, Controlled Account Requests, and OWASP-compliant Password Recovery.
+- **Controlled Sign-Up Model**: Prospective staff submit registration requests stored in `user_account_requests` with status `PENDING`. Public visitors cannot elevate themselves to privileged roles. School Principals vet and approve campus-level staff, while State Officers oversee statewide requests.
+- **Argon2id & JWT Cryptography**: All passwords hashed using Argon2id (`v=19`, `m=65536`, `t=3`, `p=4`). Sessions are managed via tamper-resistant, HTTP-only JWT cookies.
+- **Multi-Tenant Isolation**: Database queries strictly filter on `school_id` based on user `TenantContext`, preventing cross-school data leakages.
+- **Wing Access Gatekeeper**: Secondary passkey clearance protecting high-sensitivity administrative and continuous assessment wings.
+
+---
+
+## 📚 Project Documentation Suite
+
+Comprehensive technical, infrastructure, and user documentation is available:
+- 📘 **[DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md)** — In-depth architectural patterns, database schemas, RBAC matrix, and API endpoints.
+- 🏛️ **[SYSTEM_DOCUMENTATION.md](./SYSTEM_DOCUMENTATION.md)** — Four-tier system topology, ER diagrams, OWASP security profile, and deployment specifications.
+- 📋 **[USER_OPERATIONAL_GUIDE.md](./USER_OPERATIONAL_GUIDE.md)** — Step-by-step instructions for principals, teachers, bursars, and prospective staff.
+- 📑 **[docs/README.md](./docs/README.md)** — Documentation index and verification roadmap.
 
 ---
 
@@ -155,6 +167,25 @@ BummptEducation/
 ├── tsconfig.json               # TypeScript configuration
 ├── vite.config.ts              # Vite bundler configuration
 └── README.md                   # Project documentation
+```
+
+### Database Architecture (PostgreSQL Foundation)
+
+BummptEducation utilizes an isolated, server-side PostgreSQL database layer designed for relational integrity, 40/60 continuous assessment calculations, bursary transaction records, and multi-school tenancy:
+
+- **Database Client**: `node-postgres` (`pg`) with enterprise connection pooling (`Pool`).
+- **Isolation**: The browser frontend never connects to PostgreSQL directly; all database operations are secured behind Express backend endpoints.
+- **Preview & Fallback Support**: If `DATABASE_URL` is unconfigured, the application runs seamlessly in safe development/preview mode utilizing existing local state without crashing.
+- **Health Diagnostics**: `GET /api/health/db` provides real-time connection status, server latency, and pool statistics without exposing credentials.
+- **Migration System**: Version-controlled SQL migrations located under `src/db/migrations/` track schema evolution deterministically.
+
+#### Environment Configuration
+```env
+# PostgreSQL Connection (Optional in preview mode; required for live DB persistence)
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE_NAME?sslmode=require"
+DATABASE_POOL_SIZE="10"
+DATABASE_SSL="require"
+DEBUG_SQL="false"
 ```
 
 ---
