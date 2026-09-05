@@ -27,8 +27,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-const DEV_DEFAULT_PASSWORD = 'BummptDev2026!';
-
 interface AuthLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -107,7 +105,7 @@ export const AuthLoginModal: React.FC<AuthLoginModalProps> = ({ isOpen, onClose 
 
   const handleSelectDevIdentity = (devId: DevIdentity) => {
     setEmail(devId.email);
-    setPassword(DEV_DEFAULT_PASSWORD);
+    setPassword('');
     setErrorMessage('');
   };
 
@@ -291,7 +289,7 @@ export const AuthLoginModal: React.FC<AuthLoginModalProps> = ({ isOpen, onClose 
                       Development Test Identities (1-Click Fill)
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono">
-                      pwd: {DEV_DEFAULT_PASSWORD}
+                      Click to fill email
                     </span>
                   </div>
 

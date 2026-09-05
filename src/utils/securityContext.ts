@@ -54,220 +54,11 @@ const STORAGE_KEY_SESSION = 'bummpt_security_session_v1';
 const STORAGE_KEY_PARENT_ACCESS = 'bummpt_parent_report_access_v1';
 const STORAGE_KEY_GLOBAL_PUBLISH = 'bummpt_report_cards_published_status_v1';
 
-// Default Master & Departmental Passkeys
-export const DEFAULT_DEPARTMENT_PASSKEYS = {
-  MASTER: 'PRINCIPAL999',
-  ACADEMIC: 'ACADEMIC2026',
-  BURSARY: 'BURSARY2026',
-  ADMIN: 'ADMIN2026',
-  TEACHER: 'TEACHER2026',
-  EXAM_OFFICER: 'EXAM2026',
-  EARLY_YEARS: 'MONTESSORI2026',
-  PRIMARY: 'BASIC2026',
-  BENUE_MOE: 'BENUEMOE2026',
-  COMMISSIONER: 'COMMISSIONER999',
-  SUBEB: 'SUBEB2026',
-  PERMSEC: 'PERMSEC2026',
-  QUALITY_ASSURANCE: 'QA2026',
-  INSPECTOR: 'INSPECTOR2026',
-};
+// Default Master & Departmental Passkeys (Deprecated in Phase 8 - replaced by server-authoritative RBAC)
+export const DEFAULT_DEPARTMENT_PASSKEYS: Record<string, string> = {};
 
-// Initial Seed of Issued Authorization Credentials
-export const INITIAL_ISSUED_PASSKEYS: IssuedPasskey[] = [
-  {
-    id: 'PASS-001',
-    passkey: 'PRINCIPAL999',
-    staffId: 'STF-000',
-    staffName: 'Matthew Ternenge Beeun',
-    role: 'Administrator & Executive Director',
-    wing: 'all',
-    arm: 'All',
-    issuedBy: 'Board of Governors / Executive Council',
-    issuingOffice: 'Office of the Executive Director',
-    issuedDate: '2026-01-05',
-    expiresAt: '2027-01-05',
-    status: 'Active',
-    notes: 'Full institutional super-admin and executive clearance across all wings, financial vaults, and state HQ.',
-    permissions: ['all_wings', 'publish_results', 'audit_financials', 'issue_passkeys', 'override_grades', 'hr_control', 'benue_state_command']
-  },
-  {
-    id: 'PASS-MOE-01',
-    passkey: 'COMMISSIONER999',
-    staffId: 'MOE-EXEC-01',
-    staffName: 'Prof. Frederick Ikyaan',
-    role: 'Hon. Commissioner for Education, Science & Technology',
-    wing: 'benue_moe',
-    arm: 'All',
-    issuedBy: 'Executive Council of Benue State',
-    issuingOffice: 'Cabinet Office, Benue State Government House',
-    issuedDate: '2026-01-02',
-    expiresAt: '2027-12-31',
-    status: 'Active',
-    notes: 'Full constitutional oversight across all 23 LGAs, SUBEB basic schools, secondary colleges, and state subvention funds.',
-    permissions: ['all_23_lgas', 'approve_subventions', 'publish_state_circulars', 'teacher_deployment', 'governor_briefing']
-  },
-  {
-    id: 'PASS-MOE-02',
-    passkey: 'BENUEMOE2026',
-    staffId: 'MOE-HQ-02',
-    staffName: 'Dr. (Mrs.) Grace Adagba',
-    role: 'Executive Chairman, Benue SUBEB',
-    wing: 'benue_moe',
-    arm: 'All',
-    issuedBy: 'Benue State Universal Basic Education Board',
-    issuingOffice: 'Headquarters Directorate, Makurdi',
-    issuedDate: '2026-01-03',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Authorized for Primary & Junior Secondary educational telemetry, UBEC grants, and LGEA school operations across 23 LGAs.',
-    permissions: ['subeb_oversight', 'basic_education_kpis', 'lga_inspectorate', 'publish_state_circulars']
-  },
-  {
-    id: 'PASS-MOE-03',
-    passkey: 'PERMSEC2026',
-    staffId: 'MOE-HQ-03',
-    staffName: 'Barr. Terlumun Iorfa',
-    role: 'Permanent Secretary, Ministry of Education',
-    wing: 'benue_moe',
-    arm: 'All',
-    issuedBy: 'Office of the Head of Service, Benue State',
-    issuingOffice: 'Ministry of Education Secretariat, High-Level Makurdi',
-    issuedDate: '2026-01-04',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Statutory accounting officer and administrative clearance across state secondary schools and technical colleges.',
-    permissions: ['admin_clearance', 'state_budget_reconciliation', 'teacher_posting', 'audit_signoff']
-  },
-  {
-    id: 'PASS-MOE-04',
-    passkey: 'QA2026',
-    staffId: 'MOE-QA-04',
-    staffName: 'Dr. Simon Tor-Anyiin',
-    role: 'Director, Quality Assurance & Standards',
-    wing: 'benue_moe',
-    arm: 'All',
-    issuedBy: 'Benue State Ministry of Education',
-    issuingOffice: 'Department of Inspectorate & Quality Assurance',
-    issuedDate: '2026-01-05',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Statewide curriculum compliance, TRCN accreditation audit, and school rating oversight across 23 LGAs.',
-    permissions: ['quality_assurance', 'school_accreditation', 'inspection_reports', 'issue_queries']
-  },
-  {
-    id: 'PASS-MOE-05',
-    passkey: 'INSPECTOR2026',
-    staffId: 'MOE-ZN-05',
-    staffName: 'Mr. Emmanuel Agba (Zone B Chief Inspector)',
-    role: 'Zonal Chief Inspector of Education (Benue North-West)',
-    wing: 'benue_moe',
-    arm: 'All',
-    issuedBy: 'Directorate of Inspectorate & Field Services',
-    issuingOffice: 'Zonal Inspectorate Office, Gboko / Makurdi',
-    issuedDate: '2026-01-08',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Field telemetry inspection and weekly term progress supervision across Zone B government colleges.',
-    permissions: ['zonal_inspection', 'school_vetting', 'field_telemetry']
-  },
-  {
-    id: 'PASS-002',
-    passkey: 'ACADEMIC2026',
-    staffId: 'STF-SEC-01',
-    staffName: 'Dr. (Mrs.) Grace Nkechi Okafor',
-    role: 'Principal & VP Academic',
-    wing: 'academic',
-    arm: 'secondary',
-    issuedBy: 'Office of the Executive Director',
-    issuingOffice: 'Directorate of Academic Planning & Quality Assurance',
-    issuedDate: '2026-01-10',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Authorized to review, moderate, approve, and publish secondary school terminal broadsheets and report cards.',
-    permissions: ['view_scoresheet', 'edit_scoresheet', 'view_broadsheet', 'publish_results', 'sign_report_cards']
-  },
-  {
-    id: 'PASS-003',
-    passkey: 'EXAM2026',
-    staffId: 'STF-SEC-03',
-    staffName: 'Mr. Emmanuel Agbo',
-    role: 'Senior Exam Officer & Form Tutor (SSS 2 Science)',
-    wing: 'academic',
-    arm: 'secondary',
-    assignedClass: 'SSS 2 Science',
-    issuedBy: 'Dr. (Mrs.) Grace Nkechi Okafor',
-    issuingOffice: 'Examination & Records Board',
-    issuedDate: '2026-01-12',
-    expiresAt: '2026-08-31',
-    status: 'Active',
-    notes: 'Authorized for scoresheet entry, continuous assessment collation, and broadsheet generation.',
-    permissions: ['view_scoresheet', 'edit_scoresheet', 'view_broadsheet', 'evaluate_domains']
-  },
-  {
-    id: 'PASS-004',
-    passkey: 'MONTESSORI2026',
-    staffId: 'STF-EY-01',
-    staffName: 'Mrs. Abigail Folashade Balogun',
-    role: 'Head of Early Childhood & Kindergarten Wing',
-    wing: 'academic',
-    arm: 'kindergarten',
-    issuedBy: 'Office of the Executive Director',
-    issuingOffice: 'Early Childhood Education Board',
-    issuedDate: '2026-01-08',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Academic authorization for Early Years developmental milestone evaluation and progress reports.',
-    permissions: ['view_scoresheet', 'edit_scoresheet', 'evaluate_milestones', 'sign_report_cards']
-  },
-  {
-    id: 'PASS-005',
-    passkey: 'BASIC2026',
-    staffId: 'STF-PRI-01',
-    staffName: 'Mrs. Grace Iveren Shima',
-    role: 'Headmistress (Primary Basic Education)',
-    wing: 'academic',
-    arm: 'primary',
-    issuedBy: 'Office of the Executive Director',
-    issuingOffice: 'Primary Education Directorate',
-    issuedDate: '2026-01-08',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Primary wing academic authorization and Common Entrance preparation records.',
-    permissions: ['view_scoresheet', 'edit_scoresheet', 'view_broadsheet', 'sign_report_cards']
-  },
-  {
-    id: 'PASS-006',
-    passkey: 'BURSARY2026',
-    staffId: 'STF-BUR-01',
-    staffName: 'Mr. Patrick Terver Gbilekaa',
-    role: 'Chief Bursar & Head of Finance',
-    wing: 'bursary',
-    arm: 'All',
-    issuedBy: 'Office of the Executive Director',
-    issuingOffice: 'Bursary & Accounts Directorate',
-    issuedDate: '2026-01-06',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Authorized for school fee billing, receipt issuance, POS reconciliation, and financial auditing.',
-    permissions: ['view_fees', 'issue_receipts', 'edit_fee_schedule', 'export_financial_reports']
-  },
-  {
-    id: 'PASS-007',
-    passkey: 'ADMIN2026',
-    staffId: 'STF-ADM-02',
-    staffName: 'Mrs. Bridget Ngunan Tor',
-    role: 'Registrar & Human Resources Manager',
-    wing: 'admin',
-    arm: 'All',
-    issuedBy: 'Office of the Executive Director',
-    issuingOffice: 'Central Registry & Human Resources',
-    issuedDate: '2026-01-06',
-    expiresAt: '2026-12-31',
-    status: 'Active',
-    notes: 'Authorized for student admissions screening, staff recruitment logs, and institutional attendance.',
-    permissions: ['view_admissions', 'approve_admissions', 'manage_staff', 'issue_access_passes']
-  }
-];
+// Initial Seed of Issued Authorization Credentials (Empty - retired in Phase 8 for server RBAC)
+export const INITIAL_ISSUED_PASSKEYS: IssuedPasskey[] = [];
 
 // Initial Parent Portal Access Seed
 export const INITIAL_PARENT_ACCESS: ParentAccessRecord[] = [
@@ -429,6 +220,31 @@ export function setGlobalReportCardPublicationStatus(status: boolean) {
   }
 }
 
+// Role-Based Access Control Evaluation (Server-Authoritative)
+export function isUserAuthorizedForWing(user: any, targetWing: RestrictedWing): boolean {
+  if (!user) return false;
+  if (user.isSuperAdmin || user.role === 'super_admin') return true;
+  if (user.isStateOfficer || user.role === 'state_officer') {
+    return targetWing === 'benue_moe' || targetWing === 'academic' || targetWing === 'admin' || targetWing === 'all';
+  }
+  if (user.role === 'principal') {
+    return targetWing === 'academic' || targetWing === 'bursary' || targetWing === 'admin';
+  }
+  if (user.role === 'bursar') {
+    return targetWing === 'bursary';
+  }
+  if (user.role === 'teacher' || user.role === 'exam_officer') {
+    return targetWing === 'academic';
+  }
+  if (user.role === 'headmistress') {
+    return targetWing === 'academic' || targetWing === 'admin';
+  }
+  if (user.role === 'administrator') {
+    return targetWing === 'admin' || targetWing === 'bursary';
+  }
+  return false;
+}
+
 // Verification Logic
 export function verifyPasskeyForWing(
   inputPasskey: string,
@@ -447,28 +263,6 @@ export function verifyPasskeyForWing(
   );
 
   if (!matched) {
-    // Check fallback master
-    if (cleanPass === DEFAULT_DEPARTMENT_PASSKEYS.MASTER) {
-      return {
-        success: true,
-        message: 'Master Executive Authorization Approved.',
-        matchedPass: {
-          id: 'MASTER-AUTO',
-          passkey: cleanPass,
-          staffId: 'STF-000',
-          staffName: 'Executive Director',
-          role: 'Administrator',
-          wing: 'all',
-          arm: 'All',
-          issuedBy: 'Board of Governors',
-          issuingOffice: 'Office of the Executive Director',
-          issuedDate: '2026-01-01',
-          expiresAt: '2030-01-01',
-          status: 'Active',
-          permissions: ['all_wings']
-        }
-      };
-    }
     return { success: false, message: 'Invalid or revoked authorization passkey. Access denied.' };
   }
 

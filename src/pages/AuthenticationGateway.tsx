@@ -167,23 +167,11 @@ export const AuthenticationGateway: React.FC = () => {
     }
   };
 
-  // Fast Dev Login shortcut
-  const handleDevLogin = async (identity: DevIdentity) => {
+  // Fast Dev Login identity selector
+  const handleDevLogin = (identity: DevIdentity) => {
     setLoginEmail(identity.email);
-    setLoginPassword('Bummpt2025!');
+    setLoginPassword('');
     setLoginError(null);
-    setLoginLoading(true);
-
-    try {
-      const result = await login(identity.email, 'Bummpt2025!');
-      if (!result.success) {
-        setLoginError(result.message || 'Quick login failed.');
-      }
-    } catch (err: any) {
-      setLoginError(err.message || 'Quick login error.');
-    } finally {
-      setLoginLoading(false);
-    }
   };
 
   // Handle Controlled Sign Up submission

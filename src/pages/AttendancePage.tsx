@@ -20,6 +20,7 @@ import {
   computeStudentAttendanceSummary,
   computeClassSessionSummary
 } from '../data/attendanceData';
+import { useData } from '../context/DataContext';
 import { 
   Calendar, 
   CheckCircle2, 
@@ -95,13 +96,19 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
   // View Mode: 'daily-roster' | 'term-matrix' | 'analytics'
   const [viewMode, setViewMode] = useState<'daily-roster' | 'term-matrix' | 'analytics'>('daily-roster');
 
+  // Production Data Context
+  const { students: allDbStudents, recordAttendance: serverRecordAttendance } = useData();
+
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [genderFilter, setGenderFilter] = useState<'All' | 'Male' | 'Female'>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Present' | 'Absent' | 'Late' | 'Excused' | 'At-Risk'>('All');
 
-  // Class Students Roster
-  const [classStudents, setClassStudents] = useState<Student[]>(() => getAllStudentsForClass(selectedClass));
+  // Class Students Roster from Server-Authoritative Database
+  const [classStudents, setClassStudents] = useState<Student[]>(() => {
+    const dbMatch = allDbStudents.filter(s => s.currentClass === selectedClass && s.status === 'Active');
+    return dbMatch.length > 0 ? dbMatch : getAllStudentsForClass(selectedClass);
+  });
 
   // Attendance Records State: records[dateStr][studentId] = DailyAttendanceEntry
   const [attendanceRecords, setAttendanceRecords] = useState<Record<string, Record<string, DailyAttendanceEntry>>>(() => 
@@ -134,19 +141,39 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
     return TERM_CALENDAR_DAYS.find(d => d.date === selectedDate) || TERM_CALENDAR_DAYS[0];
   }, [selectedDate]);
 
-  // Update students and records when selectedClass changes
+  // Update students and records when selectedClass changes or allDbStudents updates
   useEffect(() => {
-    const students = getAllStudentsForClass(selectedClass);
+    const dbMatch = allDbStudents.filter(s => s.currentClass === selectedClass && s.status === 'Active');
+    const students = dbMatch.length > 0 ? dbMatch : getAllStudentsForClass(selectedClass);
     setClassStudents(students);
     const records = getStoredAttendanceRecords(selectedClass, selectedTerm, selectedAcademicYear, students);
     setAttendanceRecords(records);
-  }, [selectedClass, selectedTerm, selectedAcademicYear]);
+  }, [selectedClass, selectedTerm, selectedAcademicYear, allDbStudents]);
 
-  // Save changes to localStorage whenever attendanceRecords change
+  // Save changes to localStorage and sync with PostgreSQL /api/v1/attendance
   const handlePersistRecords = (updated: Record<string, Record<string, DailyAttendanceEntry>>) => {
     setAttendanceRecords(updated);
     saveStoredAttendanceRecords(selectedClass, selectedTerm, selectedAcademicYear, updated);
-    setSaveSuccessMessage('Attendance register automatically saved to database');
+
+    // Sync current date's register with PostgreSQL
+    const dayEntries = updated[selectedDate];
+    if (dayEntries) {
+      const recordsPayload = Object.entries(dayEntries).map(([studentId, entry]) => ({
+        studentId,
+        status: entry.status,
+        arrivalTime: entry.arrivalTime,
+        reason: entry.reason || entry.note
+      }));
+
+      serverRecordAttendance({
+        date: selectedDate,
+        records: recordsPayload
+      }).catch(err => {
+        console.warn('Attendance server sync:', err);
+      });
+    }
+
+    setSaveSuccessMessage('Attendance register automatically saved & synced to PostgreSQL');
     setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
 

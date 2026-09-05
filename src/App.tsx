@@ -25,12 +25,10 @@ import { AccessManagementModal } from './components/AccessManagementModal';
 import { ParentReportPortalModal } from './components/ParentReportPortalModal';
 import { AuthLoginModal } from './components/AuthLoginModal';
 import { useAuth } from './context/AuthContext';
+import { useData } from './context/DataContext';
 import { GraduationCap, ShieldCheck } from 'lucide-react';
 import { 
-  INITIAL_STUDENTS, 
   INITIAL_SUBJECTS, 
-  INITIAL_ASSESSMENTS, 
-  INITIAL_PAYMENTS 
 } from './data/mockData';
 import { 
   NavigationPage, 
@@ -45,6 +43,7 @@ import {
 
 export function App() {
   const { currentUser, isAuthenticated, isLoading } = useAuth();
+  const { students, assessments } = useData();
   const [activePage, setActivePage] = useState<NavigationPage>('home');
   const [activeSubTab, setActiveSubTab] = useState<string | undefined>(undefined);
   const [activeParam, setActiveParam] = useState<any>(undefined);
@@ -178,8 +177,8 @@ export function App() {
         {activePage === 'home' && (
           <HomePage
             onNavigate={handleNavigate}
-            students={INITIAL_STUDENTS}
-            assessments={INITIAL_ASSESSMENTS}
+            students={students}
+            assessments={assessments}
             onOpenReportCardModal={handleOpenReportCard}
             onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
             onOpenSecurityModal={() => setIsGlobalPasskeyModalOpen(true)}
@@ -195,9 +194,9 @@ export function App() {
         {(activePage === 'academic' || activePage === 'attendance') && (
           <AcademicDashboard
             key={`academic-${activeSubTab || (activePage === 'attendance' ? 'attendance' : 'default')}-${activeParam || ''}`}
-            students={INITIAL_STUDENTS}
+            students={students}
             subjects={INITIAL_SUBJECTS}
-            assessments={INITIAL_ASSESSMENTS}
+            assessments={assessments}
             initialTab={(activePage === 'attendance' ? 'attendance' : activeSubTab) as any}
             initialClass={selectedClass}
             academicYear={academicYear}
@@ -215,7 +214,7 @@ export function App() {
         {activePage === 'admin' && (
           <AdminDashboard
             key={`admin-${activeSubTab || 'default'}`}
-            students={INITIAL_STUDENTS}
+            students={students}
             initialTab={activeSubTab as any}
             onNavigate={handleNavigate}
             onOpenReceiptModal={handleOpenReceipt}

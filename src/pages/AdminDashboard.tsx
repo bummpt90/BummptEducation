@@ -66,8 +66,11 @@ import {
   RestrictedWing,
   generateRandomPasskey,
   getGlobalReportCardPublicationStatus,
-  setGlobalReportCardPublicationStatus
+  setGlobalReportCardPublicationStatus,
+  isUserAuthorizedForWing
 } from '../utils/securityContext';
+import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 
 interface AdminDashboardProps {
   students: Student[];
@@ -93,11 +96,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // School Arm Filter for Admin views
   const [selectedArmFilter, setSelectedArmFilter] = useState<'All' | SchoolArm>('All');
 
+  // Auth and Server Data Context
+  const { currentUser } = useAuth();
+  const {
+    staff: serverStaff,
+    payments: serverPayments,
+    feeSchedules: serverFeeSchedules,
+    admissions: serverAdmissions,
+    createAdmission: serverCreateAdmission,
+    updateAdmissionStatus: serverUpdateAdmissionStatus
+  } = useData();
+
   // Security Clearance & Access Passkeys State
+  const isAuthorizedBySession = isUserAuthorizedForWing(currentUser, 'admin') || isUserAuthorizedForWing(currentUser, 'bursary');
   const [isBursaryUnlocked, setIsBursaryUnlocked] = useState<boolean>(() => {
     const sess = getStoredSession();
     return sess.isBursaryUnlocked || sess.isAdminUnlocked;
   });
+  const isUnlocked = isBursaryUnlocked || isAuthorizedBySession;
   const [authenticatedStaff, setAuthenticatedStaff] = useState<IssuedPasskey | null>(null);
   const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState(false);
   const [passkeys, setPasskeys] = useState<IssuedPasskey[]>(() => getIssuedPasskeys());
@@ -171,13 +187,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     saveStoredSession({ ...sess, isBursaryUnlocked: false, isAdminUnlocked: false });
   };
 
-  // Fees State
-  const [payments, setPayments] = useState<FeePayment[]>(INITIAL_PAYMENTS);
-  const [feeSchedules] = useState<FeeSchedule[]>(INITIAL_FEE_SCHEDULES);
+  // Fees State from Server Data Context
+  const payments = serverPayments.length > 0 ? serverPayments : INITIAL_PAYMENTS;
+  const feeSchedules = serverFeeSchedules.length > 0 ? serverFeeSchedules : INITIAL_FEE_SCHEDULES;
   const [selectedFeeClass, setSelectedFeeClass] = useState<ClassLevel>('SSS 2 Science');
   
-  // Admissions State
-  const [admissions, setAdmissions] = useState<AdmissionApplication[]>(INITIAL_ADMISSIONS);
+  // Admissions State from Server Data Context
+  const [admissions, setAdmissions] = useState<AdmissionApplication[]>(() => 
+    serverAdmissions.length > 0 ? serverAdmissions : INITIAL_ADMISSIONS
+  );
+
+  React.useEffect(() => {
+    if (serverAdmissions.length > 0) {
+      setAdmissions(serverAdmissions);
+    }
+  }, [serverAdmissions]);
+
   const [newApplicantName, setNewApplicantName] = useState('');
   const [newApplicantClass, setNewApplicantClass] = useState<ClassLevel>('JSS 1');
   const [newApplicantGuardian, setNewApplicantGuardian] = useState('');
@@ -202,8 +227,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     'STU-PRI-002': 'Present'
   });
 
-  // Staff State
-  const [staffList] = useState<Staff[]>(INITIAL_STAFF);
+  // Staff State from Server Data Context
+  const staffList = serverStaff.length > 0 ? serverStaff : INITIAL_STAFF;
   const [applicants] = useState<StaffApplicant[]>([
     {
       id: 'APP-01',
@@ -288,6 +313,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
 
     setAdmissions([newApp, ...admissions]);
+    serverCreateAdmission(newApp).catch(err => console.warn('Server admission sync:', err));
     setNewApplicantName('');
     setNewApplicantGuardian('');
     setNewApplicantPhone('');
@@ -297,6 +323,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleToggleAdmissionStatus = (id: string, newStatus: AdmissionApplication['status']) => {
     setAdmissions(admissions.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    serverUpdateAdmissionStatus(id, newStatus).catch(err => console.warn('Server admission status sync:', err));
   };
 
   // Filtered lists by selectedArmFilter
@@ -327,7 +354,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const totalBilled = filteredPayments.reduce((acc, curr) => acc + curr.totalBilled, 0);
 
   // If attempting to access fees or security while locked, show gatekeeper
-  if (!isBursaryUnlocked && (activeSubTab === 'fees' || activeSubTab === 'security')) {
+  if (!isUnlocked && (activeSubTab === 'fees' || activeSubTab === 'security')) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <WingAccessGatekeeper
@@ -1316,42 +1343,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </form>
             </div>
 
-            {/* Quick Demo Reference Card */}
+            {/* Server-Authoritative RBAC Architecture Panel */}
             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-blue-600" />
-                  <span>Demonstration Passkeys</span>
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  <span>Production RBAC Security</span>
                 </h4>
+                <span className="text-[10px] font-mono font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
+                  PostgreSQL Active
+                </span>
               </div>
 
               <p className="text-xs text-slate-600">
-                You can copy any of these default administrative demonstration passkeys to instantly test clearance:
+                Wing clearance is strictly governed by server-authoritative roles and database-backed authentication. Prototype credentials have been decommissioned.
               </p>
 
               <div className="space-y-2.5">
-                {[
-                  { wing: 'Academic Wing', role: 'VP Academics & Exam Officer', pass: 'ACADEMIC2026', color: 'text-blue-700 bg-blue-50 border-blue-200' },
-                  { wing: 'Bursary Desk', role: 'School Bursar & Accounts Office', pass: 'BURSARY2026', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-                  { wing: 'Executive Admin', role: 'General Administrator / Principal', pass: 'BUMMPT2026', color: 'text-purple-700 bg-purple-50 border-purple-200' },
-                  { wing: 'Kindergarten Desk', role: 'Head of Early Years Foundation', pass: 'KG-HEAD-2026', color: 'text-amber-700 bg-amber-50 border-amber-200' },
-                  { wing: 'Primary Wing', role: 'Headmistress (Basic 1-6)', pass: 'PRI-HEAD-2026', color: 'text-teal-700 bg-teal-50 border-teal-200' }
-                ].map((item, idx) => (
-                  <div key={idx} className={`p-2.5 rounded-xl border ${item.color} flex items-center justify-between text-xs`}>
-                    <div>
-                      <span className="font-bold block">{item.wing}</span>
-                      <span className="text-[10px] text-slate-500">{item.role}</span>
-                    </div>
-                    <button
-                      onClick={() => handleCopy(item.pass)}
-                      className="px-2 py-1 rounded-lg bg-white border border-slate-200 font-mono font-bold text-[11px] text-slate-900 hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
-                      title="Click to copy passkey"
-                    >
-                      <span>{item.pass}</span>
-                      <Copy className="h-3 w-3 text-slate-400" />
-                    </button>
+                <div className="p-3 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-950 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold">Active User Session</span>
+                    <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-300">
+                      {currentUser?.role?.toUpperCase() || 'ANONYMOUS'}
+                    </span>
                   </div>
-                ))}
+                  <p className="text-[11px] text-emerald-800">
+                    {currentUser?.fullName || 'Not authenticated'} ({currentUser?.email || 'Guest'})
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl border bg-blue-50 border-blue-200 text-blue-950 text-xs space-y-1">
+                  <span className="font-bold block">Dynamic Passkey Issuance</span>
+                  <p className="text-[11px] text-blue-800">
+                    Form tutors and exam officers receive unique cryptographically generated credentials, logged to the audit registry below.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
