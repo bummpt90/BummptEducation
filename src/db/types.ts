@@ -258,11 +258,14 @@ export interface ClassSubjectAllocationDbEntity extends BaseDbEntity {
  * Daily Attendance Entity in PostgreSQL
  */
 export interface DailyAttendanceDbEntity extends BaseDbEntity {
+  organization_id?: string | null;
   school_id: string;
   student_id: string;
   class_id: string;
   academic_session_id?: string | null;
   term_id: string;
+  academic_term_id?: string | null;
+  enrollment_id?: string | null;
   attendance_date: string | Date;
   day_number_in_term?: number | null;
   status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | string;
@@ -275,6 +278,30 @@ export interface DailyAttendanceDbEntity extends BaseDbEntity {
   student_name?: string;
   admission_number?: string;
   class_name?: string;
+  class_level?: string;
+  class_arm?: string;
+  term_name?: string;
+  session_name?: string;
+  created_at?: Date | string;
+  updated_at?: Date | string;
+}
+
+/**
+ * Attendance Security & Operations Audit Log Entity
+ */
+export interface AttendanceAuditLogDbEntity extends BaseDbEntity {
+  organization_id?: string | null;
+  school_id: string;
+  attendance_id?: string | null;
+  student_id?: string | null;
+  class_id?: string | null;
+  action: 'RECORDED' | 'BULK_RECORDED' | 'MODIFIED' | 'CORRECTION' | 'UNAUTHORIZED_ATTEMPT' | string;
+  performed_by_user_id?: string | null;
+  user_role?: string | null;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  details?: Record<string, any> | null;
+  created_at: Date | string;
 }
 
 /**

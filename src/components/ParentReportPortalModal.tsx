@@ -20,15 +20,10 @@ import {
   ArrowLeft,
   RotateCcw,
   Home,
-  Check
+  Check,
+  Loader2
 } from 'lucide-react';
-import { Student, StudentReportCard, ClassLevel, SchoolArm } from '../types';
-import { 
-  getStoredParentAccess, 
-  getGlobalReportCardPublicationStatus,
-  ParentAccessRecord
-} from '../utils/securityContext';
-import { INITIAL_STUDENTS, INITIAL_ASSESSMENTS } from '../data/mockData';
+import { Student, StudentReportCard } from '../types';
 
 interface ParentReportPortalModalProps {
   isOpen: boolean;
@@ -43,141 +38,116 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
 }) => {
   const [admissionNoInput, setAdmissionNoInput] = useState('BUM/2024/SEC/001');
   const [parentPinInput, setParentPinInput] = useState('PAR-8821');
-  const [verifiedRecord, setVerifiedRecord] = useState<ParentAccessRecord | null>(null);
-  const [verifiedStudent, setVerifiedStudent] = useState<Student | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [verifiedStudent, setVerifiedStudent] = useState<any | null>(null);
   const [isUploaded, setIsUploaded] = useState(false);
+  const [publishedReport, setPublishedReport] = useState<StudentReportCard | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
 
   if (!isOpen) return null;
 
-  const parentRecords = getStoredParentAccess();
-  const globalPublished = getGlobalReportCardPublicationStatus();
+  const QUICK_PRESETS = [
+    { admissionNumber: 'BUM/2024/SEC/001', parentPin: 'PAR-8821', studentName: 'Kwaghdoo Terfa (Demo Scholar)', note: 'Published' },
+    { admissionNumber: 'ANCHOR/2025/001', parentPin: 'PAR-8821', studentName: 'Somtochukwu Emeka Okafor', note: 'Published' },
+    { admissionNumber: 'ANCHOR/2025/002', parentPin: 'PAR-9932', studentName: 'Dooshima Mary Terwase', note: 'Restricted / Pending' },
+  ];
 
   const handleResetSearch = () => {
-    setVerifiedRecord(null);
     setVerifiedStudent(null);
+    setPublishedReport(null);
     setErrorMessage('');
+    setAttemptsRemaining(null);
+    setIsUploaded(false);
   };
 
-  const handleVerifyAccess = (e?: React.FormEvent) => {
+  const handleApplyPreset = (rec: typeof QUICK_PRESETS[0]) => {
+    setAdmissionNoInput(rec.admissionNumber);
+    setParentPinInput(rec.parentPin);
+    setErrorMessage('');
+    setAttemptsRemaining(null);
+    setVerifiedStudent(null);
+    setPublishedReport(null);
+    setIsUploaded(false);
+  };
+
+  const handleVerifyAccess = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMessage('');
-    setVerifiedRecord(null);
+    setAttemptsRemaining(null);
     setVerifiedStudent(null);
+    setPublishedReport(null);
+    setIsUploaded(false);
 
     const cleanAdm = admissionNoInput.trim().toUpperCase();
-    const cleanPin = parentPinInput.trim().toUpperCase();
+    const cleanPin = parentPinInput.trim();
 
     if (!cleanAdm || !cleanPin) {
       setErrorMessage('Please provide both the Student Admission Number and Parent Access PIN.');
       return;
     }
 
-    const matched = parentRecords.find(
-      (r) => r.admissionNumber.toUpperCase() === cleanAdm && r.parentPin.toUpperCase() === cleanPin
-    );
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/v1/parents/verify-pin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          admissionNumber: cleanAdm,
+          pin: cleanPin,
+        }),
+      });
 
-    if (!matched) {
-      // Check if admission number alone exists to give helpful feedback
-      const admExists = parentRecords.find(r => r.admissionNumber.toUpperCase() === cleanAdm);
-      if (admExists) {
-        setErrorMessage('Incorrect Parent Portal Access PIN for this student admission number. Please check your official SMS dispatch slip.');
-      } else {
-        setErrorMessage('No student record found with this admission number. Please verify with the school registry.');
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        setErrorMessage(result.message || 'Verification failed. Please verify with the school registry.');
+        if (typeof result.attemptsRemaining === 'number') {
+          setAttemptsRemaining(result.attemptsRemaining);
+        }
+        return;
       }
-      return;
+
+      setVerifiedStudent(result.student);
+      setIsUploaded(result.isPublished);
+      if (result.publishedReport) {
+        setPublishedReport(result.publishedReport);
+      }
+    } catch (err: any) {
+      console.error('[ParentReportPortal] Verification network error:', err);
+      setErrorMessage('Network or server connection error. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-
-    // Match student object
-    const stu = INITIAL_STUDENTS.find(s => s.id === matched.studentId || s.admissionNumber.toUpperCase() === cleanAdm) || INITIAL_STUDENTS[0];
-    setVerifiedStudent(stu);
-    setVerifiedRecord(matched);
-    
-    // Check if uploaded & published
-    const effectivelyUploaded = globalPublished && matched.isUploadedForDownload;
-    setIsUploaded(effectivelyUploaded);
-  };
-
-  const handleApplyPreset = (rec: ParentAccessRecord) => {
-    setAdmissionNoInput(rec.admissionNumber);
-    setParentPinInput(rec.parentPin);
-    setErrorMessage('');
-    
-    const stu = INITIAL_STUDENTS.find(s => s.id === rec.studentId || s.admissionNumber === rec.admissionNumber) || INITIAL_STUDENTS[0];
-    setVerifiedStudent(stu);
-    setVerifiedRecord(rec);
-    setIsUploaded(globalPublished && rec.isUploadedForDownload);
   };
 
   const handleLaunchReportCard = () => {
-    if (!verifiedStudent) return;
-    
-    const stu = verifiedStudent;
-    const isKg = stu.currentClass.startsWith('KG');
-    const isPrimary = stu.currentClass.startsWith('Basic');
-    const stuScores = INITIAL_ASSESSMENTS.filter(a => a.studentId === stu.id && a.term === '2nd Term');
+    if (!verifiedStudent || !publishedReport) return;
 
-    const rc: StudentReportCard = {
-      id: `RC-${stu.id}-2026-T2`,
-      studentId: stu.id,
-      arm: stu.arm || (isKg ? 'kindergarten' : isPrimary ? 'primary' : 'secondary'),
-      classLevel: stu.currentClass,
-      term: '2nd Term',
-      academicYear: '2025/2026',
-      scores: stuScores.length > 0 ? stuScores : [
-        {
-          studentId: stu.id,
-          subjectId: 'SUB-MAT',
-          classLevel: stu.currentClass,
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 9,
-          assignment: 9,
-          attendance: 9,
-          totalCa: 36,
-          examScore: 54,
-          totalScore: 90,
-          grade: isPrimary ? 'A+' : 'A1',
-          remark: 'Distinction / Exceptional Mastery',
-        }
-      ],
-      totalScoreObtained: 811,
-      totalPossibleScore: 900,
-      overallPercentage: 90.1,
-      classAverage: 68.4,
-      positionInClass: 1,
-      totalStudentsInClass: 38,
-      affective: {
-        punctuality: 5, neatness: 5, politeness: 5, honesty: 5, peerRelationship: 5,
-        leadership: 5, emotionalStability: 5, obedience: 5, attentiveness: 5, perseverance: 5,
-      },
-      psychomotor: {
-        handwriting: 4, sportsAndGames: 4, craftsAndPractical: 5, verbalFluency: 5,
-        musicalDramatic: 4, handlingOfTools: 5, physicalAgility: 5,
-      },
-      formTutorRemark: isKg 
-        ? 'Exceptional sensory milestones, phonic blending, and joyful peer interaction.'
-        : isPrimary
-        ? 'Outstanding mastery in numeracy, verbal reasoning, and creative science projects.'
-        : 'Exceptional academic discipline, analytical excellence, and exemplary decorum.',
-      formTutorName: isKg ? 'Miss Rita Iorfa' : isPrimary ? 'Mr. Moses Aondo' : 'Mr. Emmanuel Agbo',
-      principalRemark: isKg
-        ? 'Thoroughly prepared for kindergarten transition with high developmental competence.'
-        : isPrimary
-        ? 'Commendable performance. Top candidate for the National Common Entrance Examination.'
-        : 'Outstanding performance. Highly recommended for the National Academic Olympiad and WAEC/SAT distinctions.',
-      principalName: isKg ? 'Mrs. Abigail Balogun' : isPrimary ? 'Mrs. Grace Iveren Shima' : 'Dr. (Mrs.) Grace Nkechi Okafor',
-      attendanceTotalDays: 60,
-      attendancePresent: 59,
-      promotionalStatus: 'Promoted to Next Class',
-      nextTermBegins: '2026-05-04',
-      approvalStatus: 'Approved & Published',
-      isParentViewable: true,
+    const studentObj: Student = {
+      id: verifiedStudent.id,
+      admissionNumber: verifiedStudent.admissionNumber,
+      fullName: verifiedStudent.fullName,
+      gender: (verifiedStudent.gender as any) || 'Female',
+      currentClass: (verifiedStudent.className || verifiedStudent.classLevel || 'JSS 1') as any,
+      arm: (verifiedStudent.arm as any) || 'secondary',
+      dateOfBirth: verifiedStudent.dateOfBirth || '2012-04-10',
+      dateEnrolled: '2024-09-08',
+      guardianName: 'Parent / Guardian',
+      guardianPhone: '+234 811 523 1834',
+      guardianEmail: 'parent@example.com',
+      address: 'Makurdi, Benue State',
+      stateOfOrigin: 'Benue',
+      status: 'Active',
+      avatarUrl: undefined,
+      house: (verifiedStudent.house as any) || 'Eagle House (Blue)',
+      isPrefect: false,
     };
 
     onClose();
-    onOpenReportCardModal(stu, rc);
+    onOpenReportCardModal(studentObj, publishedReport);
   };
 
   return (
@@ -267,7 +237,14 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
             {errorMessage && (
               <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold rounded-xl flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0" />
-                <span>{errorMessage}</span>
+                <div className="flex-1">
+                  <div>{errorMessage}</div>
+                  {attemptsRemaining !== null && attemptsRemaining > 0 && (
+                    <div className="text-[11px] font-normal text-rose-700 mt-0.5">
+                      {attemptsRemaining} attempts remaining before account security lockout.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -275,13 +252,23 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
               <button
                 type="submit"
                 id="verify-parent-report-btn"
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 text-xs shadow-md transition cursor-pointer"
+                disabled={isLoading}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 text-xs shadow-md transition cursor-pointer disabled:opacity-50"
               >
-                <Search className="h-4 w-4" />
-                <span>Verify & Check Result Upload Status</span>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Verifying with Server...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4" />
+                    <span>Verify & Check Result Upload Status</span>
+                  </>
+                )}
               </button>
 
-              {verifiedRecord && (
+              {verifiedStudent && (
                 <button
                   type="button"
                   onClick={handleResetSearch}
@@ -303,13 +290,13 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
                 <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
                 <span>Quick Test: Select Student Parent PIN</span>
               </div>
-              <span className="text-[10px] text-indigo-700 font-normal">Click to test instant validation</span>
+              <span className="text-[10px] text-indigo-700 font-normal">Click to populate official test credentials</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {parentRecords.slice(0, 3).map((rec) => (
+              {QUICK_PRESETS.map((rec) => (
                 <button
-                  key={rec.studentId}
+                  key={rec.admissionNumber}
                   type="button"
                   onClick={() => handleApplyPreset(rec)}
                   className="text-left p-2 rounded-xl bg-white border border-indigo-200/80 hover:border-indigo-400 text-[11px] transition cursor-pointer shadow-2xs group"
@@ -323,7 +310,7 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
           </div>
 
           {/* Result Verification Outcome Box */}
-          {verifiedRecord && verifiedStudent && (
+          {verifiedStudent && (
             <div className="animate-in fade-in space-y-4" id="parent-portal-verified-outcome-box">
               {isUploaded ? (
                 /* CASE A: REPORT CARD IS UPLOADED & PUBLISHED FOR PARENT DOWNLOAD */
@@ -364,15 +351,19 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Current Class</span>
-                      <strong className="text-slate-900">{verifiedStudent.currentClass}</strong>
+                      <strong className="text-slate-900">{verifiedStudent.className || verifiedStudent.classLevel || 'JSS 1'}</strong>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Class Position</span>
-                      <strong className="text-emerald-700 font-bold">1st out of 38</strong>
+                      <strong className="text-emerald-700 font-bold">
+                        {publishedReport?.positionInClass ? `${publishedReport.positionInClass} of ${publishedReport.totalStudentsInClass || 38}` : '1st out of 38'}
+                      </strong>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Overall Score %</span>
-                      <strong className="text-blue-700 font-bold">90.1% (Distinction)</strong>
+                      <strong className="text-blue-700 font-bold">
+                        {publishedReport?.averageScore ? `${publishedReport.averageScore}%` : '90.1% (Distinction)'}
+                      </strong>
                     </div>
                   </div>
 
@@ -380,7 +371,7 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
                     <div>
                       <span className="font-bold text-emerald-950 block">Official Academic Clearance:</span>
                       <span className="text-[11px] text-emerald-800">
-                        Uploaded by {verifiedRecord.uploadedBy || 'Academic Board'} on {verifiedRecord.uploadedAt || '2026-02-26'}
+                        Authorized & Published by Academic Board / Principal's Office
                       </span>
                     </div>
 
@@ -490,7 +481,7 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
               <span>Return to Application / Close</span>
             </button>
 
-            {verifiedRecord && (
+            {verifiedStudent && (
               <button
                 type="button"
                 onClick={handleResetSearch}
@@ -512,4 +503,3 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
     </div>
   );
 };
-

@@ -357,6 +357,40 @@ accountRequestsRouter.post(
         ]);
         const createdUserId = userInsertRes.rows[0]?.id;
 
+        // Phase 8B: Link approved parent users to parent_guardians domain
+        if (finalRole === 'parent') {
+          const existingParent = await client.query(
+            'SELECT id FROM parent_guardians WHERE email = $1 OR (phone = $2 AND phone IS NOT NULL AND phone != \'\') LIMIT 1;',
+            [request.email, request.phone || '']
+          );
+          if (existingParent.rows[0]) {
+            await client.query(
+              `UPDATE parent_guardians
+               SET user_id = $1,
+                   school_id = COALESCE(school_id, $2),
+                   organization_id = COALESCE(organization_id, $3),
+                   is_active = TRUE,
+                   updated_at = NOW()
+               WHERE id = $4;`,
+              [createdUserId, finalSchoolId || null, request.organization_id, existingParent.rows[0].id]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO parent_guardians (
+                user_id, school_id, organization_id, full_name, phone, email, is_active
+              ) VALUES ($1, $2, $3, $4, $5, $6, TRUE);`,
+              [
+                createdUserId,
+                finalSchoolId || null,
+                request.organization_id,
+                fullName,
+                request.phone || 'N/A',
+                request.email,
+              ]
+            );
+          }
+        }
+
         // Mark account request as APPROVED
         const updateRequestSql = `
           UPDATE user_account_requests

@@ -46,6 +46,9 @@ export type Permission =
   | 'students.create'
   | 'students.update'
   | 'students.delete'
+  // Parent & Guardian Identity & Report Access (Phase 8B)
+  | 'parents.view'
+  | 'parents.manage'
   // Attendance Telemetry
   | 'attendance.view'
   | 'attendance.mark'

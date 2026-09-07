@@ -21,3 +21,5 @@ export * from './invoice.repository';
 export * from './payment.repository';
 export * from './bursary.repository';
 export * from './financialAudit.repository';
+export * from './parent.repository';
+export * from './reportCard.repository';

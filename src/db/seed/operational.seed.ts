@@ -16,6 +16,7 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction, closeDatabasePool } from '../index';
 import { StaffRepository } from '../repositories/staff.repository';
 import { StudentRepository } from '../repositories/student.repository';
+import { hashPassword } from '../../auth/password';
 
 export interface OperationalSeedReport {
   staffCreated: number;
@@ -399,6 +400,127 @@ export async function seedOperationalFoundation(externalClient?: PoolClient): Pr
         );
         studentsCount++;
         if (enrollment) enrollmentsCount++;
+      }
+    }
+
+    // =========================================================================
+    // 6. Seed Phase 8B Parent Guardians, Links, and Argon2id Hashed Access PINs
+    // =========================================================================
+    const parentUserRes = await client.query<{ id: string }>(
+      `SELECT id FROM users WHERE email = 'parent@anchor.bummpt.edu.ng' LIMIT 1;`
+    );
+    const parentUser = parentUserRes.rows[0];
+
+    const student1Res = await client.query<{ id: string; school_id: string; current_class_id: string }>(
+      `SELECT id, school_id, current_class_id FROM students WHERE admission_number = 'ANCHOR/2025/001' LIMIT 1;`
+    );
+    const student1 = student1Res.rows[0];
+
+    if (parentUser && student1) {
+      // 1. Upsert Parent Guardian
+      const parentGuardianRes = await client.query<{ id: string }>(
+        `INSERT INTO parent_guardians (
+          user_id, school_id, organization_id, full_name, phone, email, is_active
+        ) VALUES ($1, $2, $3, 'Engr. Emeka Okafor (Parent Guardian)', '+234 803 300 0001', 'parent@anchor.bummpt.edu.ng', TRUE)
+        ON CONFLICT (user_id) DO UPDATE SET
+          school_id = EXCLUDED.school_id,
+          organization_id = EXCLUDED.organization_id,
+          is_active = TRUE
+        RETURNING id;`,
+        [parentUser.id, schoolA.id, schoolA.organization_id]
+      );
+      const parentGuardianId = parentGuardianRes.rows[0]?.id;
+
+      // 2. Link Parent to Student 1
+      if (parentGuardianId) {
+        await client.query(
+          `INSERT INTO parent_student_links (
+            parent_id, student_id, school_id, organization_id, relationship, is_primary_guardian, status
+          ) VALUES ($1, $2, $3, $4, 'Father', TRUE, 'Active')
+          ON CONFLICT (parent_id, student_id) DO UPDATE SET
+            status = 'Active',
+            school_id = EXCLUDED.school_id;`,
+          [parentGuardianId, student1.id, schoolA.id, schoolA.organization_id]
+        );
+      }
+
+      // 3. Issue Argon2id hashed PIN for student 1 ('PAR-8821')
+      const pinHash = await hashPassword('PAR-8821');
+      await client.query(
+        `INSERT INTO parent_access_pins (
+          student_id, parent_phone, pin_hash, school_id, organization_id, parent_id, failed_attempts, is_active
+        ) VALUES ($1, $2, $3, $4, $5, $6, 0, TRUE)
+        ON CONFLICT (student_id, parent_phone) DO UPDATE SET
+          pin_hash = EXCLUDED.pin_hash,
+          failed_attempts = 0,
+          locked_until = NULL,
+          is_active = TRUE;`,
+        [student1.id, '+234 803 300 0001', pinHash, schoolA.id, schoolA.organization_id, parentGuardianId || null]
+      );
+
+      // 4. Ensure published report card exists in report_cards for student 1
+      if (currentTerm) {
+        await client.query(
+          `INSERT INTO report_cards (
+            school_id, student_id, class_id, term_id,
+            total_score_obtained, total_possible_score, overall_percentage,
+            position_in_class, total_students_in_class, class_average,
+            approval_status, is_parent_viewable, published_at
+          ) VALUES ($1, $2, $3, $4, 811.0, 900.0, 90.1, 1, 38, 68.4, 'Approved & Published', TRUE, NOW())
+          ON CONFLICT (student_id, term_id) DO UPDATE SET
+            approval_status = 'Approved & Published',
+            is_parent_viewable = TRUE,
+            published_at = NOW();`,
+          [schoolA.id, student1.id, student1.current_class_id, currentTerm.id]
+        );
+      }
+    }
+
+    // Also support alias admission number BUM/2024/SEC/001 linking to student 1 or create dedicated student
+    const aliasStudentRes = await client.query<{ id: string; school_id: string; current_class_id: string }>(
+      `SELECT id, school_id, current_class_id FROM students WHERE admission_number = 'BUM/2024/SEC/001' LIMIT 1;`
+    );
+    let aliasStudent = aliasStudentRes.rows[0];
+    if (!aliasStudent) {
+      const inserted = await client.query<{ id: string; school_id: string; current_class_id: string }>(
+        `INSERT INTO students (
+          school_id, organization_id, admission_number, first_name, surname, full_name,
+          gender, date_of_birth, current_class_id, arm, status
+        ) VALUES ($1, $2, 'BUM/2024/SEC/001', 'Kwaghdoo', 'Terfa', 'Kwaghdoo Terfa (Demo Scholar)', 'Female', '2012-04-10', $3, 'secondary', 'Active')
+        RETURNING id, school_id, current_class_id;`,
+        [schoolA.id, schoolA.organization_id, jss1ClassA.id]
+      );
+      aliasStudent = inserted.rows[0];
+    }
+
+    if (aliasStudent) {
+      const pinHash = await hashPassword('PAR-8821');
+      await client.query(
+        `INSERT INTO parent_access_pins (
+          student_id, parent_phone, pin_hash, school_id, organization_id, failed_attempts, is_active
+        ) VALUES ($1, $2, $3, $4, $5, 0, TRUE)
+        ON CONFLICT (student_id, parent_phone) DO UPDATE SET
+          pin_hash = EXCLUDED.pin_hash,
+          failed_attempts = 0,
+          locked_until = NULL,
+          is_active = TRUE;`,
+        [aliasStudent.id, '+234 811 523 1834', pinHash, schoolA.id, schoolA.organization_id]
+      );
+
+      if (currentTerm) {
+        await client.query(
+          `INSERT INTO report_cards (
+            school_id, student_id, class_id, term_id,
+            total_score_obtained, total_possible_score, overall_percentage,
+            position_in_class, total_students_in_class, class_average,
+            approval_status, is_parent_viewable, published_at
+          ) VALUES ($1, $2, $3, $4, 811.0, 900.0, 90.1, 1, 38, 68.4, 'Approved & Published', TRUE, NOW())
+          ON CONFLICT (student_id, term_id) DO UPDATE SET
+            approval_status = 'Approved & Published',
+            is_parent_viewable = TRUE,
+            published_at = NOW();`,
+          [schoolA.id, aliasStudent.id, aliasStudent.current_class_id, currentTerm.id]
+        );
       }
     }
 

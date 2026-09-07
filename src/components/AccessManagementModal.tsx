@@ -179,6 +179,16 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
     setParentRecords(updated);
     saveStoredParentAccess(updated);
 
+    // Synchronize with server-authoritative publication API
+    fetch('/api/v1/results/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isParentViewable: next,
+        approvalStatus: next ? 'Approved & Published' : 'Draft',
+      }),
+    }).catch((err) => console.warn('[AccessManagementModal] Server publication sync notice:', err));
+
     showToast(next ? 'All terminal report cards uploaded & published for Parent Portal download!' : 'Parent Portal report card downloads restricted to Draft mode.');
   };
 

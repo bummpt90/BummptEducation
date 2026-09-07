@@ -15,6 +15,8 @@
     "test:phase5": "tsx tests/phase5_academic_operations.test.ts",
     "test:phase6": "tsx tests/phase6_financial_operations.test.ts",
     "test:phase7": "tsx tests/phase7_auth_gateway.test.ts",
+    "test:phase8a": "tsx tests/phase8a.data-boundary.test.ts",
+    "test:phase8b": "tsx tests/phase8b.parent-access.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

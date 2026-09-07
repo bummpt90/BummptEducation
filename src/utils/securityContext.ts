@@ -180,6 +180,12 @@ export function saveStoredSession(session: SecuritySession) {
   }
 }
 
+/**
+ * @deprecated [Phase 8B Server Authority]: Parent verification and PIN authentication are now
+ * server-authoritative via `/api/v1/parents/verify-pin` backed by PostgreSQL tables `parent_guardians`,
+ * `parent_student_links`, and `parent_access_pins`. This localStorage store is retained strictly as
+ * a fallback for legacy UI demonstration rosters and must not be used for production authorization.
+ */
 export function getStoredParentAccess(): ParentAccessRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY_PARENT_ACCESS);
@@ -192,6 +198,9 @@ export function getStoredParentAccess(): ParentAccessRecord[] {
   return INITIAL_PARENT_ACCESS;
 }
 
+/**
+ * @deprecated [Phase 8B Server Authority]: Parent access records are now managed server-side in PostgreSQL.
+ */
 export function saveStoredParentAccess(records: ParentAccessRecord[]) {
   try {
     localStorage.setItem(STORAGE_KEY_PARENT_ACCESS, JSON.stringify(records));

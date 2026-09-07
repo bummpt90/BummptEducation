@@ -22,6 +22,7 @@ import { invoicesRouter } from './src/api/v1/invoices.routes';
 import { paymentsRouter } from './src/api/v1/payments.routes';
 import { bursaryRouter } from './src/api/v1/bursary.routes';
 import { financialAuditRouter } from './src/api/v1/financialAudit.routes';
+import { parentsRouter } from './src/api/v1/parents.routes';
 import { devAuthCompatibility, requirePermission, optionalAuthenticate } from './src/auth/middleware';
 import { seedDevelopmentAuthIdentities } from './src/db/seed/auth.seed';
 import { seedOperationalFoundation } from './src/db/seed/operational.seed';
@@ -68,6 +69,9 @@ async function startServer() {
   app.use('/api/v1/payments', paymentsRouter);
   app.use('/api/v1/bursary', bursaryRouter);
   app.use('/api/v1/financial/audit', financialAuditRouter);
+
+  // Parent & Guardian Identity & Report Access API (v1 - Phase 8B)
+  app.use('/api/v1/parents', parentsRouter);
 
   // General server health check
   app.get('/api/health', (req, res) => {

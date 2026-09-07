@@ -2,13 +2,14 @@
  * BummptEducation — Attendance Repository
  * 
  * Provides server-authoritative tracking for student daily attendance,
- * class registers, attendance analytics, and multi-tenant isolation.
+ * class registers, attendance analytics, historical student trajectory preservation,
+ * and multi-tenant isolation.
  */
 
 import type { PoolClient } from 'pg';
 import { BaseRepository } from './base.repository';
 import { query, withTransaction } from '../client';
-import type { DailyAttendanceDbEntity, QueryOptions } from '../types';
+import type { DailyAttendanceDbEntity, AttendanceAuditLogDbEntity, QueryOptions } from '../types';
 
 export const VALID_ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'] as const;
 export type AttendanceStatus = typeof VALID_ATTENDANCE_STATUSES[number];
@@ -25,6 +26,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
   async recordAttendance(
     data: {
       schoolId: string;
+      organizationId?: string | null;
       studentId: string;
       classId: string;
       termId: string;
@@ -87,7 +89,29 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       throw new Error('SESSION_TERM_MISMATCH: Term does not belong to the specified academic session.');
     }
 
-    // 4. Check for duplicate attendance on the same date
+    // 4. Resolve organization_id if not explicitly provided
+    let organizationId = data.organizationId;
+    if (!organizationId) {
+      const orgRes = await query<{ organization_id: string }>(
+        'SELECT organization_id FROM schools WHERE id = $1 LIMIT 1;',
+        [data.schoolId],
+        client
+      );
+      organizationId = orgRes.rows[0]?.organization_id || null;
+    }
+
+    // 5. Look up matching longitudinal student enrollment if available
+    const enrollmentRes = await query<{ id: string }>(
+      `SELECT id FROM student_enrollments 
+       WHERE student_id = $1 AND class_id = $2 
+         AND (academic_session_id = $3 OR academic_session_id IS NULL)
+       ORDER BY start_date DESC LIMIT 1;`,
+      [data.studentId, data.classId, resolvedSessionId],
+      client
+    );
+    const resolvedEnrollmentId = enrollmentRes.rows[0]?.id || null;
+
+    // 6. Check for duplicate attendance on the same date
     const existingCheck = await query<DailyAttendanceDbEntity>(
       'SELECT id, status FROM daily_attendance WHERE student_id = $1 AND attendance_date = $2 LIMIT 1;',
       [data.studentId, data.attendanceDate],
@@ -108,7 +132,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
           note = $4,
           marked_by_staff_id = $5,
           marked_by_user_id = $6,
-          marked_at = NOW()
+          updated_at = NOW()
         WHERE id = $7
         RETURNING *;
       `;
@@ -128,24 +152,28 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       return res.rows[0];
     }
 
-    // 5. Insert new record
+    // 7. Insert new record with full tenant & historical context
     const insertSql = `
       INSERT INTO daily_attendance (
-        school_id, student_id, class_id, academic_session_id, term_id,
-        attendance_date, day_number_in_term, status, arrival_time, reason,
-        note, marked_by_staff_id, marked_by_user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        organization_id, school_id, student_id, class_id, academic_session_id, 
+        term_id, academic_term_id, enrollment_id, attendance_date, day_number_in_term, 
+        status, arrival_time, reason, note, marked_by_staff_id, marked_by_user_id,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
       RETURNING *;
     `;
 
     const res = await query<DailyAttendanceDbEntity>(
       insertSql,
       [
+        organizationId,
         data.schoolId,
         data.studentId,
         data.classId,
         resolvedSessionId,
         data.termId,
+        data.termId,
+        resolvedEnrollmentId,
         data.attendanceDate,
         data.dayNumberInTerm || 1,
         normalizedStatus,
@@ -176,7 +204,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       reason?: string | null;
       note?: string | null;
     }>,
-    markedBy?: { staffId?: string | null; userId?: string | null }
+    markedBy?: { staffId?: string | null; userId?: string | null; organizationId?: string | null }
   ): Promise<{ recorded: number; records: DailyAttendanceDbEntity[] }> {
     return withTransaction(async (client) => {
       const results: DailyAttendanceDbEntity[] = [];
@@ -185,6 +213,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
         const item = await this.recordAttendance(
           {
             schoolId,
+            organizationId: markedBy?.organizationId,
             studentId: record.studentId,
             classId,
             termId,
@@ -220,10 +249,16 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
         a.*,
         s.full_name AS student_name,
         s.admission_number,
-        c.name AS class_name
+        c.name AS class_name,
+        c.level AS class_level,
+        c.arm AS class_arm,
+        t.term_name,
+        ses.session_name
       FROM daily_attendance a
       JOIN students s ON a.student_id = s.id
       JOIN classes c ON a.class_id = c.id
+      LEFT JOIN academic_terms t ON a.term_id = t.id
+      LEFT JOIN academic_sessions ses ON a.academic_session_id = ses.id
       WHERE a.school_id = $1 AND a.class_id = $2 AND a.attendance_date = $3
       ORDER BY s.full_name ASC;
     `;
@@ -232,7 +267,112 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
   }
 
   /**
+   * Retrieves attendance records for a class with flexible date and term filters.
+   */
+  async findByClass(
+    schoolId: string,
+    classId: string,
+    filters?: {
+      date?: string;
+      termId?: string;
+      sessionId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    options?: QueryOptions
+  ): Promise<DailyAttendanceDbEntity[]> {
+    const conditions: string[] = ['a.school_id = $1', 'a.class_id = $2'];
+    const params: any[] = [schoolId, classId];
+
+    if (filters?.date) {
+      params.push(filters.date);
+      conditions.push(`a.attendance_date = $${params.length}`);
+    }
+    if (filters?.termId) {
+      params.push(filters.termId);
+      conditions.push(`a.term_id = $${params.length}`);
+    }
+    if (filters?.sessionId) {
+      params.push(filters.sessionId);
+      conditions.push(`a.academic_session_id = $${params.length}`);
+    }
+    if (filters?.startDate) {
+      params.push(filters.startDate);
+      conditions.push(`a.attendance_date >= $${params.length}`);
+    }
+    if (filters?.endDate) {
+      params.push(filters.endDate);
+      conditions.push(`a.attendance_date <= $${params.length}`);
+    }
+
+    const sql = `
+      SELECT 
+        a.*,
+        s.full_name AS student_name,
+        s.admission_number,
+        c.name AS class_name,
+        c.level AS class_level,
+        c.arm AS class_arm,
+        t.term_name,
+        ses.session_name
+      FROM daily_attendance a
+      JOIN students s ON a.student_id = s.id
+      JOIN classes c ON a.class_id = c.id
+      LEFT JOIN academic_terms t ON a.term_id = t.id
+      LEFT JOIN academic_sessions ses ON a.academic_session_id = ses.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY a.attendance_date DESC, s.full_name ASC;
+    `;
+
+    return this.executeQuery<DailyAttendanceDbEntity>(sql, params, options?.client);
+  }
+
+  /**
+   * Retrieves attendance records for an entire school on a given date.
+   */
+  async findByDate(
+    schoolId: string,
+    date: string,
+    filters?: { classId?: string; termId?: string },
+    options?: QueryOptions
+  ): Promise<DailyAttendanceDbEntity[]> {
+    const conditions: string[] = ['a.school_id = $1', 'a.attendance_date = $2'];
+    const params: any[] = [schoolId, date];
+
+    if (filters?.classId) {
+      params.push(filters.classId);
+      conditions.push(`a.class_id = $${params.length}`);
+    }
+    if (filters?.termId) {
+      params.push(filters.termId);
+      conditions.push(`a.term_id = $${params.length}`);
+    }
+
+    const sql = `
+      SELECT 
+        a.*,
+        s.full_name AS student_name,
+        s.admission_number,
+        c.name AS class_name,
+        c.level AS class_level,
+        c.arm AS class_arm,
+        t.term_name,
+        ses.session_name
+      FROM daily_attendance a
+      JOIN students s ON a.student_id = s.id
+      JOIN classes c ON a.class_id = c.id
+      LEFT JOIN academic_terms t ON a.term_id = t.id
+      LEFT JOIN academic_sessions ses ON a.academic_session_id = ses.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY c.level ASC, s.full_name ASC;
+    `;
+
+    return this.executeQuery<DailyAttendanceDbEntity>(sql, params, options?.client);
+  }
+
+  /**
    * Retrieves attendance history and summary counts for a specific student.
+   * Preserves historical class and session context associated with each daily entry.
    */
   async findByStudent(
     schoolId: string,
@@ -266,9 +406,18 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     const sql = `
       SELECT 
         a.*,
-        c.name AS class_name
+        s.full_name AS student_name,
+        s.admission_number,
+        c.name AS class_name,
+        c.level AS class_level,
+        c.arm AS class_arm,
+        t.term_name,
+        ses.session_name
       FROM daily_attendance a
+      JOIN students s ON a.student_id = s.id
       JOIN classes c ON a.class_id = c.id
+      LEFT JOIN academic_terms t ON a.term_id = t.id
+      LEFT JOIN academic_sessions ses ON a.academic_session_id = ses.id
       WHERE ${conditions.join(' AND ')}
       ORDER BY a.attendance_date DESC;
     `;
@@ -289,6 +438,87 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       : 0;
 
     return { history, summary };
+  }
+
+  /**
+   * Calculates aggregate attendance statistics for a school or class.
+   */
+  async getAttendanceStatistics(
+    schoolId: string,
+    filters?: {
+      classId?: string;
+      termId?: string;
+      sessionId?: string;
+      date?: string;
+    },
+    options?: QueryOptions
+  ): Promise<{
+    totalRecords: number;
+    present: number;
+    absent: number;
+    late: number;
+    excused: number;
+    attendanceRate: number;
+    punctualityRate: number;
+  }> {
+    const conditions: string[] = ['school_id = $1'];
+    const params: any[] = [schoolId];
+
+    if (filters?.classId) {
+      params.push(filters.classId);
+      conditions.push(`class_id = $${params.length}`);
+    }
+    if (filters?.termId) {
+      params.push(filters.termId);
+      conditions.push(`term_id = $${params.length}`);
+    }
+    if (filters?.sessionId) {
+      params.push(filters.sessionId);
+      conditions.push(`academic_session_id = $${params.length}`);
+    }
+    if (filters?.date) {
+      params.push(filters.date);
+      conditions.push(`attendance_date = $${params.length}`);
+    }
+
+    const sql = `
+      SELECT 
+        COUNT(*)::int AS total_records,
+        COUNT(*) FILTER (WHERE status = 'PRESENT')::int AS present_count,
+        COUNT(*) FILTER (WHERE status = 'ABSENT')::int AS absent_count,
+        COUNT(*) FILTER (WHERE status = 'LATE')::int AS late_count,
+        COUNT(*) FILTER (WHERE status = 'EXCUSED')::int AS excused_count
+      FROM daily_attendance
+      WHERE ${conditions.join(' AND ')};
+    `;
+
+    const res = await query<any>(sql, params, options?.client);
+    const row = res.rows[0] || {
+      total_records: 0,
+      present_count: 0,
+      absent_count: 0,
+      late_count: 0,
+      excused_count: 0,
+    };
+
+    const total = Number(row.total_records) || 0;
+    const present = Number(row.present_count) || 0;
+    const absent = Number(row.absent_count) || 0;
+    const late = Number(row.late_count) || 0;
+    const excused = Number(row.excused_count) || 0;
+
+    const attendanceRate = total > 0 ? Number((((present + late) / total) * 100).toFixed(1)) : 0;
+    const punctualityRate = (present + late) > 0 ? Number(((present / (present + late)) * 100).toFixed(1)) : 0;
+
+    return {
+      totalRecords: total,
+      present,
+      absent,
+      late,
+      excused,
+      attendanceRate,
+      punctualityRate,
+    };
   }
 
   /**
@@ -321,7 +551,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       throw new Error('CROSS_SCHOOL_VIOLATION: Cannot modify attendance of another school.');
     }
 
-    const updates: string[] = ['marked_at = NOW()'];
+    const updates: string[] = ['updated_at = NOW()'];
     const params: any[] = [id];
 
     if (data.status) {
@@ -366,6 +596,104 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     `;
 
     const res = await query<DailyAttendanceDbEntity>(updateSql, params, client);
+    return res.rows[0];
+  }
+
+  /**
+   * Verifies if a teacher is authorized to view or mark attendance for a class.
+   * Checks form master role, assigned class, and class-subject allocations.
+   */
+  async checkTeacherClassAuthorization(
+    schoolId: string,
+    userId: string,
+    classId: string,
+    client?: PoolClient
+  ): Promise<boolean> {
+    // 1. Resolve staff record for user
+    const staffRes = await query<{ id: string; assigned_class_id: string | null }>(
+      'SELECT id, assigned_class_id FROM staff WHERE user_id = $1 AND school_id = $2 LIMIT 1;',
+      [userId, schoolId],
+      client
+    );
+    const staff = staffRes.rows[0];
+    if (!staff) {
+      return false;
+    }
+
+    // 2. Check if assigned class matches
+    if (staff.assigned_class_id === classId) {
+      return true;
+    }
+
+    // 3. Check if form master of the class
+    const formMasterRes = await query<{ id: string }>(
+      'SELECT id FROM classes WHERE id = $1 AND form_master_id = $2 AND school_id = $3 LIMIT 1;',
+      [classId, staff.id, schoolId],
+      client
+    );
+    if (formMasterRes.rows.length > 0) {
+      return true;
+    }
+
+    // 4. Check if allocated subject teacher for the class
+    const allocationRes = await query<{ id: string }>(
+      'SELECT id FROM class_subject_allocations WHERE class_id = $1 AND teacher_id = $2 AND school_id = $3 LIMIT 1;',
+      [classId, staff.id, schoolId],
+      client
+    );
+    if (allocationRes.rows.length > 0) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Records an attendance audit log entry in PostgreSQL attendance_audit_logs.
+   */
+  async logAttendanceAudit(
+    data: {
+      organizationId?: string | null;
+      schoolId: string;
+      attendanceId?: string | null;
+      studentId?: string | null;
+      classId?: string | null;
+      action: 'RECORDED' | 'BULK_RECORDED' | 'MODIFIED' | 'CORRECTION' | 'UNAUTHORIZED_ATTEMPT';
+      performedByUserId?: string | null;
+      userRole?: string | null;
+      ipAddress?: string | null;
+      userAgent?: string | null;
+      details?: Record<string, any> | null;
+    },
+    client?: PoolClient
+  ): Promise<AttendanceAuditLogDbEntity> {
+    const sql = `
+      INSERT INTO attendance_audit_logs (
+        organization_id, school_id, attendance_id, student_id, class_id,
+        action, performed_by_user_id, user_role, ip_address, user_agent,
+        details, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING *;
+    `;
+
+    const res = await query<AttendanceAuditLogDbEntity>(
+      sql,
+      [
+        data.organizationId || null,
+        data.schoolId,
+        data.attendanceId || null,
+        data.studentId || null,
+        data.classId || null,
+        data.action,
+        data.performedByUserId || null,
+        data.userRole || null,
+        data.ipAddress || null,
+        data.userAgent || null,
+        data.details ? JSON.stringify(data.details) : null,
+      ],
+      client
+    );
+
     return res.rows[0];
   }
 }

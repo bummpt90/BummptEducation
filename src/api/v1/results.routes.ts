@@ -8,6 +8,8 @@
 import { Router } from 'express';
 import { authenticateUser, requirePermission, requireSchoolScope } from '../../auth/middleware';
 import { academicResultRepository } from '../../db/repositories/academicResult.repository';
+import { reportCardRepository } from '../../db/repositories/reportCard.repository';
+import { parentRepository } from '../../db/repositories/parent.repository';
 import { query } from '../../db/client';
 import type { AuthenticatedRequest } from '../../auth/types';
 
@@ -42,6 +44,22 @@ resultsRouter.get(
             success: false,
             error: 'ACCESS_DENIED',
             message: 'Students may only access their own academic results.',
+          });
+          return;
+        }
+      }
+
+      // Phase 8B: If user is a parent, verify authoritative parent-student relationship and publication status
+      if (req.user?.role === 'parent') {
+        const { isLinked } = await parentRepository.verifyParentStudentRelationshipByUserId(
+          req.user.id,
+          studentId
+        );
+        if (!isLinked) {
+          res.status(403).json({
+            success: false,
+            error: 'FORBIDDEN_RELATIONSHIP',
+            message: 'You are not authorized to view academic results for this student.',
           });
           return;
         }
@@ -91,6 +109,19 @@ resultsRouter.get(
           message: 'term_id query parameter is required.',
         });
         return;
+      }
+
+      // Phase 8B: Parent publication check
+      if (req.user?.role === 'parent') {
+        const rc = await reportCardRepository.findByStudentAndTerm(studentId, termId);
+        if (!rc || !rc.isParentViewable || rc.approvalStatus !== 'Approved & Published') {
+          res.status(403).json({
+            success: false,
+            error: 'REPORT_NOT_PUBLISHED',
+            message: 'This academic report is not currently published for parent access.',
+          });
+          return;
+        }
       }
 
       const result = await academicResultRepository.getStudentTermResult(
@@ -305,3 +336,73 @@ resultsRouter.get(
     }
   }
 );
+
+/**
+ * POST /api/v1/results/publish
+ * Principal or Exam Officer endpoint to publish/unpublish a student report card for parent access.
+ */
+resultsRouter.post(
+  '/publish',
+  authenticateUser,
+  requirePermission('results.publish'),
+  requireSchoolScope(),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const { studentId, termId, isParentViewable, approvalStatus } = req.body;
+
+      if (!studentId || !termId) {
+        res.status(400).json({
+          success: false,
+          error: 'INVALID_INPUT',
+          message: 'studentId and termId are required.',
+        });
+        return;
+      }
+
+      // Check student school
+      const stuRes = await query<{ school_id: string }>(
+        'SELECT school_id FROM students WHERE id = $1 LIMIT 1;',
+        [studentId]
+      );
+      if (!stuRes.rows[0]) {
+        res.status(404).json({ success: false, error: 'STUDENT_NOT_FOUND' });
+        return;
+      }
+
+      const schoolId = stuRes.rows[0].school_id;
+      if (!req.user?.isSuperAdmin && !req.user?.isStateOfficer) {
+        if (schoolId !== req.user?.schoolId) {
+          res.status(403).json({
+            success: false,
+            error: 'TENANT_ISOLATION_VIOLATION',
+            message: 'Cannot publish report cards for students belonging to another school.',
+          });
+          return;
+        }
+      }
+
+      const publishedReport = await reportCardRepository.setReportCardPublication({
+        schoolId,
+        studentId,
+        termId,
+        isParentViewable: isParentViewable !== false,
+        approvalStatus: approvalStatus || (isParentViewable === false ? 'Draft' : 'Approved & Published'),
+        publishedBy: req.user?.id,
+      });
+
+      res.json({
+        success: true,
+        message: isParentViewable !== false ? 'Report card successfully published for parent access.' : 'Report card unpublished.',
+        data: publishedReport,
+      });
+    } catch (error: any) {
+      console.error('[ResultsAPI] Failed to publish report card:', error);
+      res.status(500).json({
+        success: false,
+        error: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to update report card publication state.',
+      });
+    }
+  }
+);
+
