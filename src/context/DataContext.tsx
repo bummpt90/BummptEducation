@@ -101,12 +101,13 @@ interface DataContextType {
     date: string;
     records: Array<{ studentId: string; status: string; arrivalTime?: string; reason?: string }>;
   }) => Promise<{ success: boolean; data?: any; error?: string }>;
+  fetchClassAttendance: (classId: string, date?: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 // Helper for authenticated requests
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -608,8 +609,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers,
         credentials: 'include',
         body: JSON.stringify({
-          class_id: payload.classId || classes[0]?.id,
-          term_id: payload.termId || 'term-2',
+          class_id: payload.classId,
+          term_id: payload.termId,
           date: payload.date,
           records: payload.records,
         }),
@@ -619,7 +620,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (res.ok && data.success) {
         return { success: true, data: data.data };
       }
-      return { success: false, error: data.message || 'Failed to record attendance.' };
+      return { success: false, error: data.message || data.error || 'Failed to record attendance.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const fetchClassAttendance = async (classId: string, date?: string) => {
+    try {
+      const headers = getAuthHeaders();
+      const url = date
+        ? `/api/v1/attendance/class/${encodeURIComponent(classId)}?date=${encodeURIComponent(date)}`
+        : `/api/v1/attendance/class/${encodeURIComponent(classId)}`;
+      const res = await fetch(url, { headers, credentials: 'include' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return { success: true, data: data.data || [] };
+      }
+      return { success: false, error: data.message || data.error || 'Failed to fetch attendance.' };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
@@ -649,6 +667,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         recordPayment,
         saveAssessmentScore,
         recordAttendance,
+        fetchClassAttendance,
       }}
     >
       {children}

@@ -403,6 +403,10 @@ export const ALL_CLASSES_DEFINITIONS: ClassDefinition[] = [
 
 // ==================== COMPREHENSIVE STUDENT ROSTER ACROSS ALL 21 CLASSES ====================
 // Builds on INITIAL_STUDENTS and guarantees every class has 10–16 realistic students
+/**
+ * @deprecated Non-authoritative legacy fixture generator.
+ * Production code MUST NOT import or execute this function.
+ */
 export function getAllStudentsForClass(classLevel: ClassLevel): Student[] {
   // First check if INITIAL_STUDENTS has students for this class
   const existing = INITIAL_STUDENTS.filter(s => s.currentClass === classLevel);
@@ -626,6 +630,10 @@ export function generateDefaultAttendanceRecordsForClass(
 // ==================== STORAGE & PERSISTENCE ENGINE ====================
 const STORAGE_KEY_PREFIX = 'bummpt_attendance_register_v2';
 
+/**
+ * @deprecated Non-authoritative legacy localStorage loader.
+ * Production code MUST NOT use client-side storage for attendance.
+ */
 export function getStoredAttendanceRecords(
   classLevel: ClassLevel,
   term: Term = '2nd Term',
@@ -658,6 +666,10 @@ export function getStoredAttendanceRecords(
   return initial;
 }
 
+/**
+ * @deprecated Non-authoritative legacy localStorage writer.
+ * Production code MUST NOT use client-side storage for attendance.
+ */
 export function saveStoredAttendanceRecords(
   classLevel: ClassLevel,
   term: Term = '2nd Term',
@@ -685,6 +697,7 @@ export function computeStudentAttendanceSummary(
   );
   const totalDaysOpened = eligibleSchoolDays.length;
 
+  let recordedDays = 0;
   let timesPresent = 0;
   let timesAbsent = 0;
   let timesLate = 0;
@@ -696,7 +709,10 @@ export function computeStudentAttendanceSummary(
   // Process chronologically to compute streak
   eligibleSchoolDays.forEach(day => {
     const dayEntry = records[day.date]?.[student.id];
-    const status = dayEntry ? dayEntry.status : 'present'; // fallback default
+    if (!dayEntry) return;
+
+    recordedDays++;
+    const status = dayEntry.status;
 
     if (status === 'present') {
       timesPresent++;
@@ -717,11 +733,12 @@ export function computeStudentAttendanceSummary(
 
   streak = consecutivePresent;
 
-  const attendancePercentage = totalDaysOpened > 0 
-    ? Math.round(((timesPresent + (timesLate * 0.8)) / totalDaysOpened) * 100)
+  const denominator = recordedDays > 0 ? recordedDays : 1;
+  const attendancePercentage = recordedDays > 0 
+    ? Math.round(((timesPresent + (timesLate * 0.8)) / denominator) * 100)
     : 100;
 
-  const punctualityScore = totalDaysOpened > 0
+  const punctualityScore = recordedDays > 0
     ? Math.round(((timesPresent - timesLate) / Math.max(1, timesPresent)) * 100)
     : 100;
 
@@ -778,17 +795,19 @@ export function computeClassSessionSummary(
 
   students.forEach(s => {
     const entry = dayRecords[s.id];
-    const status = entry ? entry.status : 'present';
+    if (!entry) return;
+    const status = entry.status;
     if (status === 'present') presentToday++;
     else if (status === 'absent') absentToday++;
     else if (status === 'late') lateToday++;
     else if (status === 'excused') excusedToday++;
   });
 
+  const totalMarkedToday = presentToday + absentToday + lateToday + excusedToday;
   const todayEffectivePresent = presentToday + lateToday;
-  const todayAttendanceRate = totalEnrolled > 0 
-    ? Math.round((todayEffectivePresent / totalEnrolled) * 100)
-    : 100;
+  const todayAttendanceRate = totalMarkedToday > 0 
+    ? Math.round((todayEffectivePresent / totalMarkedToday) * 100)
+    : (totalEnrolled > 0 ? 0 : 100);
 
   // Compute all student summaries up to selected date's day number
   const studentSummaries = students.map(s => 

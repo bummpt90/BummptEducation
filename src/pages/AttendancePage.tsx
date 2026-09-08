@@ -12,11 +12,8 @@ import {
 } from '../types';
 import { 
   ALL_CLASSES_DEFINITIONS, 
-  getAllStudentsForClass, 
   TERM_CALENDAR_DAYS,
   CURRENT_DEFAULT_SCHOOL_DAY,
-  getStoredAttendanceRecords,
-  saveStoredAttendanceRecords,
   computeStudentAttendanceSummary,
   computeClassSessionSummary
 } from '../data/attendanceData';
@@ -96,27 +93,43 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
   // View Mode: 'daily-roster' | 'term-matrix' | 'analytics'
   const [viewMode, setViewMode] = useState<'daily-roster' | 'term-matrix' | 'analytics'>('daily-roster');
 
-  // Production Data Context
-  const { students: allDbStudents, recordAttendance: serverRecordAttendance } = useData();
+  // Server-Authoritative Data Context
+  const { 
+    students: allDbStudents, 
+    classes, 
+    isLoading: isDataContextLoading,
+    createStudent,
+    fetchClassAttendance, 
+    recordAttendance: serverRecordAttendance 
+  } = useData();
+
+  // Resolve current class ID in PostgreSQL
+  const currentClassEntity = useMemo(() => {
+    return classes.find(c => c.level === selectedClass || c.name === selectedClass);
+  }, [classes, selectedClass]);
+  const currentClassId = currentClassEntity?.id;
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [genderFilter, setGenderFilter] = useState<'All' | 'Male' | 'Female'>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Present' | 'Absent' | 'Late' | 'Excused' | 'At-Risk'>('All');
 
-  // Class Students Roster from Server-Authoritative Database
-  const [classStudents, setClassStudents] = useState<Student[]>(() => {
-    const dbMatch = allDbStudents.filter(s => s.currentClass === selectedClass && s.status === 'Active');
-    return dbMatch.length > 0 ? dbMatch : getAllStudentsForClass(selectedClass);
-  });
+  // Class Students Roster strictly from PostgreSQL
+  const classStudents = useMemo(() => {
+    return allDbStudents.filter(s => s.currentClass === selectedClass && s.status === 'Active');
+  }, [allDbStudents, selectedClass]);
 
   // Attendance Records State: records[dateStr][studentId] = DailyAttendanceEntry
-  const [attendanceRecords, setAttendanceRecords] = useState<Record<string, Record<string, DailyAttendanceEntry>>>(() => 
-    getStoredAttendanceRecords(selectedClass, selectedTerm, selectedAcademicYear, classStudents)
-  );
+  const [attendanceRecords, setAttendanceRecords] = useState<Record<string, Record<string, DailyAttendanceEntry>>>({});
+  const [isLoadingAttendance, setIsLoadingAttendance] = useState(false);
+  const [attendanceFetchError, setAttendanceFetchError] = useState<string | null>(null);
 
-  // Notifications & UI states
+  // Persistence status: 'IDLE' | 'SAVING' | 'SUCCESS' | 'ERROR'
+  const [saveStatus, setSaveStatus] = useState<'IDLE' | 'SAVING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+
+  // UI modal states
   const [parentAlertStudent, setParentAlertStudent] = useState<{ student: Student; reason: string; date: string } | null>(null);
   const [parentAlertSentMessage, setParentAlertSentMessage] = useState<string | null>(null);
   const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
@@ -141,40 +154,106 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
     return TERM_CALENDAR_DAYS.find(d => d.date === selectedDate) || TERM_CALENDAR_DAYS[0];
   }, [selectedDate]);
 
-  // Update students and records when selectedClass changes or allDbStudents updates
+  // Load server-authoritative attendance records for current class
   useEffect(() => {
-    const dbMatch = allDbStudents.filter(s => s.currentClass === selectedClass && s.status === 'Active');
-    const students = dbMatch.length > 0 ? dbMatch : getAllStudentsForClass(selectedClass);
-    setClassStudents(students);
-    const records = getStoredAttendanceRecords(selectedClass, selectedTerm, selectedAcademicYear, students);
-    setAttendanceRecords(records);
-  }, [selectedClass, selectedTerm, selectedAcademicYear, allDbStudents]);
+    let isCancelled = false;
 
-  // Save changes to localStorage and sync with PostgreSQL /api/v1/attendance
-  const handlePersistRecords = (updated: Record<string, Record<string, DailyAttendanceEntry>>) => {
-    setAttendanceRecords(updated);
-    saveStoredAttendanceRecords(selectedClass, selectedTerm, selectedAcademicYear, updated);
+    async function loadClassAttendance() {
+      if (!currentClassId) return;
 
-    // Sync current date's register with PostgreSQL
-    const dayEntries = updated[selectedDate];
-    if (dayEntries) {
-      const recordsPayload = Object.entries(dayEntries).map(([studentId, entry]) => ({
-        studentId,
-        status: entry.status,
-        arrivalTime: entry.arrivalTime,
-        reason: entry.reason || entry.note
-      }));
+      setIsLoadingAttendance(true);
+      setAttendanceFetchError(null);
 
-      serverRecordAttendance({
-        date: selectedDate,
-        records: recordsPayload
-      }).catch(err => {
-        console.warn('Attendance server sync:', err);
-      });
+      try {
+        const res = await fetchClassAttendance(currentClassId);
+        if (isCancelled) return;
+
+        if (!res.success) {
+          setAttendanceFetchError(res.error || 'Unable to retrieve attendance from server database.');
+          return;
+        }
+
+        const mapped: Record<string, Record<string, DailyAttendanceEntry>> = {};
+        (res.data || []).forEach((row: any) => {
+          const dateKey = typeof row.attendance_date === 'string'
+            ? row.attendance_date.split('T')[0]
+            : row.attendance_date;
+          if (!mapped[dateKey]) mapped[dateKey] = {};
+          mapped[dateKey][row.student_id] = {
+            status: (row.status || 'present').toLowerCase() as AttendanceStatus,
+            arrivalTime: row.arrival_time,
+            reason: row.reason || row.note,
+            note: row.note,
+            markedAt: row.created_at,
+          };
+        });
+
+        setAttendanceRecords(mapped);
+      } catch (err: any) {
+        if (isCancelled) return;
+        setAttendanceFetchError(err.message || 'Error communicating with attendance server.');
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingAttendance(false);
+        }
+      }
     }
 
-    setSaveSuccessMessage('Attendance register automatically saved & synced to PostgreSQL');
-    setTimeout(() => setSaveSuccessMessage(null), 3000);
+    loadClassAttendance();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentClassId, selectedTerm, selectedAcademicYear, fetchClassAttendance]);
+
+  // Persist Attendance Register to PostgreSQL API
+  const handlePersistDayRegister = async (dayEntries: Record<string, DailyAttendanceEntry>, dateStr: string) => {
+    if (!currentClassId) {
+      setSaveStatus('ERROR');
+      setSaveErrorMessage('Cannot save: Class not found in server database. Please select a valid class.');
+      return;
+    }
+
+    setSaveStatus('SAVING');
+    setSaveSuccessMessage(null);
+    setSaveErrorMessage(null);
+
+    const recordsPayload = Object.entries(dayEntries).map(([studentId, entry]) => ({
+      studentId,
+      status: entry.status.toUpperCase(),
+      arrivalTime: entry.arrivalTime,
+      reason: entry.reason || entry.note,
+    }));
+
+    try {
+      const res = await serverRecordAttendance({
+        classId: currentClassId,
+        termId: selectedTerm,
+        date: dateStr,
+        records: recordsPayload,
+      });
+
+      if (!res.success) {
+        setSaveStatus('ERROR');
+        setSaveErrorMessage(res.error || 'Unable to save attendance. Your changes were not saved.');
+        return;
+      }
+
+      // Only update state after PostgreSQL confirms successful persistence
+      setAttendanceRecords(prev => ({
+        ...prev,
+        [dateStr]: dayEntries,
+      }));
+      setSaveStatus('SUCCESS');
+      setSaveSuccessMessage(`Attendance saved successfully (${recordsPayload.length} records verified in PostgreSQL).`);
+      setTimeout(() => {
+        setSaveSuccessMessage(null);
+        setSaveStatus('IDLE');
+      }, 4000);
+    } catch (err: any) {
+      setSaveStatus('ERROR');
+      setSaveErrorMessage(err.message || 'Unable to save attendance. Your changes were not saved.');
+    }
   };
 
   // Switch Selected Class
@@ -204,16 +283,12 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
       markedAt: new Date().toISOString()
     };
 
-    const updated = {
-      ...attendanceRecords,
-      [selectedDate]: currentDayEntries
-    };
-
-    handlePersistRecords(updated);
+    handlePersistDayRegister(currentDayEntries, selectedDate);
   };
 
   // Quick Action: Mark All Present
   const handleMarkAllPresent = () => {
+    if (classStudents.length === 0) return;
     const currentDayEntries = { ...(attendanceRecords[selectedDate] || {}) };
     classStudents.forEach(stu => {
       currentDayEntries[stu.id] = {
@@ -223,19 +298,14 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
       };
     });
 
-    const updated = {
-      ...attendanceRecords,
-      [selectedDate]: currentDayEntries
-    };
-
-    handlePersistRecords(updated);
+    handlePersistDayRegister(currentDayEntries, selectedDate);
   };
 
   // Quick Action: Simulate NFC Smart ID Badge Tap
   const handleSimulateBiometricClockIn = () => {
+    if (classStudents.length === 0) return;
     const currentDayEntries = { ...(attendanceRecords[selectedDate] || {}) };
     classStudents.forEach((stu, idx) => {
-      // 92% present on time, 8% late
       const isLate = idx % 9 === 0;
       const min = 30 + (idx * 3) % 25;
       const lateMin = 5 + (idx * 4) % 20;
@@ -248,21 +318,20 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
       };
     });
 
-    const updated = {
-      ...attendanceRecords,
-      [selectedDate]: currentDayEntries
-    };
-
-    handlePersistRecords(updated);
+    handlePersistDayRegister(currentDayEntries, selectedDate);
   };
 
   // Quick Action: Reset Today's Register
   const handleResetDay = () => {
-    if (window.confirm(`Are you sure you want to reset attendance for ${currentDayMeta.label}?`)) {
-      const updated = { ...attendanceRecords };
-      delete updated[selectedDate];
-      handlePersistRecords(updated);
-    }
+    const clearedDayEntries: Record<string, DailyAttendanceEntry> = {};
+    classStudents.forEach(stu => {
+      clearedDayEntries[stu.id] = {
+        status: 'present',
+        arrivalTime: '07:45 AM',
+        markedAt: new Date().toISOString()
+      };
+    });
+    handlePersistDayRegister(clearedDayEntries, selectedDate);
   };
 
   // Save Excuse Note Modal
@@ -285,42 +354,50 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
   };
 
   // Add New Student Handler
-  const handleAddNewStudent = (e: React.FormEvent) => {
+  const handleAddNewStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudentForm.fullName.trim()) return;
 
-    const classCode = selectedClass.replace(/\s+/g, '').toUpperCase();
-    const newCount = classStudents.length + 1;
-    const newStudent: Student = {
-      id: `STU-${classCode}-${String(newCount).padStart(3, '0')}`,
-      admissionNumber: `BEDU/${classCode}/2025/${String(newCount).padStart(3, '0')}`,
-      fullName: newStudentForm.fullName,
-      gender: newStudentForm.gender,
-      dateOfBirth: '2016-05-15',
-      currentClass: selectedClass,
-      arm: currentClassDef.arm,
-      house: newStudentForm.house,
-      guardianName: newStudentForm.guardianName || 'Guardian',
-      guardianPhone: newStudentForm.guardianPhone || '+234 800 000 0000',
-      guardianEmail: `${newStudentForm.fullName.toLowerCase().replace(/[^a-z]/g, '')}@gmail.com`,
-      address: 'Makurdi Metropolis, Benue State',
-      stateOfOrigin: 'Benue',
-      dateEnrolled: new Date().toISOString().split('T')[0],
-      status: 'Active'
-    };
+    setSaveStatus('SAVING');
+    setSaveSuccessMessage(null);
+    setSaveErrorMessage(null);
 
-    const updatedStudents = [...classStudents, newStudent];
-    setClassStudents(updatedStudents);
-    setIsAddStudentModalOpen(false);
-    setNewStudentForm({
-      fullName: '',
-      gender: 'Male',
-      guardianName: '',
-      guardianPhone: '',
-      house: 'Eagle House (Blue)'
-    });
-    setSaveSuccessMessage(`Successfully enrolled ${newStudent.fullName} into ${selectedClass}`);
-    setTimeout(() => setSaveSuccessMessage(null), 3500);
+    try {
+      const res = await createStudent({
+        fullName: newStudentForm.fullName.trim(),
+        gender: newStudentForm.gender,
+        guardianName: newStudentForm.guardianName || 'Guardian',
+        guardianPhone: newStudentForm.guardianPhone || '+234 800 000 0000',
+        currentClass: selectedClass,
+        arm: currentClassDef.arm,
+        dateOfBirth: '2016-05-15',
+        address: 'Makurdi Metropolis, Benue State',
+        stateOfOrigin: 'Benue',
+      });
+
+      if (res.success) {
+        setIsAddStudentModalOpen(false);
+        setNewStudentForm({
+          fullName: '',
+          gender: 'Male',
+          guardianName: '',
+          guardianPhone: '',
+          house: 'Eagle House (Blue)'
+        });
+        setSaveStatus('SUCCESS');
+        setSaveSuccessMessage(`Successfully enrolled ${newStudentForm.fullName} in PostgreSQL database.`);
+        setTimeout(() => {
+          setSaveSuccessMessage(null);
+          setSaveStatus('IDLE');
+        }, 4000);
+      } else {
+        setSaveStatus('ERROR');
+        setSaveErrorMessage(res.error || 'Failed to enroll student into database.');
+      }
+    } catch (err: any) {
+      setSaveStatus('ERROR');
+      setSaveErrorMessage(err.message || 'Network error enrolling student.');
+    }
   };
 
   // Compute Class Session Summary for Selected Date
@@ -565,14 +642,52 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
             </div>
           </div>
 
-          {/* Save Status Toast */}
-          {saveSuccessMessage && (
+          {/* Save Status: IN PROGRESS */}
+          {saveStatus === 'SAVING' && (
+            <div className="mt-3 p-2.5 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-bold flex items-center justify-between animate-fadeIn">
+              <span className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-blue-400 animate-spin" />
+                <span>Persisting attendance register to PostgreSQL database...</span>
+              </span>
+              <span className="text-[10px] text-blue-400/80 uppercase">In Progress</span>
+            </div>
+          )}
+
+          {/* Save Status: SUCCESS */}
+          {saveStatus === 'SUCCESS' && saveSuccessMessage && (
             <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-between animate-fadeIn">
               <span className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                 <span>{saveSuccessMessage}</span>
               </span>
-              <span className="text-[10px] text-emerald-400/80 uppercase">Real-Time Sync</span>
+              <span className="text-[10px] text-emerald-400/80 uppercase">Server Verified</span>
+            </div>
+          )}
+
+          {/* Save Status: ERROR */}
+          {saveStatus === 'ERROR' && saveErrorMessage && (
+            <div className="mt-3 p-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-bold flex items-center justify-between animate-fadeIn">
+              <span className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-red-400" />
+                <span>{saveErrorMessage}</span>
+              </span>
+              <button 
+                onClick={() => setSaveStatus('IDLE')}
+                className="text-[10px] text-red-400 hover:text-white uppercase underline cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Attendance Fetch Notice / Error */}
+          {attendanceFetchError && (
+            <div className="mt-3 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-between animate-fadeIn">
+              <span className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-400" />
+                <span>Attendance Database Notice: {attendanceFetchError}</span>
+              </span>
+              <span className="text-[10px] text-amber-400/80 uppercase">Server Notice</span>
             </div>
           )}
 
@@ -957,18 +1072,46 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredStudents.map((student, idx) => {
-                    const dayEntry = attendanceRecords[selectedDate]?.[student.id];
-                    const currentStatus: AttendanceStatus = dayEntry ? dayEntry.status : 'present';
-                    const summary = studentSummaries.find(s => s.studentId === student.id) || {
-                      timesSchoolOpened: currentDayMeta.dayNumberInTerm,
-                      timesPresent: currentDayMeta.dayNumberInTerm,
-                      timesAbsent: 0,
-                      timesLate: 0,
-                      timesExcused: 0,
-                      attendancePercentage: 100,
-                      status: 'Outstanding' as const
-                    };
+                  {classStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center">
+                        <div className="max-w-md mx-auto space-y-3">
+                          <Users className="h-10 w-10 text-slate-300 mx-auto" />
+                          <p className="font-extrabold text-slate-700 text-sm">
+                            No Active Students Enrolled in {selectedClass}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            The server database returned 0 student records for this class register. You can enroll new students directly into PostgreSQL below.
+                          </p>
+                          <button
+                            onClick={() => setIsAddStudentModalOpen(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                            <span>Enroll Pupil Now</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-xs text-slate-500 font-semibold">
+                        No students match the current filter criteria ('{searchQuery || statusFilter}').
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredStudents.map((student, idx) => {
+                      const dayEntry = attendanceRecords[selectedDate]?.[student.id];
+                      const currentStatus: AttendanceStatus | null = dayEntry ? dayEntry.status : null;
+                      const summary = studentSummaries.find(s => s.studentId === student.id) || {
+                        timesSchoolOpened: currentDayMeta.dayNumberInTerm,
+                        timesPresent: 0,
+                        timesAbsent: 0,
+                        timesLate: 0,
+                        timesExcused: 0,
+                        attendancePercentage: 100,
+                        status: 'Outstanding' as const
+                      };
 
                     const isAbsent = currentStatus === 'absent';
                     const isLate = currentStatus === 'late';
@@ -1107,6 +1250,11 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
                               🏥 {dayEntry?.reason || 'Excused'}
                             </span>
                           )}
+                          {currentStatus === null && (
+                            <span className="text-slate-400 font-medium italic">
+                              Unrecorded (Pending)
+                            </span>
+                          )}
                         </td>
 
                         {/* AUTOMATED TOTAL: Term Present */}
@@ -1157,7 +1305,8 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                )}
                 </tbody>
               </table>
             </div>
@@ -1231,47 +1380,56 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {classStudents.map((stu, sIdx) => {
-                    const summary = studentSummaries.find(s => s.studentId === stu.id) || {
-                      timesPresent: 45,
-                      timesAbsent: 3,
-                      attendancePercentage: 94
-                    };
+                  {classStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-10 text-center text-xs text-slate-500 font-semibold">
+                        No active students enrolled in {selectedClass} in database register.
+                      </td>
+                    </tr>
+                  ) : (
+                    classStudents.map((stu, sIdx) => {
+                      const summary = studentSummaries.find(s => s.studentId === stu.id) || {
+                        timesPresent: 0,
+                        timesAbsent: 0,
+                        attendancePercentage: 100
+                      };
 
-                    return (
-                      <tr key={stu.id} className="hover:bg-slate-50 font-medium">
-                        <td className="py-2 px-3 text-slate-400 font-bold border-r border-slate-100">{sIdx + 1}</td>
-                        <td className="py-2 px-3 font-bold text-slate-900 border-r border-slate-100 truncate max-w-[180px]">
-                          {stu.fullName}
-                        </td>
-                        {TERM_CALENDAR_DAYS.filter(d => d.weekNumber === selectedWeek).map(day => {
-                          const entry = attendanceRecords[day.date]?.[stu.id];
-                          const st = entry ? entry.status : 'present';
+                      return (
+                        <tr key={stu.id} className="hover:bg-slate-50 font-medium">
+                          <td className="py-2 px-3 text-slate-400 font-bold border-r border-slate-100">{sIdx + 1}</td>
+                          <td className="py-2 px-3 font-bold text-slate-900 border-r border-slate-100 truncate max-w-[180px]">
+                            {stu.fullName}
+                          </td>
+                          {TERM_CALENDAR_DAYS.filter(d => d.weekNumber === selectedWeek).map(day => {
+                            const entry = attendanceRecords[day.date]?.[stu.id];
+                            const st = entry ? entry.status : null;
 
-                          return (
-                            <td 
-                              key={day.date} 
-                              onClick={() => {
-                                // Cycle status on click
-                                const nextStatus: AttendanceStatus = 
-                                  st === 'present' ? 'late' : st === 'late' ? 'absent' : st === 'absent' ? 'excused' : 'present';
-                                handleMarkStudent(stu.id, nextStatus);
-                              }}
-                              className={`py-2 px-2 text-center font-black border-r border-slate-100 cursor-pointer transition hover:opacity-80 select-none ${
-                                st === 'present' 
-                                  ? 'bg-emerald-50 text-emerald-800' 
-                                  : st === 'late'
-                                  ? 'bg-amber-50 text-amber-800'
-                                  : st === 'absent'
-                                  ? 'bg-red-100 text-red-800 font-black'
-                                  : 'bg-blue-50 text-blue-800'
-                              }`}
-                              title={`Click to toggle status for ${day.label}`}
-                            >
-                              {st === 'present' ? 'P' : st === 'late' ? 'L' : st === 'absent' ? 'A' : 'E'}
-                            </td>
-                          );
-                        })}
+                            return (
+                              <td 
+                                key={day.date} 
+                                onClick={() => {
+                                  // Cycle status on click: null -> present -> late -> absent -> excused -> present
+                                  const nextStatus: AttendanceStatus = 
+                                    st === null ? 'present' : st === 'present' ? 'late' : st === 'late' ? 'absent' : st === 'absent' ? 'excused' : 'present';
+                                  handleMarkStudent(stu.id, nextStatus);
+                                }}
+                                className={`py-2 px-2 text-center font-black border-r border-slate-100 cursor-pointer transition hover:opacity-80 select-none ${
+                                  st === 'present' 
+                                    ? 'bg-emerald-50 text-emerald-800' 
+                                    : st === 'late'
+                                    ? 'bg-amber-50 text-amber-800'
+                                    : st === 'absent'
+                                    ? 'bg-red-100 text-red-800 font-black'
+                                    : st === 'excused'
+                                    ? 'bg-blue-50 text-blue-800'
+                                    : 'bg-slate-50/60 text-slate-300 font-normal'
+                                }`}
+                                title={`Click to toggle status for ${day.label}`}
+                              >
+                                {st === 'present' ? 'P' : st === 'late' ? 'L' : st === 'absent' ? 'A' : st === 'excused' ? 'E' : '—'}
+                              </td>
+                            );
+                          })}
                         <td className="py-2 px-3 text-center font-black text-blue-900 bg-blue-50/50 border-r border-slate-100">
                           {summary.timesPresent}
                         </td>
@@ -1283,7 +1441,8 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                )}
                 </tbody>
               </table>
             </div>

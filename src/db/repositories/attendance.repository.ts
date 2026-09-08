@@ -14,11 +14,69 @@ import type { DailyAttendanceDbEntity, AttendanceAuditLogDbEntity, QueryOptions 
 export const VALID_ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'] as const;
 export type AttendanceStatus = typeof VALID_ATTENDANCE_STATUSES[number];
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity> {
   protected readonly tableName = 'daily_attendance';
   protected readonly primaryKey = 'id';
   protected readonly tenantColumn = 'school_id';
   protected readonly isMultiTenant = true;
+
+  /**
+   * Helper to resolve class ID whether given as a UUID or class level / name.
+   */
+  async resolveClassId(schoolId: string, classIdOrName: string, client?: PoolClient): Promise<string> {
+    if (UUID_REGEX.test(classIdOrName)) {
+      return classIdOrName;
+    }
+    const res = await query<{ id: string }>(
+      'SELECT id FROM classes WHERE (level = $1 OR name = $1) AND school_id = $2 LIMIT 1;',
+      [classIdOrName, schoolId],
+      client
+    );
+    if (!res.rows[0]) {
+      throw new Error(`CLASS_NOT_FOUND: Class '${classIdOrName}' does not exist in the specified school.`);
+    }
+    return res.rows[0].id;
+  }
+
+  /**
+   * Helper to resolve academic term ID whether given as a UUID or term name ('1st Term', '2nd Term').
+   */
+  async resolveTermId(termIdOrName?: string | null, client?: PoolClient): Promise<{ id: string; sessionId: string }> {
+    if (termIdOrName && UUID_REGEX.test(termIdOrName)) {
+      const res = await query<{ id: string; session_id: string }>(
+        'SELECT id, session_id FROM academic_terms WHERE id = $1 LIMIT 1;',
+        [termIdOrName],
+        client
+      );
+      if (res.rows[0]) {
+        return { id: res.rows[0].id, sessionId: res.rows[0].session_id };
+      }
+    }
+
+    if (termIdOrName) {
+      const res = await query<{ id: string; session_id: string }>(
+        'SELECT id, session_id FROM academic_terms WHERE term_name ILIKE $1 ORDER BY is_current DESC LIMIT 1;',
+        [termIdOrName],
+        client
+      );
+      if (res.rows[0]) {
+        return { id: res.rows[0].id, sessionId: res.rows[0].session_id };
+      }
+    }
+
+    // Default to current term
+    const currentRes = await query<{ id: string; session_id: string }>(
+      'SELECT id, session_id FROM academic_terms WHERE is_current = true LIMIT 1;',
+      [],
+      client
+    );
+    if (!currentRes.rows[0]) {
+      throw new Error('TERM_NOT_FOUND: No current or matching academic term found.');
+    }
+    return { id: currentRes.rows[0].id, sessionId: currentRes.rows[0].session_id };
+  }
 
   /**
    * Records attendance for a single student on a given date.
@@ -29,7 +87,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       organizationId?: string | null;
       studentId: string;
       classId: string;
-      termId: string;
+      termId?: string | null;
       academicSessionId?: string | null;
       attendanceDate: string; // 'YYYY-MM-DD'
       status: string;
@@ -61,10 +119,11 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       throw new Error('CROSS_SCHOOL_VIOLATION: Student does not belong to the specified school tenant.');
     }
 
-    // 2. Verify class belongs to school
+    // 2. Resolve and verify class belongs to school
+    const resolvedClassId = await this.resolveClassId(data.schoolId, data.classId, client);
     const classCheck = await query<{ id: string; school_id: string }>(
       'SELECT id, school_id FROM classes WHERE id = $1 LIMIT 1;',
-      [data.classId],
+      [resolvedClassId],
       client
     );
     if (!classCheck.rows[0]) {
@@ -74,20 +133,10 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       throw new Error('CROSS_SCHOOL_VIOLATION: Class does not belong to the specified school tenant.');
     }
 
-    // 3. Verify term & resolve session
-    const termCheck = await query<{ id: string; session_id: string }>(
-      'SELECT id, session_id FROM academic_terms WHERE id = $1 LIMIT 1;',
-      [data.termId],
-      client
-    );
-    if (!termCheck.rows[0]) {
-      throw new Error('TERM_NOT_FOUND: Specified academic term does not exist.');
-    }
-
-    const resolvedSessionId = data.academicSessionId || termCheck.rows[0].session_id;
-    if (data.academicSessionId && termCheck.rows[0].session_id !== data.academicSessionId) {
-      throw new Error('SESSION_TERM_MISMATCH: Term does not belong to the specified academic session.');
-    }
+    // 3. Resolve and verify term & session
+    const resolvedTerm = await this.resolveTermId(data.termId, client);
+    const resolvedTermId = resolvedTerm.id;
+    const resolvedSessionId = data.academicSessionId || resolvedTerm.sessionId;
 
     // 4. Resolve organization_id if not explicitly provided
     let organizationId = data.organizationId;
@@ -106,7 +155,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
        WHERE student_id = $1 AND class_id = $2 
          AND (academic_session_id = $3 OR academic_session_id IS NULL)
        ORDER BY start_date DESC LIMIT 1;`,
-      [data.studentId, data.classId, resolvedSessionId],
+      [data.studentId, resolvedClassId, resolvedSessionId],
       client
     );
     const resolvedEnrollmentId = enrollmentRes.rows[0]?.id || null;
@@ -169,10 +218,10 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
         organizationId,
         data.schoolId,
         data.studentId,
-        data.classId,
+        resolvedClassId,
         resolvedSessionId,
-        data.termId,
-        data.termId,
+        resolvedTermId,
+        resolvedTermId,
         resolvedEnrollmentId,
         data.attendanceDate,
         data.dayNumberInTerm || 1,
@@ -207,6 +256,9 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     markedBy?: { staffId?: string | null; userId?: string | null; organizationId?: string | null }
   ): Promise<{ recorded: number; records: DailyAttendanceDbEntity[] }> {
     return withTransaction(async (client) => {
+      const resolvedClassId = await this.resolveClassId(schoolId, classId, client);
+      const resolvedTerm = await this.resolveTermId(termId, client);
+
       const results: DailyAttendanceDbEntity[] = [];
 
       for (const record of records) {
@@ -215,8 +267,9 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
             schoolId,
             organizationId: markedBy?.organizationId,
             studentId: record.studentId,
-            classId,
-            termId,
+            classId: resolvedClassId,
+            termId: resolvedTerm.id,
+            academicSessionId: resolvedTerm.sessionId,
             attendanceDate,
             status: record.status,
             arrivalTime: record.arrivalTime,
@@ -244,6 +297,8 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     date: string,
     options?: QueryOptions
   ): Promise<DailyAttendanceDbEntity[]> {
+    const resolvedClassId = await this.resolveClassId(schoolId, classId, options?.client);
+
     const sql = `
       SELECT 
         a.*,
@@ -263,7 +318,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
       ORDER BY s.full_name ASC;
     `;
 
-    return this.executeQuery<DailyAttendanceDbEntity>(sql, [schoolId, classId, date], options?.client);
+    return this.executeQuery<DailyAttendanceDbEntity>(sql, [schoolId, resolvedClassId, date], options?.client);
   }
 
   /**
@@ -281,16 +336,24 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     },
     options?: QueryOptions
   ): Promise<DailyAttendanceDbEntity[]> {
+    const resolvedClassId = await this.resolveClassId(schoolId, classId, options?.client);
+
     const conditions: string[] = ['a.school_id = $1', 'a.class_id = $2'];
-    const params: any[] = [schoolId, classId];
+    const params: any[] = [schoolId, resolvedClassId];
 
     if (filters?.date) {
       params.push(filters.date);
       conditions.push(`a.attendance_date = $${params.length}`);
     }
     if (filters?.termId) {
-      params.push(filters.termId);
-      conditions.push(`a.term_id = $${params.length}`);
+      if (UUID_REGEX.test(filters.termId)) {
+        params.push(filters.termId);
+        conditions.push(`a.term_id = $${params.length}`);
+      } else {
+        const resolvedTerm = await this.resolveTermId(filters.termId, options?.client);
+        params.push(resolvedTerm.id);
+        conditions.push(`a.term_id = $${params.length}`);
+      }
     }
     if (filters?.sessionId) {
       params.push(filters.sessionId);
@@ -340,11 +403,13 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     const params: any[] = [schoolId, date];
 
     if (filters?.classId) {
-      params.push(filters.classId);
+      const resolvedClassId = await this.resolveClassId(schoolId, filters.classId, options?.client);
+      params.push(resolvedClassId);
       conditions.push(`a.class_id = $${params.length}`);
     }
     if (filters?.termId) {
-      params.push(filters.termId);
+      const resolvedTerm = await this.resolveTermId(filters.termId, options?.client);
+      params.push(resolvedTerm.id);
       conditions.push(`a.term_id = $${params.length}`);
     }
 
@@ -465,11 +530,13 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     const params: any[] = [schoolId];
 
     if (filters?.classId) {
-      params.push(filters.classId);
+      const resolvedClassId = await this.resolveClassId(schoolId, filters.classId, options?.client);
+      params.push(resolvedClassId);
       conditions.push(`class_id = $${params.length}`);
     }
     if (filters?.termId) {
-      params.push(filters.termId);
+      const resolvedTerm = await this.resolveTermId(filters.termId, options?.client);
+      params.push(resolvedTerm.id);
       conditions.push(`term_id = $${params.length}`);
     }
     if (filters?.sessionId) {
@@ -606,9 +673,11 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
   async checkTeacherClassAuthorization(
     schoolId: string,
     userId: string,
-    classId: string,
+    classIdOrName: string,
     client?: PoolClient
   ): Promise<boolean> {
+    const resolvedClassId = await this.resolveClassId(schoolId, classIdOrName, client).catch(() => classIdOrName);
+
     // 1. Resolve staff record for user
     const staffRes = await query<{ id: string; assigned_class_id: string | null }>(
       'SELECT id, assigned_class_id FROM staff WHERE user_id = $1 AND school_id = $2 LIMIT 1;',
@@ -621,14 +690,14 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     }
 
     // 2. Check if assigned class matches
-    if (staff.assigned_class_id === classId) {
+    if (staff.assigned_class_id === resolvedClassId) {
       return true;
     }
 
     // 3. Check if form master of the class
     const formMasterRes = await query<{ id: string }>(
       'SELECT id FROM classes WHERE id = $1 AND form_master_id = $2 AND school_id = $3 LIMIT 1;',
-      [classId, staff.id, schoolId],
+      [resolvedClassId, staff.id, schoolId],
       client
     );
     if (formMasterRes.rows.length > 0) {
@@ -638,7 +707,7 @@ export class AttendanceRepository extends BaseRepository<DailyAttendanceDbEntity
     // 4. Check if allocated subject teacher for the class
     const allocationRes = await query<{ id: string }>(
       'SELECT id FROM class_subject_allocations WHERE class_id = $1 AND teacher_id = $2 AND school_id = $3 LIMIT 1;',
-      [classId, staff.id, schoolId],
+      [resolvedClassId, staff.id, schoolId],
       client
     );
     if (allocationRes.rows.length > 0) {
