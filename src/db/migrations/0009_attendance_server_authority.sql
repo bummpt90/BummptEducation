@@ -46,20 +46,53 @@ WHERE da.student_id = se.student_id
 
 -- 2. Ensure composite uniqueness constraint on (student_id, attendance_date)
 DO $$
+DECLARE
+    existing_conname text;
+    dup_count int;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'daily_attendance_student_date_unique'
+    -- If preferred constraint already exists, verify and return
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid = 'daily_attendance'::regclass 
+          AND c.conname = 'daily_attendance_student_date_unique'
+          AND c.contype = 'u'
     ) THEN
-        -- Check if default unique exists
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conrelid = 'daily_attendance'::regclass AND contype = 'u'
-        ) THEN
-            ALTER TABLE daily_attendance 
-            ADD CONSTRAINT daily_attendance_student_date_unique UNIQUE (student_id, attendance_date);
-        END IF;
+        RETURN;
     END IF;
+
+    -- Check if a unique constraint covering exactly (student_id, attendance_date) exists under an alternate name
+    SELECT c.conname INTO existing_conname
+    FROM pg_constraint c
+    WHERE c.conrelid = 'daily_attendance'::regclass
+      AND c.contype = 'u'
+      AND (
+        SELECT array_agg(a.attname::text ORDER BY array_position(c.conkey, a.attnum))
+        FROM pg_attribute a
+        WHERE a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+      ) = ARRAY['student_id', 'attendance_date']::text[];
+
+    IF existing_conname IS NOT NULL THEN
+        -- Safely rename existing constraint to the standardized name without creating duplicate constraint
+        EXECUTE format('ALTER TABLE daily_attendance RENAME CONSTRAINT %I TO daily_attendance_student_date_unique', existing_conname);
+        RETURN;
+    END IF;
+
+    -- Guard: check for duplicate records before adding constraint
+    SELECT COUNT(*) INTO dup_count
+    FROM (
+        SELECT student_id, attendance_date
+        FROM daily_attendance
+        GROUP BY student_id, attendance_date
+        HAVING COUNT(*) > 1
+    ) dups;
+
+    IF dup_count > 0 THEN
+        RAISE EXCEPTION 'CANNOT_APPLY_UNIQUE_CONSTRAINT: Found % duplicate student_id and attendance_date groups in daily_attendance table.', dup_count;
+    END IF;
+
+    -- Add standardized unique constraint
+    ALTER TABLE daily_attendance 
+    ADD CONSTRAINT daily_attendance_student_date_unique UNIQUE (student_id, attendance_date);
 END $$;
 
 -- 3. Performance & Multi-Tenant Indexes

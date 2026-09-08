@@ -1349,13 +1349,59 @@ export const MIGRATIONS: MigrationDefinition[] = [
         AND (da.academic_session_id = se.academic_session_id OR da.academic_session_id IS NULL)
         AND da.enrollment_id IS NULL;
 
-      -- 2. Performance & Multi-Tenant Indexes
+      -- 2. Ensure composite uniqueness constraint on (student_id, attendance_date)
+      DO $$
+      DECLARE
+          existing_conname text;
+          dup_count int;
+      BEGIN
+          IF EXISTS (
+              SELECT 1 FROM pg_constraint c
+              WHERE c.conrelid = 'daily_attendance'::regclass 
+                AND c.conname = 'daily_attendance_student_date_unique'
+                AND c.contype = 'u'
+          ) THEN
+              RETURN;
+          END IF;
+
+          SELECT c.conname INTO existing_conname
+          FROM pg_constraint c
+          WHERE c.conrelid = 'daily_attendance'::regclass
+            AND c.contype = 'u'
+            AND (
+              SELECT array_agg(a.attname::text ORDER BY array_position(c.conkey, a.attnum))
+              FROM pg_attribute a
+              WHERE a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            ) = ARRAY['student_id', 'attendance_date']::text[];
+
+          IF existing_conname IS NOT NULL THEN
+              EXECUTE format('ALTER TABLE daily_attendance RENAME CONSTRAINT %I TO daily_attendance_student_date_unique', existing_conname);
+              RETURN;
+          END IF;
+
+          SELECT COUNT(*) INTO dup_count
+          FROM (
+              SELECT student_id, attendance_date
+              FROM daily_attendance
+              GROUP BY student_id, attendance_date
+              HAVING COUNT(*) > 1
+          ) dups;
+
+          IF dup_count > 0 THEN
+              RAISE EXCEPTION 'CANNOT_APPLY_UNIQUE_CONSTRAINT: Found % duplicate student_id and attendance_date groups in daily_attendance table.', dup_count;
+          END IF;
+
+          ALTER TABLE daily_attendance 
+          ADD CONSTRAINT daily_attendance_student_date_unique UNIQUE (student_id, attendance_date);
+      END $$;
+
+      -- 3. Performance & Multi-Tenant Indexes
       CREATE INDEX IF NOT EXISTS idx_daily_attendance_org ON daily_attendance(organization_id);
       CREATE INDEX IF NOT EXISTS idx_daily_attendance_school_class_date ON daily_attendance(school_id, class_id, attendance_date);
       CREATE INDEX IF NOT EXISTS idx_daily_attendance_enrollment ON daily_attendance(enrollment_id);
       CREATE INDEX IF NOT EXISTS idx_daily_attendance_session_term ON daily_attendance(academic_session_id, academic_term_id);
 
-      -- 3. Attendance Security Audit Logs Table
+      -- 4. Attendance Security Audit Logs Table
       CREATE TABLE IF NOT EXISTS attendance_audit_logs (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
