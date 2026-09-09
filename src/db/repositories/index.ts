@@ -23,3 +23,5 @@ export * from './bursary.repository';
 export * from './financialAudit.repository';
 export * from './parent.repository';
 export * from './reportCard.repository';
+export * from './lessonNote.repository';
+export * from './lessonInquiry.repository';

@@ -6,7 +6,6 @@ import {
   Term, 
   NavigationPage 
 } from '../types';
-import { INITIAL_LESSON_NOTES } from '../data/lessonNotesData';
 import { LessonNoteViewerModal } from '../components/LessonNoteViewerModal';
 import { UploadLessonNoteModal } from '../components/UploadLessonNoteModal';
 import { downloadLessonNoteAsPDF } from '../utils/pdfGenerator';
@@ -44,9 +43,20 @@ interface LessonNotesPageProps {
   onNavigate: (page: NavigationPage) => void;
 }
 
+export interface LessonStats {
+  totalNotes: number;
+  totalDownloads: number;
+  armBreakdown: { kindergarten: number; primary: number; secondary: number };
+  totalFeedbacks: number;
+  pendingFeedbacks: number;
+  classesCovered: string[];
+  subjectsCovered: string[];
+}
+
 export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) => {
-  const [lessonNotes, setLessonNotes] = useState<LessonNote[]>(INITIAL_LESSON_NOTES);
-  const [isLoading, setIsLoading] = useState(false);
+  const [lessonNotes, setLessonNotes] = useState<LessonNote[]>([]);
+  const [stats, setStats] = useState<LessonStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArm, setSelectedArm] = useState<'All' | SchoolArm>('All');
   const [selectedClass, setSelectedClass] = useState<'All' | ClassLevel>('All');
@@ -61,6 +71,21 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
 
+  // Fetch stats from backend API
+  const fetchStats = async () => {
+    try {
+      const res = await fetch('/api/v1/lesson-notes/stats');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setStats(json.data);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch lesson notes stats:', err);
+    }
+  };
+
   // Fetch from backend API
   const fetchNotes = async () => {
     setIsLoading(true);
@@ -69,11 +94,11 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
       if (selectedArm !== 'All') params.append('arm', selectedArm);
       if (selectedClass !== 'All') params.append('classLevel', selectedClass);
       if (selectedTerm !== 'All') params.append('term', selectedTerm);
-      if (selectedWeek !== 'All') params.append('week', selectedWeek.toString());
-      if (selectedSubject !== 'All') params.append('subject', selectedSubject);
+      if (selectedWeek !== 'All') params.append('weekNumber', selectedWeek.toString());
+      if (selectedSubject !== 'All') params.append('subjectName', selectedSubject);
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
-      const res = await fetch(`/api/lesson-notes?${params.toString()}`);
+      const res = await fetch(`/api/v1/lesson-notes?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
@@ -81,11 +106,15 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
         }
       }
     } catch (err) {
-      console.log('Using local store fallback', err);
+      console.error('Failed to load lesson notes from PostgreSQL backend:', err);
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   useEffect(() => {
     fetchNotes();
@@ -220,21 +249,21 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700/60 text-xs">
             <div className="bg-slate-800/60 rounded-2xl p-3.5 border border-slate-700/50">
               <span className="text-slate-400 block text-[11px] font-semibold">Total Published Notes</span>
-              <span className="text-xl font-extrabold text-white">{lessonNotes.length} Modules</span>
+              <span className="text-xl font-extrabold text-white">{stats?.totalNotes ?? lessonNotes.length} Modules</span>
             </div>
             <div className="bg-slate-800/60 rounded-2xl p-3.5 border border-slate-700/50">
               <span className="text-slate-400 block text-[11px] font-semibold">Active Class Platforms</span>
-              <span className="text-xl font-extrabold text-blue-400">KG 1 to SSS 3</span>
+              <span className="text-xl font-extrabold text-blue-400">{stats?.classesCovered.length ? `${stats.classesCovered.length} Classes` : 'KG 1 to SSS 3'}</span>
             </div>
             <div className="bg-slate-800/60 rounded-2xl p-3.5 border border-slate-700/50">
               <span className="text-slate-400 block text-[11px] font-semibold">Total Parent Downloads</span>
               <span className="text-xl font-extrabold text-emerald-400">
-                {lessonNotes.reduce((acc, curr) => acc + (curr.downloadCount || 0), 0)} Copies
+                {stats?.totalDownloads ?? lessonNotes.reduce((acc, curr) => acc + (curr.downloadCount || 0), 0)} Copies
               </span>
             </div>
             <div className="bg-slate-800/60 rounded-2xl p-3.5 border border-slate-700/50">
-              <span className="text-slate-400 block text-[11px] font-semibold">Accreditation Standard</span>
-              <span className="text-xl font-extrabold text-amber-400">UBE & NERDC</span>
+              <span className="text-slate-400 block text-[11px] font-semibold">Parent Consultations</span>
+              <span className="text-xl font-extrabold text-amber-400">{stats?.totalFeedbacks ?? 0} Inquiries</span>
             </div>
           </div>
         </div>
@@ -250,7 +279,7 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
             }`}
           >
             <Layers className="h-4 w-4" />
-            <span>All School Wings ({lessonNotes.length})</span>
+            <span>All School Wings ({stats?.totalNotes ?? lessonNotes.length})</span>
           </button>
 
           <button
@@ -262,7 +291,7 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
             }`}
           >
             <Baby className="h-4 w-4 text-amber-300" />
-            <span>Kindergarten & Early Years (KG 1-3)</span>
+            <span>Kindergarten & Early Years ({stats?.armBreakdown.kindergarten ?? 'KG 1-3'})</span>
           </button>
 
           <button
@@ -274,7 +303,7 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
             }`}
           >
             <BookOpen className="h-4 w-4 text-emerald-300" />
-            <span>Primary School (Basic 1-6)</span>
+            <span>Primary School ({stats?.armBreakdown.primary ?? 'Basic 1-6'})</span>
           </button>
 
           <button
@@ -286,7 +315,7 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
             }`}
           >
             <School className="h-4 w-4 text-indigo-300" />
-            <span>Secondary College (JSS 1 - SSS 3)</span>
+            <span>Secondary College ({stats?.armBreakdown.secondary ?? 'JSS 1 - SSS 3'})</span>
           </button>
         </div>
 
@@ -426,7 +455,13 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
         </div>
 
         {/* 4. Lesson Notes Content Listing */}
-        {filteredNotes.length === 0 ? (
+        {isLoading ? (
+          <div className="rounded-3xl bg-slate-800/40 border border-slate-700/60 p-12 text-center space-y-4">
+            <RefreshCw className="h-10 w-10 text-blue-400 animate-spin mx-auto" />
+            <h3 className="text-base sm:text-lg font-bold text-white">Loading Lesson Notes...</h3>
+            <p className="text-xs text-slate-400">Fetching verified curriculum modules from PostgreSQL registry.</p>
+          </div>
+        ) : filteredNotes.length === 0 ? (
           <div className="rounded-3xl bg-slate-800/40 border border-slate-700/60 p-12 text-center space-y-4">
             <BookOpen className="h-12 w-12 text-slate-500 mx-auto" />
             <h3 className="text-base sm:text-lg font-bold text-white">No Lesson Notes Found</h3>

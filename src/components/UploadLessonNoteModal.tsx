@@ -115,9 +115,15 @@ export const UploadLessonNoteModal: React.FC<UploadLessonNoteModalProps> = ({
         attachedPdfName,
       };
 
-      const res = await fetch('/api/lesson-notes', {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = sessionStorage.getItem('bummpt_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/v1/lesson-notes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 

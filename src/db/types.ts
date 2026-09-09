@@ -604,5 +604,106 @@ export interface UserAccountRequestDbEntity extends BaseDbEntity {
   reviewer_name?: string | null;
 }
 
+/**
+ * Authoritative Lesson Note Entity in PostgreSQL (Phase 8D)
+ */
+export interface LessonNoteDbEntity extends BaseDbEntity {
+  organization_id?: string | null;
+  school_id: string;
+  teacher_id?: string | null;
+  teacher_name?: string;
+  class_id?: string | null;
+  class_level: string;
+  arm: string;
+  subject_id?: string | null;
+  subject_name?: string;
+  academic_session_id?: string | null;
+  academic_term_id?: string | null;
+  term_id?: string | null;
+  term?: string;
+  academic_year?: string;
+  week_number: number;
+  title: string;
+  topic: string;
+  sub_topics?: string[];
+  learning_objectives?: string[];
+  instructional_materials?: string[];
+  content_summary: string;
+  content_body: string;
+  evaluation_questions?: string[];
+  key_terms?: string[];
+  pdf_file_name?: string | null;
+  pdf_file_size?: string | null;
+  pdf_url?: string | null;
+  download_count: number;
+  status: 'Published' | 'Draft' | 'Archived';
+  uploaded_at?: Date | string;
+  // Joined or calculated fields
+  school_name?: string;
+  school_code?: string;
+  feedback_count?: number;
+  pending_feedback_count?: number;
+}
+
+/**
+ * Teacher Inquiry & Parent Feedback Entity in PostgreSQL (Phase 8D)
+ */
+export interface LessonInquiryDbEntity extends BaseDbEntity {
+  organization_id?: string | null;
+  school_id: string;
+  lesson_note_id: string;
+  student_id?: string | null;
+  student_name?: string | null;
+  parent_id?: string | null;
+  parent_name: string;
+  guardian_phone?: string | null;
+  question: string;
+  teacher_reply?: string | null;
+  reply?: string | null;
+  replied_by_staff_id?: string | null;
+  replied_by_user_id?: string | null;
+  replied_by_name?: string | null;
+  status: 'Pending' | 'Answered' | 'Closed';
+  replied_at?: Date | string | null;
+  // Joined fields
+  lesson_title?: string;
+  lesson_topic?: string;
+  school_name?: string;
+}
+
+/**
+ * Lesson Note Audit Log Entity in PostgreSQL (Phase 8D)
+ */
+export interface LessonNoteAuditLogDbEntity extends QueryResultRow {
+  id: string;
+  organization_id?: string | null;
+  school_id: string;
+  lesson_note_id?: string | null;
+  inquiry_id?: string | null;
+  user_id?: string | null;
+  action: string;
+  details: Record<string, any>;
+  ip_address?: string | null;
+  created_at: Date | string;
+  user_name?: string;
+}
+
+/**
+ * Authoritative Lesson Notes Aggregated Statistics
+ */
+export interface LessonNotesStats {
+  totalNotes: number;
+  totalDownloads: number;
+  armBreakdown: {
+    kindergarten: number;
+    primary: number;
+    secondary: number;
+  };
+  totalFeedbacks: number;
+  pendingFeedbacks: number;
+  classesCovered: string[];
+  subjectsCovered: string[];
+}
+
 
 

@@ -1,9 +1,9 @@
 # BummptEducation — Phase 8C: Attendance Server Authority & Historical Registry Synchronization
 
-**Document Version:** 1.0.0  
-**Status:** COMPLETED & VERIFIED  
+**Document Version:** 1.1.0  
+**Status:** COMPLETED & HARDENED  
 **Phase:** 8C  
-**Test Suite:** `tests/phase8c.attendance.test.ts` (15/15 Passed)
+**Test Suite:** `tests/phase8c.attendance.test.ts` (20/20 Passed)
 
 ---
 
@@ -126,9 +126,14 @@ Test Suite: `tests/phase8c.attendance.test.ts`
 |---|---|---|
 | 1 | Migration 0009 Tables (`daily_attendance`, `attendance_audit_logs`, `student_enrollments`) | **PASSED** |
 | 1b | `daily_attendance` Columns (tenants, dates, timestamps, enrollments) | **PASSED** |
+| 1c | PostgreSQL Metadata: `daily_attendance_student_date_unique` verification | **PASSED** |
 | 2 | RBAC Permissions (`attendance.view`, `attendance.mark` for principal/teacher, blocked for student/parent) | **PASSED** |
 | 3 | Server Authority: Single Student Attendance Record Persistence | **PASSED** |
 | 4 | Unique Constraint & Conflict Update (In-place update, zero duplicate rows) | **PASSED** |
+| 4b | Direct PostgreSQL Unique Violation: Two records for same student/date cannot coexist (Error 23505) | **PASSED** |
+| 4c | Uniqueness Permutations: Different students on same date & same student on different dates allowed | **PASSED** |
+| 4d | Database Audit: Zero duplicate student_id + attendance_date rows across entire database | **PASSED** |
+| 4e | Migration Safety & Idempotency: Re-executing migrations is safe with zero duplicate constraints created | **PASSED** |
 | 5 | Duplicate Attendance Guard (Rejects duplicate when `updateIfExists: false`) | **PASSED** |
 | 6 | Multi-Tenant Scoping: Cross-School Attendance Recording Blocked (`CROSS_SCHOOL_VIOLATION`) | **PASSED** |
 | 6b | Multi-Tenant Scoping: School B queries return zero School A records | **PASSED** |
@@ -140,4 +145,34 @@ Test Suite: `tests/phase8c.attendance.test.ts`
 | 12 | Frontend Decoupling: `AttendancePage` relies exclusively on Server Authority | **PASSED** |
 | 13 | `DataContext` PostgreSQL API Authority for Attendance Registry | **PASSED** |
 
-**Summary: 15/15 Tests Passed.**
+**Summary: 20/20 Tests Passed.**
+
+---
+
+## 7. Database Constraint Hardening & Uniqueness Guarantee
+
+### Exact Uniqueness Rule
+**ONE ATTENDANCE RECORD PER STUDENT PER DATE.**
+The database strictly prevents duplicate attendance records for the same student on the same day across the entire institution.
+
+### Exact Constraint and Index
+- **Constraint Name:** `daily_attendance_student_date_unique`
+- **Constraint Type:** `UNIQUE` (`contype = 'u'`)
+- **Covered Columns:** `(student_id, attendance_date)`
+- **Underlying Index:** `CREATE UNIQUE INDEX daily_attendance_student_date_unique ON public.daily_attendance USING btree (student_id, attendance_date)`
+
+### How It Was Verified
+1. **Catalog Metadata Introspection:** Queried `pg_constraint`, `pg_class`, `pg_index`, and `pg_attribute` to confirm the constraint name, column ordering (`conkey`), and backing unique index (`indisunique = true`).
+2. **Direct Collision Testing:** Executed raw SQL insert collision bypassing application layers; verified that PostgreSQL natively raises error code `23505` (`unique_violation`) explicitly citing `daily_attendance_student_date_unique`.
+3. **Scope Permutations:** Verified that different students on the same date and the same student on different dates can be safely recorded.
+4. **Idempotency & Migration Safety:** Tested re-executing migrations against the active database; confirmed 0 duplicate constraints created and 0 errors thrown.
+
+### Duplicate-Data Check Result
+Executed deduplication check query across the entire `daily_attendance` table:
+```sql
+SELECT student_id, attendance_date, COUNT(*)
+FROM daily_attendance
+GROUP BY student_id, attendance_date
+HAVING COUNT(*) > 1;
+```
+**Result:** **0 duplicate records found.** The database is 100% clean and compliant with the uniqueness invariant.

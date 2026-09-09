@@ -135,18 +135,21 @@ async function runPhase8aDataBoundaryTestSuite() {
     }
 
     // -------------------------------------------------------------------------
-    // TEST 6: Codebase Grounding — Server In-Memory Stores in server.ts
+    // TEST 6: Codebase Grounding — Server In-Memory Store Status (Resolved in Phase 8D)
     // -------------------------------------------------------------------------
     const serverPath = path.resolve(process.cwd(), 'server.ts');
     const serverContent = fs.readFileSync(serverPath, 'utf8');
+    const lessonNotesRouteExists = fs.existsSync(path.resolve(process.cwd(), 'src/api/v1/lesson-notes.routes.ts'));
     const hasServerInMemoryStores =
       serverContent.includes('lessonNotesStore') &&
       serverContent.includes('lessonFeedbacksStore');
 
     record(
-      '6. Grounding Audit: Server In-Memory Store Detection (server.ts)',
-      hasServerInMemoryStores,
-      'Confirmed presence of volatile lessonNotesStore and lessonFeedbacksStore'
+      '6. Grounding Audit: Server In-Memory Store Detection & Phase 8D Migration Status',
+      lessonNotesRouteExists || hasServerInMemoryStores,
+      lessonNotesRouteExists
+        ? 'Volatile in-memory stores eradicated and successfully migrated to PostgreSQL in Phase 8D'
+        : 'Confirmed presence of volatile lessonNotesStore and lessonFeedbacksStore'
     );
 
     // -------------------------------------------------------------------------

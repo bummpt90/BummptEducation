@@ -25,7 +25,9 @@ import {
   AssessmentScore, 
   ClassLevel, 
   SchoolArm,
-  getSchoolArm
+  getSchoolArm,
+  LessonNote,
+  LessonFeedback
 } from '../types';
 import { useAuth } from './AuthContext';
 import { 
@@ -102,6 +104,12 @@ interface DataContextType {
     records: Array<{ studentId: string; status: string; arrivalTime?: string; reason?: string }>;
   }) => Promise<{ success: boolean; data?: any; error?: string }>;
   fetchClassAttendance: (classId: string, date?: string) => Promise<{ success: boolean; data?: any[]; error?: string }>;
+  lessonNotes: LessonNote[];
+  fetchLessonNotes: (filters?: Record<string, any>) => Promise<LessonNote[]>;
+  createLessonNote: (data: Partial<LessonNote>) => Promise<{ success: boolean; data?: LessonNote; error?: string }>;
+  incrementLessonNoteDownload: (id: string) => Promise<number>;
+  submitLessonInquiry: (noteId: string, payload: { parentName: string; studentName?: string; question: string; guardianPhone?: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
+  replyLessonInquiry: (inquiryId: string, reply: string) => Promise<{ success: boolean; data?: any; error?: string }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -130,6 +138,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [admissions, setAdmissions] = useState<AdmissionApplication[]>([]);
   const [assessments, setAssessments] = useState<AssessmentScore[]>([]);
   const [bursaries, setBursaries] = useState<any[]>([]);
+  const [lessonNotes, setLessonNotes] = useState<LessonNote[]>([]);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -402,6 +411,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setAssessments(INITIAL_ASSESSMENTS);
       }
 
+      // Fetch Lesson Notes
+      try {
+        const notesRes = await fetch('/api/v1/lesson-notes', fetchOptions);
+        if (notesRes.ok) {
+          const notesData = await notesRes.json();
+          if (notesData.success && Array.isArray(notesData.data)) {
+            setLessonNotes(notesData.data);
+          }
+        }
+      } catch (err: any) {
+        console.warn('[DataContext] Notice fetching lesson notes in refreshAll:', err?.message);
+      }
+
       setLastSyncedAt(new Date());
     } catch (err: any) {
       console.warn('[DataContext] Notice during server sync:', err?.message);
@@ -643,6 +665,105 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const fetchLessonNotes = useCallback(async (filters?: Record<string, any>): Promise<LessonNote[]> => {
+    try {
+      const params = new URLSearchParams();
+      if (filters) {
+        Object.entries(filters).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== 'All') {
+            params.append(k, String(v));
+          }
+        });
+      }
+      const res = await fetch(`/api/v1/lesson-notes?${params.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setLessonNotes(json.data);
+          return json.data;
+        }
+      }
+      return [];
+    } catch (err: any) {
+      console.error('[DataContext] Failed to fetch lesson notes:', err?.message);
+      return [];
+    }
+  }, []);
+
+  const createLessonNote = async (data: Partial<LessonNote>) => {
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch('/api/v1/lesson-notes', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setLessonNotes((prev) => [json.data, ...prev]);
+        return { success: true, data: json.data };
+      }
+      return { success: false, error: json.message || json.error || 'Failed to publish lesson note.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const incrementLessonNoteDownload = async (id: string): Promise<number> => {
+    try {
+      setLessonNotes((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, downloadCount: (n.downloadCount || 0) + 1 } : n))
+      );
+      const res = await fetch(`/api/v1/lesson-notes/${id}/increment-download`, { method: 'POST' });
+      const json = await res.json();
+      return json.downloadCount || 1;
+    } catch {
+      return 1;
+    }
+  };
+
+  const submitLessonInquiry = async (
+    noteId: string, 
+    payload: { parentName: string; studentName?: string; question: string; guardianPhone?: string }
+  ) => {
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/v1/lesson-notes/${noteId}/feedback`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        return { success: true, data: json.data };
+      }
+      return { success: false, error: json.message || json.error || 'Failed to submit inquiry.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const replyLessonInquiry = async (inquiryId: string, reply: string) => {
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/v1/lesson-notes/inquiries/${inquiryId}/reply`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ reply }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        return { success: true, data: json.data };
+      }
+      return { success: false, error: json.message || json.error || 'Failed to reply to inquiry.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -655,6 +776,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         admissions,
         assessments,
         bursaries,
+        lessonNotes,
         isLoading,
         isSyncing,
         error,
@@ -668,6 +790,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         saveAssessmentScore,
         recordAttendance,
         fetchClassAttendance,
+        fetchLessonNotes,
+        createLessonNote,
+        incrementLessonNoteDownload,
+        submitLessonInquiry,
+        replyLessonInquiry,
       }}
     >
       {children}

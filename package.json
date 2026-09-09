@@ -18,6 +18,7 @@
     "test:phase8a": "tsx tests/phase8a.data-boundary.test.ts",
     "test:phase8b": "tsx tests/phase8b.parent-access.test.ts",
     "test:phase8c": "tsx tests/phase8c.attendance.test.ts",
+    "test:phase8d": "tsx tests/phase8d.lesson-notes.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
