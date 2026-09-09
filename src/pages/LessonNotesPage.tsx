@@ -53,10 +53,22 @@ export interface LessonStats {
   subjectsCovered: string[];
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const token = sessionStorage.getItem('bummpt_token');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) => {
   const [lessonNotes, setLessonNotes] = useState<LessonNote[]>([]);
   const [stats, setStats] = useState<LessonStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArm, setSelectedArm] = useState<'All' | SchoolArm>('All');
   const [selectedClass, setSelectedClass] = useState<'All' | ClassLevel>('All');
@@ -74,7 +86,9 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
   // Fetch stats from backend API
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/v1/lesson-notes/stats');
+      const res = await fetch('/api/v1/lesson-notes/stats', {
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -89,6 +103,7 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
   // Fetch from backend API
   const fetchNotes = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const params = new URLSearchParams();
       if (selectedArm !== 'All') params.append('arm', selectedArm);
@@ -98,15 +113,23 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
       if (selectedSubject !== 'All') params.append('subjectName', selectedSubject);
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
-      const res = await fetch(`/api/v1/lesson-notes?${params.toString()}`);
+      const res = await fetch(`/api/v1/lesson-notes?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
           setLessonNotes(data.data);
+        } else {
+          setErrorMessage(data.message || 'Failed to retrieve lesson notes from registry.');
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setErrorMessage(errData.message || `Server responded with status ${res.status}.`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load lesson notes from PostgreSQL backend:', err);
+      setErrorMessage(err.message || 'Network error connecting to curriculum server.');
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +156,10 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
     setTimeout(() => setDownloadSuccessToast(null), 3500);
 
     try {
-      fetch(`/api/lesson-notes/${note.id}/increment-download`, { method: 'POST' }).catch(() => {});
+      fetch(`/api/v1/lesson-notes/${note.id}/increment-download`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }).catch(() => {});
     } catch {}
   };
 
@@ -455,7 +481,27 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
         </div>
 
         {/* 4. Lesson Notes Content Listing */}
-        {isLoading ? (
+        {errorMessage ? (
+          <div className="rounded-3xl bg-rose-950/30 border border-rose-500/40 p-12 text-center space-y-4">
+            <div className="h-12 w-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto border border-rose-500/30">
+              <RefreshCw className="h-6 w-6" />
+            </div>
+            <h3 className="text-base sm:text-lg font-bold text-rose-200">Unable to Load Lesson Notes</h3>
+            <p className="text-xs sm:text-sm text-rose-300/80 max-w-md mx-auto">
+              {errorMessage}
+            </p>
+            <button
+              onClick={() => {
+                fetchStats();
+                fetchNotes();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 transition cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Retry Request</span>
+            </button>
+          </div>
+        ) : isLoading ? (
           <div className="rounded-3xl bg-slate-800/40 border border-slate-700/60 p-12 text-center space-y-4">
             <RefreshCw className="h-10 w-10 text-blue-400 animate-spin mx-auto" />
             <h3 className="text-base sm:text-lg font-bold text-white">Loading Lesson Notes...</h3>

@@ -1,8 +1,14 @@
 /**
  * BummptEducation — Lesson Notes & Inquiries Seeder (Phase 8D)
  * 
- * Populates PostgreSQL with foundational lesson notes, curriculum modules,
- * and parent inquiries/feedback for development and automated testing.
+ * DEVELOPMENT & REFERENCE TEST SEEDER ONLY:
+ * Populates PostgreSQL with foundational curriculum lesson notes and sample inquiries
+ * for local development and test suite baseline verification.
+ * 
+ * STRICT PROHIBITION:
+ * This seeder MUST NEVER run in production environments (NODE_ENV === 'production').
+ * In production, the PostgreSQL curriculum registry begins empty and is populated solely
+ * through authoritative teacher and educator submissions.
  */
 
 import type { PoolClient } from 'pg';
@@ -16,6 +22,10 @@ export interface LessonNotesSeedReport {
 }
 
 export async function seedLessonNotesFoundation(externalClient?: PoolClient): Promise<LessonNotesSeedReport> {
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[LessonNotesSeed] Refusing to seed mock lesson notes in production environment.');
+    return { notesInserted: 0, feedbacksInserted: 0, schoolId: '' };
+  }
   const runner = async (client: PoolClient): Promise<LessonNotesSeedReport> => {
     // 1. Resolve Primary School & Org
     const schoolRes = await client.query<{ id: string; organization_id: string }>(

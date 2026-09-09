@@ -1,16 +1,36 @@
 /**
  * BummptEducation — Lesson Notes & Inquiries API Routes (/api/v1/lesson-notes)
  * 
+ * Phase 8D: Final Security, Authorization, Audit & Production-Seed Hardening
+ * 
  * Server-authoritative endpoints for curriculum publication, student/parent
  * lesson material downloads, teacher consultations, and administrative telemetry
  * backed by PostgreSQL.
+ * 
+ * Security Guarantees:
+ * 1. Strict Authentication: All read, write, download, inquiry, and reply endpoints
+ *    require valid JWT authentication via authenticateUser (no optionalAuth).
+ * 2. Multi-Tenant Isolation & IDOR Protection: Ordinary staff, teachers, parents,
+ *    and students are strictly confined to their authenticated school context.
+ *    Client-supplied schoolId parameters are ignored for non-supervisory roles.
+ * 3. Authoritative Parent/Student Inquiries: Parent submissions resolve linked
+ *    students through authoritative parent_guardians and parent_student_links tables.
+ * 4. Scoped Inquiry Visibility: Parents can only read inquiries for their own
+ *    linked children; educators view their school's inquiries; IDOR is blocked.
+ * 5. Atomic PostgreSQL Deletion + Audit Logging: Deletions run inside an atomic
+ *    transaction that verifies tenant ownership, removes the lesson note, and inserts
+ *    a NOTE_DELETED audit record. Audit log FK uses ON DELETE SET NULL to preserve history.
+ * 6. Safe API Error Responses: Internal database details, queries, and stack traces
+ *    are never returned to client responses.
  */
 
 import { Router } from 'express';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { authenticateUser, requirePermission } from '../../auth/middleware';
 import { lessonNoteRepository } from '../../db/repositories/lessonNote.repository';
 import { lessonInquiryRepository } from '../../db/repositories/lessonInquiry.repository';
+import { parentRepository } from '../../db/repositories/parent.repository';
+import { query } from '../../db/client';
 import type { AuthenticatedRequest } from '../../auth/types';
 import type { LessonNoteDbEntity, LessonInquiryDbEntity } from '../../db/types';
 
@@ -69,30 +89,39 @@ function mapDbToFeedback(entity: LessonInquiryDbEntity) {
 }
 
 /**
- * Optional Authentication Helper:
- * Extracts user if Authorization header is present, but doesn't block unauthenticated callers.
+ * Resolve tenant scope for an authenticated request.
+ * Super Admins and State Officers may query globally or specify a schoolId.
+ * All other roles are strictly confined to their user.schoolId.
  */
-function optionalAuth(req: Request, res: Response, next: () => void) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    authenticateUser(req as AuthenticatedRequest, res, next);
-  } else {
-    next();
+function resolveAuthorizedSchoolScope(req: AuthenticatedRequest): { schoolId?: string; isGlobal: boolean } {
+  const user = req.user!;
+  if (user.isSuperAdmin || user.isStateOfficer) {
+    const querySchoolId = (req.query.schoolId as string) || (req.query.school_id as string) || undefined;
+    return { schoolId: querySchoolId, isGlobal: !querySchoolId };
   }
+  return { schoolId: user.schoolId || undefined, isGlobal: false };
 }
 
 /**
  * GET /api/v1/lesson-notes/stats
  * Return PostgreSQL-authoritative curriculum metrics.
+ * Requires authenticated access and enforces tenant scope.
  */
-lessonNotesRouter.get('/stats', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+lessonNotesRouter.get('/stats', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    let targetSchoolId = (req.query.schoolId as string) || (req.query.school_id as string);
-    if (req.user && !req.user.isSuperAdmin && !req.user.isStateOfficer && req.user.schoolId) {
-      targetSchoolId = req.user.schoolId;
+    const user = req.user!;
+    const { schoolId, isGlobal } = resolveAuthorizedSchoolScope(req);
+
+    if (!isGlobal && !schoolId) {
+      res.status(403).json({
+        success: false,
+        error: 'TENANT_CONTEXT_REQUIRED',
+        message: 'User is not associated with an authorized school.',
+      });
+      return;
     }
 
-    const stats = await lessonNoteRepository.getLessonNotesStats(targetSchoolId);
+    const stats = await lessonNoteRepository.getLessonNotesStats(schoolId);
     res.json({
       success: true,
       data: stats,
@@ -102,7 +131,7 @@ lessonNotesRouter.get('/stats', optionalAuth, async (req: AuthenticatedRequest, 
     res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: error?.message || 'Failed to fetch lesson notes statistics.',
+      message: 'An internal error occurred while fetching lesson notes statistics.',
     });
   }
 });
@@ -110,9 +139,22 @@ lessonNotesRouter.get('/stats', optionalAuth, async (req: AuthenticatedRequest, 
 /**
  * GET /api/v1/lesson-notes
  * Search and filter lesson notes backed by PostgreSQL.
+ * Requires authentication and strictly scopes results to the caller's school.
  */
-lessonNotesRouter.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+lessonNotesRouter.get('/', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const user = req.user!;
+    const { schoolId, isGlobal } = resolveAuthorizedSchoolScope(req);
+
+    if (!isGlobal && !schoolId) {
+      res.status(403).json({
+        success: false,
+        error: 'TENANT_CONTEXT_REQUIRED',
+        message: 'User is not associated with an authorized school.',
+      });
+      return;
+    }
+
     const {
       arm,
       classLevel,
@@ -128,14 +170,9 @@ lessonNotesRouter.get('/', optionalAuth, async (req: AuthenticatedRequest, res: 
       offset,
     } = req.query;
 
-    let targetSchoolId = (req.query.schoolId as string) || (req.query.school_id as string);
-    if (req.user && !req.user.isSuperAdmin && !req.user.isStateOfficer && req.user.schoolId) {
-      targetSchoolId = req.user.schoolId;
-    }
-
     const result = await lessonNoteRepository.listLessonNotes(
       {
-        schoolId: targetSchoolId,
+        schoolId,
         arm: arm as string,
         classLevel: classLevel as string,
         classId: classId as string,
@@ -169,34 +206,80 @@ lessonNotesRouter.get('/', optionalAuth, async (req: AuthenticatedRequest, res: 
     res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: error?.message || 'Failed to retrieve lesson notes.',
+      message: 'An internal error occurred while retrieving lesson notes.',
     });
   }
 });
 
 /**
+ * Helper to fetch inquiries for a specific note, respecting the caller's role.
+ */
+async function getInquiriesForUserRole(noteId: string, schoolId: string, user: AuthenticatedRequest['user']) {
+  if (!user) return [];
+
+  // Super Admin and State Officers have supervisory visibility
+  if (user.isSuperAdmin || user.isStateOfficer) {
+    return lessonInquiryRepository.listInquiriesForNote(noteId, schoolId);
+  }
+
+  // School educators, administrators, and principals see all inquiries for their school's note
+  if (['teacher', 'principal', 'vice_principal', 'headmistress', 'admin'].includes(user.role)) {
+    return lessonInquiryRepository.listInquiriesForNote(noteId, schoolId);
+  }
+
+  // Parents are strictly restricted to inquiries for their own linked children
+  if (user.role === 'parent') {
+    const parent = await parentRepository.findParentByUserId(user.id);
+    if (!parent) return [];
+    const linkedStudents = await parentRepository.getLinkedStudents(parent.id, schoolId);
+    const studentIds = linkedStudents.map((s) => s.id);
+    return lessonInquiryRepository.listInquiriesForNote(noteId, schoolId, {
+      parentId: parent.id,
+      studentIds,
+    });
+  }
+
+  // Students are strictly restricted to inquiries regarding themselves
+  if (user.role === 'student') {
+    return lessonInquiryRepository.listInquiriesForNote(noteId, schoolId, {
+      studentId: user.id,
+    });
+  }
+
+  return [];
+}
+
+/**
  * GET /api/v1/lesson-notes/:id
  * Retrieve a single lesson note along with parent feedback consultation history.
+ * Enforces authenticated tenant boundary (IDOR protection).
  */
-lessonNotesRouter.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+lessonNotesRouter.get('/:id', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    let targetSchoolId = (req.query.schoolId as string) || (req.query.school_id as string);
-    if (req.user && !req.user.isSuperAdmin && !req.user.isStateOfficer && req.user.schoolId) {
-      targetSchoolId = req.user.schoolId;
-    }
+    const { schoolId, isGlobal } = resolveAuthorizedSchoolScope(req);
 
-    const note = await lessonNoteRepository.getLessonNoteById(id, targetSchoolId);
-    if (!note) {
-      res.status(404).json({
+    if (!isGlobal && !schoolId) {
+      res.status(403).json({
         success: false,
-        error: 'NOT_FOUND',
-        message: 'Lesson note not found.',
+        error: 'TENANT_CONTEXT_REQUIRED',
+        message: 'User is not associated with an authorized school.',
       });
       return;
     }
 
-    const inquiries = await lessonInquiryRepository.listInquiriesForNote(id, targetSchoolId);
+    const note = await lessonNoteRepository.getLessonNoteById(id, schoolId);
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'Lesson note not found or access denied.',
+      });
+      return;
+    }
+
+    // Role-authorized inquiry retrieval
+    const inquiries = await getInquiriesForUserRole(id, note.school_id, req.user);
 
     res.json({
       success: true,
@@ -208,7 +291,7 @@ lessonNotesRouter.get('/:id', optionalAuth, async (req: AuthenticatedRequest, re
     res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: error?.message || 'Failed to retrieve lesson note details.',
+      message: 'An internal error occurred while retrieving lesson note details.',
     });
   }
 });
@@ -224,12 +307,7 @@ lessonNotesRouter.post(
   requirePermission('lesson_notes.create'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const user = req.user;
-      if (!user) {
-        res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
-        return;
-      }
-
+      const user = req.user!;
       const body = req.body || {};
       const {
         title,
@@ -264,9 +342,11 @@ lessonNotesRouter.post(
         return;
       }
 
-      // Tenant isolation: Staff / Teachers cannot publish notes to other schools
-      let targetSchoolId = schoolId || user.schoolId;
-      if (!user.isSuperAdmin && !user.isStateOfficer) {
+      // Tenant isolation: Non-supervisors cannot publish notes to other schools
+      let targetSchoolId = user.schoolId;
+      if (user.isSuperAdmin || user.isStateOfficer) {
+        targetSchoolId = schoolId || user.schoolId;
+      } else {
         if (schoolId && user.schoolId && schoolId !== user.schoolId) {
           res.status(403).json({
             success: false,
@@ -275,12 +355,27 @@ lessonNotesRouter.post(
           });
           return;
         }
-        targetSchoolId = user.schoolId;
+      }
+
+      if (!targetSchoolId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_SCHOOL_CONTEXT',
+          message: 'An authorized school context is required to publish lesson notes.',
+        });
+        return;
+      }
+
+      // Resolve staff id if available, otherwise null to satisfy FK to staff(id)
+      let resolvedTeacherId: string | null = null;
+      const staffRes = await query<{ id: string }>('SELECT id FROM staff WHERE user_id = $1 LIMIT 1;', [user.id]);
+      if (staffRes.rows.length > 0) {
+        resolvedTeacherId = staffRes.rows[0].id;
       }
 
       const createdNote = await lessonNoteRepository.createLessonNote({
         schoolId: targetSchoolId,
-        teacherId: user.id,
+        teacherId: resolvedTeacherId,
         teacherName: teacherName || user.fullName || 'Academic Educator',
         classLevel,
         arm,
@@ -328,7 +423,7 @@ lessonNotesRouter.post(
       res.status(500).json({
         success: false,
         error: 'SERVER_ERROR',
-        message: error?.message || 'Failed to publish lesson note.',
+        message: 'An internal error occurred while publishing the lesson note.',
       });
     }
   }
@@ -336,7 +431,7 @@ lessonNotesRouter.post(
 
 /**
  * PUT /api/v1/lesson-notes/:id
- * Update an existing lesson note.
+ * Update an existing lesson note with tenant boundary validation.
  */
 lessonNotesRouter.put(
   '/:id',
@@ -344,9 +439,11 @@ lessonNotesRouter.put(
   requirePermission('lesson_notes.create'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const user = req.user;
+      const user = req.user!;
       const { id } = req.params;
-      const targetSchoolId = user?.schoolId || (req.body.schoolId as string);
+      const targetSchoolId = (user.isSuperAdmin || user.isStateOfficer)
+        ? (req.body.schoolId as string) || user.schoolId
+        : user.schoolId;
 
       if (!targetSchoolId) {
         res.status(400).json({ success: false, error: 'MISSING_SCHOOL_CONTEXT' });
@@ -362,7 +459,7 @@ lessonNotesRouter.put(
       await lessonNoteRepository.recordAuditLog({
         schoolId: targetSchoolId,
         lessonNoteId: id,
-        userId: user?.id,
+        userId: user.id,
         action: 'NOTE_UPDATED',
         details: { id },
         ipAddress: req.ip,
@@ -378,7 +475,7 @@ lessonNotesRouter.put(
       res.status(500).json({
         success: false,
         error: 'SERVER_ERROR',
-        message: error?.message || 'Failed to update lesson note.',
+        message: 'An internal error occurred while updating the lesson note.',
       });
     }
   }
@@ -386,7 +483,8 @@ lessonNotesRouter.put(
 
 /**
  * DELETE /api/v1/lesson-notes/:id
- * Delete a lesson note permanently with tenant protection.
+ * Atomically deletes a lesson note and creates a NOTE_DELETED audit record.
+ * Wrapped in a single PostgreSQL transaction.
  */
 lessonNotesRouter.delete(
   '/:id',
@@ -394,29 +492,27 @@ lessonNotesRouter.delete(
   requirePermission('lesson_notes.create'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const user = req.user;
+      const user = req.user!;
       const { id } = req.params;
-      const targetSchoolId = user?.schoolId || (req.query.schoolId as string);
+      const targetSchoolId = (user.isSuperAdmin || user.isStateOfficer)
+        ? (req.query.schoolId as string) || user.schoolId
+        : user.schoolId;
 
       if (!targetSchoolId) {
         res.status(400).json({ success: false, error: 'MISSING_SCHOOL_CONTEXT' });
         return;
       }
 
-      const deleted = await lessonNoteRepository.deleteLessonNote(id, targetSchoolId);
+      // Execute atomic transaction: verifies note & school -> deletes note -> logs audit event -> commits
+      const deleted = await lessonNoteRepository.deleteLessonNoteWithAudit(id, targetSchoolId, user.id, req.ip);
       if (!deleted) {
-        res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Lesson note not found or access denied.' });
+        res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: 'Lesson note not found or access denied.',
+        });
         return;
       }
-
-      await lessonNoteRepository.recordAuditLog({
-        schoolId: targetSchoolId,
-        lessonNoteId: id,
-        userId: user?.id,
-        action: 'NOTE_DELETED',
-        details: { id },
-        ipAddress: req.ip,
-      });
 
       res.json({
         success: true,
@@ -427,20 +523,43 @@ lessonNotesRouter.delete(
       res.status(500).json({
         success: false,
         error: 'SERVER_ERROR',
-        message: error?.message || 'Failed to delete lesson note.',
+        message: 'An internal error occurred while deleting the lesson note.',
       });
     }
   }
 );
 
 /**
- * POST /api/v1/lesson-notes/:id/increment-download
- * Increment download counter atomically in PostgreSQL.
+ * Handler for atomic download increment in PostgreSQL with tenant authorization.
  */
-lessonNotesRouter.post('/:id/increment-download', async (req: Request, res: Response) => {
+async function handleIncrementDownload(req: AuthenticatedRequest, res: Response) {
   try {
+    const user = req.user!;
     const { id } = req.params;
-    const downloadCount = await lessonNoteRepository.incrementDownloadCount(id);
+
+    // Verify user has access to this lesson note's school
+    const targetSchoolId = (user.isSuperAdmin || user.isStateOfficer) ? undefined : user.schoolId;
+    if (!targetSchoolId && !user.isSuperAdmin && !user.isStateOfficer) {
+      res.status(403).json({
+        success: false,
+        error: 'TENANT_CONTEXT_REQUIRED',
+        message: 'User is not associated with an authorized school.',
+      });
+      return;
+    }
+
+    const note = await lessonNoteRepository.getLessonNoteById(id, targetSchoolId);
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'Lesson note not found or access denied.',
+      });
+      return;
+    }
+
+    // Atomic PostgreSQL increment scoped to the note's school
+    const downloadCount = await lessonNoteRepository.incrementDownloadCount(id, note.school_id);
 
     res.json({
       success: true,
@@ -451,30 +570,42 @@ lessonNotesRouter.post('/:id/increment-download', async (req: Request, res: Resp
     res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: error?.message || 'Failed to increment download counter.',
+      message: 'An internal error occurred while updating the download counter.',
     });
   }
-});
+}
 
 /**
- * POST /api/v1/lesson-notes/:id/feedback
- * Submit a parent question or feedback regarding a lesson note.
+ * POST /api/v1/lesson-notes/:id/increment-download
+ * Increment download counter atomically in PostgreSQL (requires authentication).
  */
-lessonNotesRouter.post('/:id/feedback', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { parentName, studentName, guardianPhone, question } = req.body || {};
+lessonNotesRouter.post('/:id/increment-download', authenticateUser, handleIncrementDownload);
 
-    if (!parentName || !question) {
+/**
+ * POST /api/v1/lesson-notes/:id/download (Route alias)
+ */
+lessonNotesRouter.post('/:id/download', authenticateUser, handleIncrementDownload);
+
+/**
+ * Handler for submitting a parent or student inquiry/feedback regarding a lesson note.
+ * Integrates directly with Phase 8B parent authentication and authoritative student linkage.
+ */
+async function handleCreateInquiry(req: AuthenticatedRequest, res: Response) {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    const { question, studentId: requestedStudentId } = req.body || {};
+
+    if (!question || typeof question !== 'string' || !question.trim()) {
       res.status(400).json({
         success: false,
         error: 'VALIDATION_ERROR',
-        message: 'Parent name and question content are required.',
+        message: 'A valid question content string is required.',
       });
       return;
     }
 
-    // Verify note exists in PostgreSQL
+    // 1. Verify lesson note existence
     const note = await lessonNoteRepository.getLessonNoteById(id);
     if (!note) {
       res.status(404).json({
@@ -485,25 +616,119 @@ lessonNotesRouter.post('/:id/feedback', async (req: Request, res: Response) => {
       return;
     }
 
+    // 2. Tenant isolation check
+    if (!user.isSuperAdmin && !user.isStateOfficer && user.schoolId && note.school_id !== user.schoolId) {
+      res.status(403).json({
+        success: false,
+        error: 'CROSS_SCHOOL_UNAUTHORIZED',
+        message: 'Cannot submit inquiries for a lesson note belonging to a different school.',
+      });
+      return;
+    }
+
+    // 3. Resolve authoritative identity based on role
+    let resolvedParentId: string | null = null;
+    let resolvedParentName: string = user.fullName || 'Parent/Guardian';
+    let resolvedGuardianPhone: string | null = null;
+    let resolvedStudentId: string | null = null;
+    let resolvedStudentName: string = 'Student';
+
+    if (user.role === 'parent') {
+      const parent = await parentRepository.findParentByUserId(user.id);
+      if (!parent) {
+        res.status(403).json({
+          success: false,
+          error: 'PARENT_PROFILE_NOT_FOUND',
+          message: 'Authenticated user has no registered parent profile.',
+        });
+        return;
+      }
+
+      resolvedParentId = parent.id;
+      resolvedParentName = parent.fullName || user.fullName;
+      resolvedGuardianPhone = parent.phone || null;
+
+      // Authoritatively verify parent's linked students in this school
+      const linkedStudents = await parentRepository.getLinkedStudents(parent.id, note.school_id);
+      if (linkedStudents.length === 0) {
+        res.status(403).json({
+          success: false,
+          error: 'NO_LINKED_STUDENT',
+          message: 'Parent has no verified linked students in this school.',
+        });
+        return;
+      }
+
+      if (requestedStudentId) {
+        const matched = linkedStudents.find((s) => s.id === requestedStudentId);
+        if (!matched) {
+          res.status(403).json({
+            success: false,
+            error: 'UNAUTHORIZED_STUDENT',
+            message: 'Parent is not authorized to submit inquiries for the specified student.',
+          });
+          return;
+        }
+        resolvedStudentId = matched.id;
+        resolvedStudentName = matched.fullName;
+      } else {
+        // Default to the first linked student in this school
+        resolvedStudentId = linkedStudents[0].id;
+        resolvedStudentName = linkedStudents[0].fullName;
+      }
+    } else if (user.role === 'student') {
+      // Look up student authoritative record
+      const studentRes = await query<{ id: string; full_name: string; guardian_name: string; guardian_phone: string; school_id: string }>(
+        'SELECT id, full_name, guardian_name, guardian_phone, school_id FROM students WHERE id = $1 LIMIT 1;',
+        [user.id]
+      );
+      const student = studentRes.rows[0];
+      if (student && student.school_id !== note.school_id) {
+        res.status(403).json({
+          success: false,
+          error: 'CROSS_SCHOOL_UNAUTHORIZED',
+          message: 'Student does not belong to the lesson note school.',
+        });
+        return;
+      }
+
+      resolvedStudentId = student?.id || user.id;
+      resolvedStudentName = student?.full_name || user.fullName;
+      resolvedParentName = student?.guardian_name || `Guardian of ${resolvedStudentName}`;
+      resolvedGuardianPhone = student?.guardian_phone || null;
+    } else {
+      // Staff, Teacher, Principal, or Super Admin submitting pedagogical consultation
+      resolvedParentName = user.fullName || 'Authorized Staff';
+      resolvedStudentName = req.body.studentName || 'Curriculum Inquiry';
+      resolvedGuardianPhone = null;
+    }
+
+    // 4. Create authoritative inquiry in PostgreSQL
     const inquiry = await lessonInquiryRepository.createInquiry({
       schoolId: note.school_id,
       organizationId: note.organization_id || undefined,
       lessonNoteId: note.id,
-      parentName,
-      studentName,
-      guardianPhone,
-      question,
+      parentId: resolvedParentId,
+      parentName: resolvedParentName,
+      studentId: resolvedStudentId,
+      studentName: resolvedStudentName,
+      guardianPhone: resolvedGuardianPhone,
+      question: question.trim(),
     });
 
-    // Immutable Audit Log
+    // 5. Immutable Audit Log
     await lessonNoteRepository.recordAuditLog({
       schoolId: note.school_id,
       organizationId: note.organization_id,
       lessonNoteId: note.id,
       inquiryId: inquiry.id,
+      userId: user.id,
       action: 'INQUIRY_SUBMITTED',
       details: {
-        parentName,
+        parentId: resolvedParentId,
+        studentId: resolvedStudentId,
+        parentName: resolvedParentName,
+        studentName: resolvedStudentName,
         questionPreview: question.substring(0, 100),
       },
       ipAddress: req.ip,
@@ -519,19 +744,44 @@ lessonNotesRouter.post('/:id/feedback', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: error?.message || 'Failed to submit feedback.',
+      message: 'An internal error occurred while submitting the inquiry.',
     });
   }
-});
+}
 
 /**
- * GET /api/v1/lesson-notes/:id/feedbacks
- * Retrieve feedback list for a note.
+ * POST /api/v1/lesson-notes/:id/feedback
+ * Submit a parent or student inquiry regarding a lesson note.
+ * Requires authentication and authoritative parent-student identity verification.
  */
-lessonNotesRouter.get('/:id/feedbacks', async (req: Request, res: Response) => {
+lessonNotesRouter.post('/:id/feedback', authenticateUser, handleCreateInquiry);
+
+/**
+ * POST /api/v1/lesson-notes/:id/inquiries (Route alias)
+ */
+lessonNotesRouter.post('/:id/inquiries', authenticateUser, handleCreateInquiry);
+
+/**
+ * Handler for retrieving inquiries for a lesson note with strict IDOR protection.
+ */
+async function handleListInquiries(req: AuthenticatedRequest, res: Response) {
   try {
+    const user = req.user!;
     const { id } = req.params;
-    const inquiries = await lessonInquiryRepository.listInquiriesForNote(id);
+    const { schoolId, isGlobal } = resolveAuthorizedSchoolScope(req);
+
+    const note = await lessonNoteRepository.getLessonNoteById(id, schoolId);
+    if (!note) {
+      res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'Lesson note not found or access denied.',
+      });
+      return;
+    }
+
+    const inquiries = await getInquiriesForUserRole(id, note.school_id, user);
+
     res.json({
       success: true,
       data: inquiries.map(mapDbToFeedback),
@@ -541,31 +791,53 @@ lessonNotesRouter.get('/:id/feedbacks', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'SERVER_ERROR',
-      message: error?.message || 'Failed to list inquiries.',
+      message: 'An internal error occurred while retrieving inquiries.',
     });
   }
-});
+}
+
+/**
+ * GET /api/v1/lesson-notes/:id/feedbacks
+ * Retrieve feedback inquiries for a note. Requires authentication and enforces role scoping.
+ */
+lessonNotesRouter.get('/:id/feedbacks', authenticateUser, handleListInquiries);
+
+/**
+ * GET /api/v1/lesson-notes/:id/inquiries (Route alias)
+ */
+lessonNotesRouter.get('/:id/inquiries', authenticateUser, handleListInquiries);
 
 /**
  * POST /api/v1/lesson-notes/inquiries/:id/reply
  * Teacher or educator responds to a parent inquiry.
- * Protected by authentication.
+ * Requires authentication, educator role authorization, and tenant verification.
  */
 lessonNotesRouter.post(
   '/inquiries/:id/reply',
   authenticateUser,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const user = req.user;
-      if (!user) {
-        res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
+      const user = req.user!;
+
+      // Verify that caller has educator / pedagogical permissions
+      const isEducator =
+        user.isSuperAdmin ||
+        user.isStateOfficer ||
+        ['teacher', 'principal', 'vice_principal', 'headmistress', 'admin'].includes(user.role);
+
+      if (!isEducator) {
+        res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'Only authorized educators and school administrators can reply to inquiries.',
+        });
         return;
       }
 
       const { id } = req.params;
       const { reply } = req.body || {};
 
-      if (!reply || !reply.trim()) {
+      if (!reply || typeof reply !== 'string' || !reply.trim()) {
         res.status(400).json({
           success: false,
           error: 'VALIDATION_ERROR',
@@ -584,7 +856,7 @@ lessonNotesRouter.post(
         return;
       }
 
-      // Check tenant isolation
+      // Check cross-school isolation
       if (!user.isSuperAdmin && !user.isStateOfficer && user.schoolId && inquiry.school_id !== user.schoolId) {
         res.status(403).json({
           success: false,
@@ -594,16 +866,27 @@ lessonNotesRouter.post(
         return;
       }
 
+      // Resolve staff id if available, otherwise null to satisfy FK to staff(id)
+      let resolvedStaffId: string | null = null;
+      const staffRes = await query<{ id: string }>('SELECT id FROM staff WHERE user_id = $1 LIMIT 1;', [user.id]);
+      if (staffRes.rows.length > 0) {
+        resolvedStaffId = staffRes.rows[0].id;
+      }
+
       const updated = await lessonInquiryRepository.respondToInquiry(id, inquiry.school_id, {
         reply: reply.trim(),
-        repliedByStaffId: user.id,
+        repliedByStaffId: resolvedStaffId || undefined,
         repliedByUserId: user.id,
         repliedByName: user.fullName || 'Educator',
         status: 'Answered',
       });
 
       if (!updated) {
-        res.status(500).json({ success: false, error: 'UPDATE_FAILED' });
+        res.status(500).json({
+          success: false,
+          error: 'UPDATE_FAILED',
+          message: 'Failed to record response in database.',
+        });
         return;
       }
 
@@ -630,7 +913,7 @@ lessonNotesRouter.post(
       res.status(500).json({
         success: false,
         error: 'SERVER_ERROR',
-        message: error?.message || 'Failed to reply to inquiry.',
+        message: 'An internal error occurred while replying to inquiry.',
       });
     }
   }

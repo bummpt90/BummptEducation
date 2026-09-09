@@ -167,10 +167,16 @@ async function startServer() {
                 await seedFinancialFoundation();
               }
 
-              const lessonNotesCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM lesson_notes;');
-              if (parseInt(lessonNotesCountRes.rows[0]?.count || '0', 10) === 0) {
-                console.log('[LessonNotesSeed] No lesson notes found. Seeding initial lesson notes & inquiries...');
-                await seedLessonNotesFoundation();
+              // Phase 8D: Lesson notes seeder is development/reference ONLY.
+              // In production, the database remains strictly empty until published by educators.
+              if (process.env.NODE_ENV !== 'production') {
+                const lessonNotesCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM lesson_notes;');
+                if (parseInt(lessonNotesCountRes.rows[0]?.count || '0', 10) === 0) {
+                  console.log('[LessonNotesSeed] [DEV ONLY] No lesson notes found. Seeding initial reference lesson notes & inquiries...');
+                  await seedLessonNotesFoundation();
+                }
+              } else {
+                console.log('[LessonNotesSeed] Production environment detected. Skipping mock lesson notes seeding.');
               }
             } catch (seedErr: any) {
               console.warn('[OperationalSeed] Seeding notice:', seedErr?.message);

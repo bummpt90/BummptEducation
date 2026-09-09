@@ -124,10 +124,16 @@ export class LessonInquiryRepository extends BaseRepository<LessonInquiryDbEntit
 
   /**
    * Retrieve all inquiries/feedbacks submitted for a specific lesson note.
+   * Supports optional parentId/studentIds filter to guarantee parent/student isolation.
    */
   async listInquiriesForNote(
     lessonNoteId: string,
     schoolId?: string,
+    filters?: {
+      parentId?: string;
+      studentIds?: string[];
+      studentId?: string;
+    },
     client?: PoolClient
   ): Promise<LessonInquiryDbEntity[]> {
     const conditions = ['li.lesson_note_id = $1'];
@@ -136,6 +142,23 @@ export class LessonInquiryRepository extends BaseRepository<LessonInquiryDbEntit
     if (schoolId) {
       params.push(schoolId);
       conditions.push(`li.school_id = $${params.length}`);
+    }
+
+    if (filters?.parentId && filters?.studentIds && filters.studentIds.length > 0) {
+      params.push(filters.parentId);
+      const parentParamIdx = params.length;
+      params.push(filters.studentIds);
+      const studentArrIdx = params.length;
+      conditions.push(`(li.parent_id = $${parentParamIdx} OR li.student_id = ANY($${studentArrIdx}))`);
+    } else if (filters?.parentId) {
+      params.push(filters.parentId);
+      conditions.push(`li.parent_id = $${params.length}`);
+    } else if (filters?.studentId) {
+      params.push(filters.studentId);
+      conditions.push(`li.student_id = $${params.length}`);
+    } else if (filters?.studentIds && filters.studentIds.length > 0) {
+      params.push(filters.studentIds);
+      conditions.push(`li.student_id = ANY($${params.length})`);
     }
 
     const sql = `

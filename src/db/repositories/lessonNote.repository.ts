@@ -8,7 +8,7 @@
 
 import type { PoolClient } from 'pg';
 import { BaseRepository } from './base.repository';
-import { query } from '../client';
+import { query, withTransaction } from '../client';
 import type { LessonNoteDbEntity, LessonNotesStats, QueryOptions, PaginatedResult } from '../types';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -430,6 +430,60 @@ export class LessonNoteRepository extends BaseRepository<LessonNoteDbEntity> {
   }
 
   /**
+   * Delete a lesson note permanently with tenant protection and atomic audit logging.
+   * Atomic PostgreSQL transaction:
+   * 1. Verifies note and tenant match
+   * 2. Deletes lesson note row (foreign keys ON DELETE SET NULL preserve previous audit records)
+   * 3. Inserts NOTE_DELETED audit log entry
+   * 4. Commits (or rollbacks on error)
+   */
+  async deleteLessonNoteWithAudit(
+    id: string,
+    schoolId: string,
+    actorId?: string | null,
+    ipAddress?: string | null
+  ): Promise<boolean> {
+    return withTransaction(async (client: PoolClient) => {
+      // 1. Verify target lesson note and tenant existence with row lock
+      const noteRes = await client.query<{ id: string; school_id: string; organization_id: string; title: string }>(
+        'SELECT id, school_id, organization_id, title FROM lesson_notes WHERE id = $1 AND school_id = $2 FOR UPDATE;',
+        [id, schoolId]
+      );
+      const note = noteRes.rows[0];
+      if (!note) {
+        return false;
+      }
+
+      // 2. Delete lesson note (prior audit logs have lesson_note_id set to null via ON DELETE SET NULL)
+      const delRes = await client.query('DELETE FROM lesson_notes WHERE id = $1 AND school_id = $2;', [id, schoolId]);
+      if ((delRes.rowCount || 0) === 0) {
+        return false;
+      }
+
+      // 3. Insert NOTE_DELETED audit event
+      await this.recordAuditLog(
+        {
+          schoolId: note.school_id,
+          organizationId: note.organization_id,
+          lessonNoteId: null, // Note is deleted; id preserved in details
+          userId: actorId || null,
+          action: 'NOTE_DELETED',
+          details: {
+            id,
+            deletedLessonNoteId: id,
+            title: note.title,
+            deletedAt: new Date().toISOString(),
+          },
+          ipAddress: ipAddress || null,
+        },
+        client
+      );
+
+      return true;
+    });
+  }
+
+  /**
    * Delete a lesson note permanently with tenant protection.
    */
   async deleteLessonNote(id: string, schoolId: string, client?: PoolClient): Promise<boolean> {
@@ -442,17 +496,20 @@ export class LessonNoteRepository extends BaseRepository<LessonNoteDbEntity> {
   }
 
   /**
-   * Atomic download counter increment in PostgreSQL.
+   * Atomic download counter increment in PostgreSQL with tenant isolation.
    */
-  async incrementDownloadCount(id: string, client?: PoolClient): Promise<number> {
-    const res = await query<{ download_count: number }>(
-      `UPDATE lesson_notes
-       SET download_count = download_count + 1, updated_at = NOW()
-       WHERE id = $1
-       RETURNING download_count;`,
-      [id],
-      client
-    );
+  async incrementDownloadCount(id: string, schoolId?: string, client?: PoolClient): Promise<number> {
+    const sql = schoolId
+      ? `UPDATE lesson_notes
+         SET download_count = download_count + 1, updated_at = NOW()
+         WHERE id = $1 AND school_id = $2
+         RETURNING download_count;`
+      : `UPDATE lesson_notes
+         SET download_count = download_count + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING download_count;`;
+    const params = schoolId ? [id, schoolId] : [id];
+    const res = await query<{ download_count: number }>(sql, params, client);
     return res.rows[0]?.download_count || 0;
   }
 
@@ -656,8 +713,12 @@ export class LessonNoteRepository extends BaseRepository<LessonNoteDbEntity> {
     return updated;
   }
 
-  async incrementDownload(id: string): Promise<number> {
-    return this.incrementDownloadCount(id);
+  async incrementDownload(id: string, schoolId?: string): Promise<number> {
+    return this.incrementDownloadCount(id, schoolId);
+  }
+
+  async delete(id: string, schoolId: string, actorId?: string, ipAddress?: string): Promise<boolean> {
+    return this.deleteLessonNoteWithAudit(id, schoolId, actorId, ipAddress);
   }
 
   async getStats(schoolId?: string): Promise<LessonNotesStats> {

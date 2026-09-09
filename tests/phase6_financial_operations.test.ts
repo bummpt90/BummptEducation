@@ -75,10 +75,10 @@ async function runPhase6TestSuite() {
     console.log('--- Setting up Test Fixtures ---');
 
     const schoolARes = await query<{ id: string; name: string }>(
-      `SELECT id, name FROM schools WHERE code = 'BNS-MKD-000' OR code LIKE '%ANCHOR%' LIMIT 1;`
+      `SELECT id, name FROM schools WHERE code = 'BNS-MKD-000' LIMIT 1;`
     );
     const schoolBRes = await query<{ id: string; name: string }>(
-      `SELECT id, name FROM schools WHERE code = 'BNS-MKD-001' OR code NOT LIKE '%ANCHOR%' LIMIT 1;`
+      `SELECT id, name FROM schools WHERE code = 'BNS-MKD-001' LIMIT 1;`
     );
 
     const schoolA = schoolARes.rows[0];

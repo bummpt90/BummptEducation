@@ -34,10 +34,11 @@ Phase 8 transitions BummptEducation from a prototype with hybrid PostgreSQL and 
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
-│ PHASE 8D: LESSON NOTES & FEEDBACK RELATIONAL STORAGE                        │
-│ - Migration 0008: lesson_notes and lesson_note_feedbacks SQL tables         │
-│ - LessonNoteRepository & /api/v1/lesson-notes routes                        │
-│ - Delete lessonNotesStore & lessonFeedbacksStore from server.ts memory      │
+│ PHASE 8D: LESSON NOTES & FEEDBACK RELATIONAL STORAGE (COMPLETED)             │
+│ - Migration 0010: lesson_notes, lesson_inquiries, lesson_note_audit_logs    │
+│ - LessonNoteRepository & LessonInquiryRepository with atomic transactions   │
+│ - Strict authenticateUser, tenant isolation (IDOR protection), RBAC enforced │
+│ - Verified: tests/phase8d.lesson-notes.test.ts (47/47 passed)               │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
@@ -198,8 +199,19 @@ Currently, `server.ts` stores lesson notes and parent feedback inquiries in memo
 - Replace legacy unversioned `/api/lesson-notes` handlers with `app.use('/api/v1/lesson-notes', lessonNotesRouter)`.
 
 ### 6. Verification & Automated Tests
-- Test file: `tests/phase8d_lesson_notes.test.ts`
-- Verifies: Schema migration, CRUD persistence across restarts, download increments, and teacher feedback workflows.
+- Test file: `tests/phase8d.lesson-notes.test.ts`
+- Documentation: `docs/PHASE_8D_LESSON_NOTES.md`
+- Status: **COMPLETED & VERIFIED (47/47 Tests Passed)**
+- Verifies:
+  1. Migration 0010 schema conformance and foreign key constraints (ON DELETE SET NULL audit safety).
+  2. Strict authentication enforcement across all GET, POST, PUT, DELETE endpoints (rejection of unauthenticated requests with 401).
+  3. Tenant isolation and IDOR protection (cross-school queries, increments, and updates return 404 or 403).
+  4. RBAC boundaries (teacher/principal vs. student/parent authorization).
+  5. Authoritative parent inquiry verification against `parent_student_links` and scoped visibility.
+  6. Atomic download increment without race conditions.
+  7. Transactional deletion with atomic row locking and immutable audit logging.
+  8. Production seed safety guards preventing execution in `NODE_ENV === 'production'`.
+  9. Clean, structured error handling without internal SQL leakage.
 
 ---
 

@@ -29,6 +29,17 @@ interface LessonNoteViewerModalProps {
   onPostFeedback?: (noteId: string, feedback: { parentName: string; studentName: string; question: string }) => Promise<boolean>;
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const token = sessionStorage.getItem('bummpt_token');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export const LessonNoteViewerModal: React.FC<LessonNoteViewerModalProps> = ({
   note,
   isOpen,
@@ -42,13 +53,17 @@ export const LessonNoteViewerModal: React.FC<LessonNoteViewerModalProps> = ({
   const [question, setQuestion] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'objectives' | 'homework' | 'qa'>('content');
 
   const handleDownload = () => {
     downloadLessonNoteAsPDF(note);
     // Ping download tracker on backend
     try {
-      fetch(`/api/lesson-notes/${note.id}/increment-download`, { method: 'POST' }).catch(() => {});
+      fetch(`/api/v1/lesson-notes/${note.id}/increment-download`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }).catch(() => {});
     } catch {}
   };
 
@@ -61,20 +76,26 @@ export const LessonNoteViewerModal: React.FC<LessonNoteViewerModalProps> = ({
     if (!parentName.trim() || !question.trim()) return;
 
     setIsSubmitting(true);
+    setFeedbackError(null);
     try {
       if (onPostFeedback) {
         await onPostFeedback(note.id, { parentName, studentName, question });
       } else {
-        await fetch(`/api/lesson-notes/${note.id}/feedback`, {
+        const res = await fetch(`/api/v1/lesson-notes/${note.id}/feedback`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ parentName, studentName, question }),
         });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Failed to submit feedback.');
+        }
       }
       setSubmittedSuccess(true);
       setQuestion('');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setFeedbackError(err.message || 'Failed to submit inquiry.');
     } finally {
       setIsSubmitting(false);
     }
