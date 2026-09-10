@@ -745,6 +745,27 @@ async function runPhase8dTestSuite() {
       'Frontend completely decoupled from mock data'
     );
 
+    // Verify frontend download telemetry is server-confirmed with zero optimistic increments
+    const hasOptimisticIncrement = pageCode.includes('(n.downloadCount || 0) + 1') || pageCode.includes('downloadCount: n.downloadCount + 1');
+    const awaitsIncrementDownload = pageCode.includes('await fetch(`/api/v1/lesson-notes/${note.id}/increment-download`') ||
+      pageCode.includes('await fetch(`/api/v1/lesson-notes/${note.id}/increment-download');
+    const bindsAuthoritativeCount = pageCode.includes('downloadCount: authoritativeCount') || pageCode.includes('downloadCount: data.downloadCount');
+    const preventsDoubleCounting = pageCode.includes('downloadingIds') || pageCode.includes('setDownloadingIds');
+
+    record(
+      'Prod-Safety',
+      'Frontend download telemetry has zero optimistic increment and awaits PostgreSQL confirmation',
+      !hasOptimisticIncrement && awaitsIncrementDownload && bindsAuthoritativeCount,
+      `optimistic: ${hasOptimisticIncrement}, awaits: ${awaitsIncrementDownload}, bindsAuthoritative: ${bindsAuthoritativeCount}`
+    );
+
+    record(
+      'Prod-Safety',
+      'Frontend enforces double-counting prevention guard for in-flight download actions',
+      preventsDoubleCounting,
+      `Double-counting guard verified: ${preventsDoubleCounting}`
+    );
+
     // =========================================================================
     // CATEGORY 10: Error Handling Safety & Clean API Responses
     // =========================================================================

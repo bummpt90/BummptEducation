@@ -2,7 +2,7 @@
 
 **Status:** COMPLETED & VERIFIED  
 **Architecture:** 100% Server-Authoritative PostgreSQL Persistence  
-**Test Suite:** `tests/phase8d.lesson-notes.test.ts` (47/47 Tests Passed)  
+**Test Suite:** `tests/phase8d.lesson-notes.test.ts` (49/49 Tests Passed)  
 **Security Standard:** Strict Authentication, Multi-Tenant Boundary Isolation (IDOR Protection), RBAC Enforcement, Immutable Audit Logging, and Production Seed Protection.
 
 ---
@@ -84,14 +84,15 @@ The REST router (`src/api/v1/lesson-notes.routes.ts`) is mounted at `/api/v1/les
 1. **Production Guard:** `seedLessonNotesFoundation` in `src/db/seed/lessonNotes.seed.ts` explicitly verifies `process.env.NODE_ENV !== 'production'`. In production, it safely refuses execution and returns `{ notesInserted: 0, feedbacksInserted: 0, schoolId: '' }`.
 2. **Server Startup Guard:** `server.ts` wraps curriculum seeder calls in strict non-production environment checks.
 3. **Zero In-Memory Stores:** `lessonNotesStore` and `lessonFeedbacksStore` have been eradicated from `server.ts`.
-4. **Frontend Decoupling:** `src/pages/LessonNotesPage.tsx` and `src/components/LessonNoteViewerModal.tsx` communicate exclusively with authenticated `/api/v1/lesson-notes` endpoints, with complete error handling and retry mechanisms. All reliance on `INITIAL_LESSON_NOTES` has been removed.
+4. **Frontend Decoupling & Server-Confirmed Telemetry:** `src/pages/LessonNotesPage.tsx` and `src/components/LessonNoteViewerModal.tsx` communicate exclusively with authenticated `/api/v1/lesson-notes` endpoints, with complete error handling and retry mechanisms. All reliance on `INITIAL_LESSON_NOTES` has been removed.
+5. **Authoritative Server-Confirmed Download Telemetry:** In `LessonNotesPage.tsx`, local optimistic counter incrementing has been completely eliminated. When a user requests a lesson note download, the client invokes `POST /api/v1/lesson-notes/:id/increment-download` with authenticated headers and awaits the server response. Only upon receiving confirmation and the PostgreSQL-returned `downloadCount` is the displayed counter updated and success notification rendered. In-flight guards prevent double-counting. If the server request fails, the local counter is not incremented and a non-sensitive notification is displayed.
 
 ---
 
 ## 6. Verification Results
 
 Automated test suite (`tests/phase8d.lesson-notes.test.ts`):
-- **Total Tests:** 47
-- **Passed:** 47 (100%)
+- **Total Tests:** 49
+- **Passed:** 49 (100%)
 - **Failed:** 0
 - **Regression Suite:** Clean pass across all prior phases (Phases 4–8C).

@@ -36,7 +36,8 @@ import {
   Award,
   PhoneCall,
   RefreshCw,
-  FolderDown
+  FolderDown,
+  AlertCircle
 } from 'lucide-react';
 
 interface LessonNotesPageProps {
@@ -82,6 +83,8 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
+  const [downloadErrorToast, setDownloadErrorToast] = useState<string | null>(null);
+  const [downloadingIds, setDownloadingIds] = useState<Record<string, boolean>>({});
 
   // Fetch stats from backend API
   const fetchStats = async () => {
@@ -143,24 +146,52 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
     fetchNotes();
   }, [selectedArm, selectedClass, selectedTerm, selectedWeek, selectedSubject, searchQuery]);
 
-  const handleDownload = (note: LessonNote, e?: React.MouseEvent) => {
+  const handleDownload = async (note: LessonNote, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    downloadLessonNoteAsPDF(note);
-    
-    // Update local count & ping API
-    setLessonNotes((prev) =>
-      prev.map((n) => (n.id === note.id ? { ...n, downloadCount: (n.downloadCount || 0) + 1 } : n))
-    );
+    if (!note?.id || downloadingIds[note.id]) return;
 
-    setDownloadSuccessToast(`Downloaded: ${note.pdfFileName || note.topic}`);
-    setTimeout(() => setDownloadSuccessToast(null), 3500);
+    // Prevent duplicate in-flight requests for the same note
+    setDownloadingIds((prev) => ({ ...prev, [note.id]: true }));
 
     try {
-      fetch(`/api/v1/lesson-notes/${note.id}/increment-download`, {
+      // 1. Call server API to atomically increment download counter in PostgreSQL
+      const res = await fetch(`/api/v1/lesson-notes/${note.id}/increment-download`, {
         method: 'POST',
         headers: getAuthHeaders(),
-      }).catch(() => {});
-    } catch {}
+      });
+
+      if (!res.ok) {
+        throw new Error('FAILED_TO_INCREMENT');
+      }
+
+      const data = await res.json();
+      if (!data?.success || typeof data?.downloadCount !== 'number') {
+        throw new Error('INVALID_TELEMETRY_PAYLOAD');
+      }
+
+      // 2. Authoritative PostgreSQL downloadCount confirmed: update local state
+      const authoritativeCount = data.downloadCount;
+      setLessonNotes((prev) =>
+        prev.map((n) => (n.id === note.id ? { ...n, downloadCount: authoritativeCount } : n))
+      );
+
+      // 3. Keep existing PDF browser download intact
+      downloadLessonNoteAsPDF(note);
+
+      // 4. Show success notification
+      setDownloadSuccessToast(`Downloaded: ${note.pdfFileName || note.topic}`);
+      setTimeout(() => setDownloadSuccessToast(null), 3500);
+    } catch {
+      // 5. On failure, DO NOT increment local downloadCount; show non-sensitive notification
+      setDownloadErrorToast('Unable to complete download. Please check your network connection and try again.');
+      setTimeout(() => setDownloadErrorToast(null), 4000);
+    } finally {
+      setDownloadingIds((prev) => {
+        const next = { ...prev };
+        delete next[note.id];
+        return next;
+      });
+    }
   };
 
   const handleOpenViewer = (note: LessonNote) => {
@@ -227,6 +258,12 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
           <div className="fixed bottom-6 right-6 z-50 rounded-2xl bg-emerald-600 px-5 py-3 text-white text-xs font-bold shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5">
             <CheckCircle2 className="h-5 w-5 shrink-0" />
             <span>{downloadSuccessToast}</span>
+          </div>
+        )}
+        {downloadErrorToast && (
+          <div className="fixed bottom-6 right-6 z-50 rounded-2xl bg-rose-600 px-5 py-3 text-white text-xs font-bold shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>{downloadErrorToast}</span>
           </div>
         )}
 
@@ -619,11 +656,12 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
                     </button>
                     <button
                       onClick={(e) => handleDownload(note, e)}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 text-xs font-bold transition shadow-xs cursor-pointer"
+                      disabled={Boolean(downloadingIds[note.id])}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-2 text-xs font-bold transition shadow-xs cursor-pointer"
                       title="Download PDF"
                     >
                       <Download className="h-3.5 w-3.5" />
-                      <span>Download PDF</span>
+                      <span>{downloadingIds[note.id] ? 'Downloading...' : 'Download PDF'}</span>
                     </button>
                   </div>
                 </div>
@@ -672,11 +710,12 @@ export const LessonNotesPage: React.FC<LessonNotesPageProps> = ({ onNavigate }) 
                           </button>
                           <button
                             onClick={(e) => handleDownload(note, e)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500 transition cursor-pointer"
+                            disabled={Boolean(downloadingIds[note.id])}
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500 transition cursor-pointer"
                             title="Download PDF"
                           >
                             <Download className="h-3.5 w-3.5" />
-                            <span>PDF</span>
+                            <span>{downloadingIds[note.id] ? '...' : 'PDF'}</span>
                           </button>
                         </div>
                       </td>
