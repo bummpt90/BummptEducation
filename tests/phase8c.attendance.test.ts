@@ -239,6 +239,9 @@ async function runPhase8cTestSuite() {
 
     const studentA = studentARes.rows[0];
 
+    // Clean up test dates for test isolation
+    await query(`DELETE FROM daily_attendance WHERE student_id = $1 AND attendance_date IN ('2026-11-10', '2026-11-11', '2026-11-12', '2026-11-25');`, [studentA.id]);
+
     // -------------------------------------------------------------------------
     // TEST 3: Server Authority: Single Attendance Recording
     // -------------------------------------------------------------------------
