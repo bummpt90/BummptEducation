@@ -197,6 +197,36 @@ const CANNED_TEMPLATES = [
   }
 ];
 
+function mapApiToChatMessage(item: any): HQChatMessage {
+  const replies = item.replies || [];
+  const latestReply = replies.length > 0 ? replies[replies.length - 1] : null;
+  const hqResponse = (item.hq_response_content || latestReply) ? {
+    responderName: item.hq_responder_name || latestReply?.responder_name || 'Ministry Desk Officer',
+    responderRole: item.hq_responder_role || latestReply?.responder_role || 'Ministry of Education HQ',
+    replyContent: item.hq_response_content || latestReply?.reply_content || '',
+    timestamp: item.hq_responded_at ? new Date(item.hq_responded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (latestReply ? new Date(latestReply.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today')
+  } : undefined;
+
+  return {
+    id: item.id,
+    senderName: item.sender_name || 'Executive Officer',
+    senderRole: item.sender_role || 'Education Administrator',
+    schoolName: item.school_name || 'Ministry of Education Headquarters',
+    lga: (item.lga || 'Makurdi') as BenueLGA,
+    zone: (item.zone || 'Zone B (Benue North-West)') as SenatorialZone,
+    channelId: item.channel_id || 'all-schools-announcements',
+    messageType: item.message_type || 'update',
+    priority: item.priority || 'normal',
+    timestamp: item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today',
+    content: item.content,
+    status: item.status || 'received',
+    attachmentName: item.attachment_name || undefined,
+    officialRefNumber: item.official_ref_number,
+    hqResponse,
+    isEscalatedToCommissioner: Boolean(item.is_escalated_to_commissioner)
+  };
+}
+
 interface HeadquartersLiveChatProps {
   currentLga?: BenueLGA;
   activeSchool?: GovSchool;
@@ -208,14 +238,8 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
   activeSchool,
   onSelectSchool
 }) => {
-  const [messages, setMessages] = useState<HQChatMessage[]>(() => {
-    try {
-      const saved = localStorage.getItem('benue_moe_hq_chat_messages_v1');
-      return saved ? JSON.parse(saved) : INITIAL_HQ_MESSAGES;
-    } catch {
-      return INITIAL_HQ_MESSAGES;
-    }
-  });
+  const [messages, setMessages] = useState<HQChatMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
 
   const [activeChannelId, setActiveChannelId] = useState<string>('all-schools-announcements');
   const [selectedZoneFilter, setSelectedZoneFilter] = useState<string>('All');
@@ -250,15 +274,30 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
     }
   }, [activeSchool]);
 
-  // Persist messages to local storage
-  const saveMessages = (updatedList: HQChatMessage[]) => {
-    setMessages(updatedList);
+  const fetchMessages = async () => {
+    setIsLoadingMessages(true);
     try {
-      localStorage.setItem('benue_moe_hq_chat_messages_v1', JSON.stringify(updatedList));
+      const params = new URLSearchParams();
+      if (activeChannelId) params.append('channelId', activeChannelId);
+      if (selectedStatusFilter !== 'All') params.append('status', selectedStatusFilter);
+      
+      const res = await fetch(`/api/v1/hq/chat/messages?${params.toString()}`);
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.success && Array.isArray(payload.data)) {
+          setMessages(payload.data.map(mapApiToChatMessage));
+        }
+      }
     } catch (e) {
-      console.error('Failed to save HQ chat messages', e);
+      console.error('Failed to load authoritative HQ chat messages', e);
+    } finally {
+      setIsLoadingMessages(false);
     }
   };
+
+  useEffect(() => {
+    fetchMessages();
+  }, [activeChannelId, selectedStatusFilter]);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -269,7 +308,6 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
   const filteredMessages = messages.filter(m => {
     // Channel match
     if (activeChannelId !== 'all-schools-announcements' && m.channelId !== activeChannelId) {
-      // If zone channel, match zone
       if (activeChannelId === 'zone-a-northeast' && !m.zone.includes('Zone A')) return false;
       if (activeChannelId === 'zone-b-northwest' && !m.zone.includes('Zone B')) return false;
       if (activeChannelId === 'zone-c-south' && !m.zone.includes('Zone C')) return false;
@@ -295,81 +333,44 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
     return true;
   });
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessageText.trim()) return;
+    if (!newMessageText.trim() || isSending) return;
 
     setIsSending(true);
 
-    const now = new Date();
-    const timeString = `Today at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    const randomRef = `BN/HQ/${customLga.substring(0, 3).toUpperCase()}/${Math.floor(1000 + Math.random() * 9000)}`;
+    try {
+      const res = await fetch('/api/v1/hq/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelId: activeChannelId,
+          messageType: newMessageType,
+          priority: newMessagePriority,
+          content: newMessageText.trim(),
+          attachmentName: attachedFileName || undefined,
+          isEscalatedToCommissioner: isEscalateChecked,
+          lga: customLga,
+          targetSchoolId: activeSchool?.id,
+          targetSchoolName: activeSchool?.name,
+        })
+      });
 
-    const zoneForLga: SenatorialZone = 
-      ['Gboko', 'Katsina-Ala', 'Kwande', 'Konshisha', 'Ushongo', 'Vandeikya', 'Logo', 'Ukum'].includes(customLga)
-        ? 'Zone A (Benue North-East)'
-        : ['Ado', 'Agatu', 'Apa', 'Obi', 'Ogbadibo', 'Ohimini', 'Oju', 'Okpokwu', 'Otukpo'].includes(customLga)
-        ? 'Zone C (Benue South)'
-        : 'Zone B (Benue North-West)';
-
-    let senderRoleLabel = 'Principal / School Head';
-    if (activeSenderRole === 'ministry_officer') {
-      senderRoleLabel = 'Director of Quality Assurance & Standards, MOE';
-    } else if (activeSenderRole === 'hon_commissioner') {
-      senderRoleLabel = 'Hon. Commissioner for Education, Science & Technology';
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && body.data) {
+          const mapped = mapApiToChatMessage(body.data);
+          setMessages(prev => [...prev, mapped]);
+          setNewMessageText('');
+          setAttachedFileName('');
+          setIsEscalateChecked(false);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to post dispatch to Ministry HQ', err);
+    } finally {
+      setIsSending(false);
     }
-
-    const newMsg: HQChatMessage = {
-      id: `MSG-BN-${Date.now().toString().slice(-4)}`,
-      senderName: customSenderName,
-      senderRole: senderRoleLabel,
-      schoolName: activeSenderRole === 'head_of_school' ? customSchoolName : 'Ministry of Education Headquarters, Makurdi',
-      lga: customLga,
-      zone: zoneForLga,
-      channelId: activeChannelId,
-      messageType: newMessageType,
-      priority: newMessagePriority,
-      timestamp: timeString,
-      content: newMessageText.trim(),
-      status: isEscalateChecked ? 'forwarded-to-head' : 'received',
-      attachmentName: attachedFileName || undefined,
-      officialRefNumber: randomRef,
-      isEscalatedToCommissioner: isEscalateChecked || activeSenderRole === 'hon_commissioner'
-    };
-
-    const updated = [...messages, newMsg];
-    saveMessages(updated);
-    setNewMessageText('');
-    setAttachedFileName('');
-    setIsEscalateChecked(false);
-
-    // If sent by School Head, simulate intelligent automated acknowledgment from the Ministry HQ Desk after 1.5s
-    if (activeSenderRole === 'head_of_school') {
-      setTimeout(() => {
-        const hqReplyContent = isEscalateChecked
-          ? `OFFICIAL ACKNOWLEDGMENT (Ref ${randomRef}): Your urgent request has been prioritized and placed directly on the Hon. Commissioner Prof. Frederick Ikyaan's executive review desk. An inspection / audit directive has been generated.`
-          : `ACKNOWLEDGMENT (Ref ${randomRef}): Ministry desk officer has registered your ${newMessageType}. Assigned to the Zonal Inspectorate (${zoneForLga}) for compliance validation.`;
-
-        const replyWithHQ: HQChatMessage[] = updated.map(item => {
-          if (item.id === newMsg.id) {
-            return {
-              ...item,
-              status: isEscalateChecked ? 'forwarded-to-head' : 'in-review',
-              hqResponse: {
-                responderName: isEscalateChecked ? 'Prof. Frederick Ikyaan' : 'Director of Quality Assurance, MOE',
-                responderRole: isEscalateChecked ? 'Hon. Commissioner for Education' : 'State Quality Assurance Officer',
-                replyContent: hqReplyContent,
-                timestamp: `Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              }
-            };
-          }
-          return item;
-        });
-        saveMessages(replyWithHQ);
-      }, 1500);
-    }
-
-    setIsSending(false);
   };
 
   const handleApplyTemplate = (tmpl: typeof CANNED_TEMPLATES[0]) => {
@@ -386,68 +387,65 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
       'TRCN_Faculty_Biometric_Log.pdf',
       'PTA_and_Subvention_Reconciliation_Statement.pdf'
     ];
-    const picked = mockFiles[Math.floor(Math.random() * mockFiles.length)];
-    setAttachedFileName(picked);
+    setAttachedFileName(mockFiles[0]);
   };
 
-  const handleQuickAddHQReply = (messageId: string) => {
+  const handleQuickAddHQReply = async (messageId: string) => {
     if (!quickReplyText.trim()) return;
 
-    const updated = messages.map(m => {
-      if (m.id === messageId) {
-        return {
-          ...m,
-          status: 'resolved' as const,
-          hqResponse: {
-            responderName: 'Prof. Frederick Ikyaan',
-            responderRole: 'Hon. Commissioner for Education / Desk Official',
-            replyContent: quickReplyText.trim(),
-            timestamp: `Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-          }
-        };
-      }
-      return m;
-    });
-
-    saveMessages(updated);
-    setQuickReplyText('');
-    if (selectedMessageModal && selectedMessageModal.id === messageId) {
-      setSelectedMessageModal({
-        ...selectedMessageModal,
-        status: 'resolved',
-        hqResponse: {
-          responderName: 'Prof. Frederick Ikyaan',
-          responderRole: 'Hon. Commissioner for Education / Desk Official',
-          replyContent: quickReplyText.trim(),
-          timestamp: 'Just now'
-        }
+    try {
+      const res = await fetch(`/api/v1/hq/chat/messages/${messageId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replyContent: quickReplyText.trim() })
       });
+
+      if (res.ok) {
+        await fetchMessages();
+        setQuickReplyText('');
+        if (selectedMessageModal && selectedMessageModal.id === messageId) {
+          setSelectedMessageModal(prev => prev ? {
+            ...prev,
+            status: 'in-review',
+            hqResponse: {
+              responderName: 'Ministry Desk Official',
+              responderRole: 'State Quality Assurance Officer',
+              replyContent: quickReplyText.trim(),
+              timestamp: 'Just now'
+            }
+          } : null);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to submit HQ reply', e);
     }
   };
 
-  const handleEscalateExistingMessage = (messageId: string) => {
-    const updated = messages.map(m => {
-      if (m.id === messageId) {
-        return {
-          ...m,
-          isEscalatedToCommissioner: true,
-          status: 'forwarded-to-head' as const
-        };
-      }
-      return m;
-    });
-    saveMessages(updated);
-    if (selectedMessageModal && selectedMessageModal.id === messageId) {
-      setSelectedMessageModal({
-        ...selectedMessageModal,
-        isEscalatedToCommissioner: true,
-        status: 'forwarded-to-head'
+  const handleEscalateExistingMessage = async (messageId: string) => {
+    try {
+      const res = await fetch(`/api/v1/hq/chat/messages/${messageId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isEscalatedToCommissioner: true, status: 'forwarded-to-head' })
       });
+
+      if (res.ok) {
+        await fetchMessages();
+        if (selectedMessageModal && selectedMessageModal.id === messageId) {
+          setSelectedMessageModal(prev => prev ? {
+            ...prev,
+            isEscalatedToCommissioner: true,
+            status: 'forwarded-to-head'
+          } : null);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to escalate dispatch', e);
     }
   };
 
   const handleResetToDefault = () => {
-    saveMessages(INITIAL_HQ_MESSAGES);
+    fetchMessages();
   };
 
   const currentChannelObj = CHANNELS.find(c => c.id === activeChannelId) || CHANNELS[0];

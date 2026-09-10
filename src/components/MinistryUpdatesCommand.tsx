@@ -24,12 +24,28 @@ import {
   School
 } from 'lucide-react';
 import { GovSchool, BenueLGA, SenatorialZone } from '../types';
-import { 
-  MinistryDirective, 
-  getStoredDirectives, 
-  saveStoredDirectives 
-} from '../data/benueDirectivesData';
+import { MinistryDirective } from '../data/benueDirectivesData';
 import { BENUE_LGAS_METADATA } from '../data/benueStateData';
+
+function mapApiToDirective(item: any): MinistryDirective {
+  return {
+    id: item.id,
+    referenceNumber: item.reference_number,
+    title: item.title,
+    category: item.category,
+    priority: item.priority,
+    targetAudience: item.target_audience || 'Statewide (All 23 LGAs)',
+    targetLGA: item.target_lga || undefined,
+    targetSchoolName: item.target_school_name || undefined,
+    issuedBy: item.issued_by,
+    issuingOffice: item.issuing_office,
+    issuedDate: item.issued_date,
+    effectiveDate: item.effective_date,
+    content: item.content,
+    actionRequired: item.action_required,
+    status: item.is_acknowledged ? 'Acknowledged by Principals' : (item.status || 'Broadcasted & Active')
+  };
+}
 
 interface MinistryUpdatesCommandProps {
   activeSchool: GovSchool;
@@ -53,7 +69,8 @@ export const MinistryUpdatesCommand: React.FC<MinistryUpdatesCommandProps> = ({
   authenticatedStaffRole = 'Hon. Commissioner for Education'
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'broadcast' | 'subvention' | 'teachers' | 'accreditation'>('broadcast');
-  const [directives, setDirectives] = useState<MinistryDirective[]>(getStoredDirectives());
+  const [directives, setDirectives] = useState<MinistryDirective[]>([]);
+  const [isLoadingDirectives, setIsLoadingDirectives] = useState<boolean>(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // 1. Broadcast Circular Form State
@@ -64,6 +81,7 @@ export const MinistryUpdatesCommand: React.FC<MinistryUpdatesCommandProps> = ({
   const [newContent, setNewContent] = useState('');
   const [newActionRequired, setNewActionRequired] = useState('');
   const [activeSlipDirective, setActiveSlipDirective] = useState<MinistryDirective | null>(null);
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
 
   // 2. Subvention Allocation Form State
   const [grantAmount, setGrantAmount] = useState<number>(2000000);
@@ -84,46 +102,100 @@ export const MinistryUpdatesCommand: React.FC<MinistryUpdatesCommandProps> = ({
     setTimeout(() => setSuccessToast(null), 3500);
   };
 
-  // Handle Publishing New Directive
-  const handlePublishDirective = (e: React.FormEvent) => {
+  const fetchDirectives = async () => {
+    setIsLoadingDirectives(true);
+    try {
+      const res = await fetch('/api/v1/hq/directives');
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && Array.isArray(body.data)) {
+          setDirectives(body.data.map(mapApiToDirective));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load ministry directives', e);
+    } finally {
+      setIsLoadingDirectives(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchDirectives();
+  }, []);
+
+  // Handle Publishing New Directive via Server API
+  const handlePublishDirective = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newContent.trim()) {
+    if (!newTitle.trim() || !newContent.trim() || isPublishing) {
       alert('Please provide a circular title and directive content.');
       return;
     }
 
-    const randomNum = Math.floor(100 + Math.random() * 900);
-    const newDirective: MinistryDirective = {
-      id: `DIR-MOE-${Date.now()}`,
-      referenceNumber: `MOE/HQ/CIR/2026/${randomNum}`,
-      title: newTitle.trim(),
-      category: newCategory,
-      priority: newPriority,
-      targetAudience: newAudience,
-      targetLGA: newAudience === 'Specific LGA / Schools' ? currentLga : undefined,
-      targetSchoolName: newAudience === 'Specific LGA / Schools' ? activeSchool.name : undefined,
-      issuedBy: authenticatedStaffName,
-      issuingOffice: 'Headquarters Command & Executive Secretariat, Makurdi',
-      issuedDate: new Date().toISOString().split('T')[0],
-      effectiveDate: new Date().toISOString().split('T')[0],
-      content: newContent.trim(),
-      actionRequired: newActionRequired.trim() || 'All school administrators must comply immediately.',
-      status: 'Broadcasted & Active'
-    };
+    setIsPublishing(true);
 
-    const updated = [newDirective, ...directives];
-    setDirectives(updated);
-    saveStoredDirectives(updated);
+    try {
+      const audienceType = newAudience === 'Specific LGA / Schools' ? 'SPECIFIC_SCHOOL' : (newAudience === 'Statewide (All 23 LGAs)' ? 'ALL_SCHOOLS' : 'ZONE');
+      const payload = {
+        title: newTitle.trim(),
+        category: newCategory,
+        priority: newPriority,
+        targetAudience: newAudience,
+        audienceType,
+        targetLga: newAudience === 'Specific LGA / Schools' ? currentLga : undefined,
+        targetSchoolId: newAudience === 'Specific LGA / Schools' ? activeSchool.id : undefined,
+        targetSchoolName: newAudience === 'Specific LGA / Schools' ? activeSchool.name : undefined,
+        content: newContent.trim(),
+        actionRequired: newActionRequired.trim() || 'All school administrators must comply immediately.',
+      };
 
-    showToast(`State Directive "${newTitle}" successfully broadcasted across Benue State schools!`);
-    setNewTitle('');
-    setNewContent('');
-    setNewActionRequired('');
-    setActiveSlipDirective(newDirective);
+      const res = await fetch('/api/v1/hq/directives', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && body.data) {
+          const published = mapApiToDirective(body.data);
+          setDirectives(prev => [published, ...prev]);
+          showToast(`State Directive "${published.title}" successfully broadcasted across Benue State schools!`);
+          setNewTitle('');
+          setNewContent('');
+          setNewActionRequired('');
+          setActiveSlipDirective(published);
+        }
+      } else {
+        const err = await res.json();
+        alert(err.message || 'Failed to publish directive');
+      }
+    } catch (err) {
+      console.error('Error broadcasting directive', err);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  // Handle Acknowledging Directive by School Head
+  const handleAcknowledgeDirective = async (directiveId: string) => {
+    try {
+      const res = await fetch(`/api/v1/hq/directives/${directiveId}/acknowledge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: `Formally acknowledged by ${authenticatedStaffName} (${activeSchool.name}).` })
+      });
+
+      if (res.ok) {
+        setDirectives(prev => prev.map(d => d.id === directiveId ? { ...d, status: 'Acknowledged by Principals' } : d));
+        showToast('Directive compliance officially acknowledged and registered with Ministry HQ.');
+      }
+    } catch (e) {
+      console.error('Failed to acknowledge directive', e);
+    }
   };
 
   // Handle Subvention Release
-  const handleDisburseSubvention = (e: React.FormEvent) => {
+  const handleDisburseSubvention = async (e: React.FormEvent) => {
     e.preventDefault();
     if (grantAmount <= 0) {
       alert('Please enter a valid grant amount.');

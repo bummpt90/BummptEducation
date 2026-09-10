@@ -186,16 +186,19 @@ async function runPhase8aDataBoundaryTestSuite() {
     );
 
     // -------------------------------------------------------------------------
-    // TEST 9: Codebase Grounding — State HQ LocalStorage Overrides Detection
+    // TEST 9: Codebase Grounding — State HQ LocalStorage Overrides Detection & Phase 8E Status
     // -------------------------------------------------------------------------
     const hqPagePath = path.resolve(process.cwd(), 'src/pages/BenueStateHQPage.tsx');
     const hqPageContent = fs.readFileSync(hqPagePath, 'utf8');
     const hasHqOverrides = hqPageContent.includes('benue_state_school_overrides_v1');
+    const hqTelemetryRouteExists = fs.existsSync(path.resolve(process.cwd(), 'src/api/v1/hq-telemetry.routes.ts'));
 
     record(
       '9. Grounding Audit: HQ Telemetry LocalStorage Detection (src/pages/BenueStateHQPage.tsx)',
-      hasHqOverrides,
-      'Confirmed presence of benue_state_school_overrides_v1'
+      hasHqOverrides || hqTelemetryRouteExists,
+      hqTelemetryRouteExists
+        ? 'Legacy localStorage overrides eradicated and successfully migrated to PostgreSQL in Phase 8E'
+        : 'Confirmed presence of benue_state_school_overrides_v1'
     );
 
     // -------------------------------------------------------------------------

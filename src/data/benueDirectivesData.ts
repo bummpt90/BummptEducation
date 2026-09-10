@@ -80,25 +80,3 @@ export const INITIAL_MINISTRY_DIRECTIVES: MinistryDirective[] = [
     status: 'Broadcasted & Active'
   }
 ];
-
-const STORAGE_KEY_DIRECTIVES = 'benue_state_moe_directives_v1';
-
-export function getStoredDirectives(): MinistryDirective[] {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY_DIRECTIVES);
-    if (data) {
-      return JSON.parse(data);
-    }
-  } catch (e) {
-    console.error('Failed to load directives from storage', e);
-  }
-  return INITIAL_MINISTRY_DIRECTIVES;
-}
-
-export function saveStoredDirectives(directives: MinistryDirective[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY_DIRECTIVES, JSON.stringify(directives));
-  } catch (e) {
-    console.error('Failed to save directives to storage', e);
-  }
-}

@@ -22,6 +22,9 @@ import { bursaryRouter } from './src/api/v1/bursary.routes';
 import { financialAuditRouter } from './src/api/v1/financialAudit.routes';
 import { parentsRouter } from './src/api/v1/parents.routes';
 import { lessonNotesRouter } from './src/api/v1/lesson-notes.routes';
+import { hqTelemetryRouter } from './src/api/v1/hq-telemetry.routes';
+import { hqDirectivesRouter } from './src/api/v1/hq-directives.routes';
+import { hqChatRouter } from './src/api/v1/hq-chat.routes';
 import { devAuthCompatibility, requirePermission, optionalAuthenticate } from './src/auth/middleware';
 import { seedDevelopmentAuthIdentities } from './src/db/seed/auth.seed';
 import { seedOperationalFoundation } from './src/db/seed/operational.seed';
@@ -114,6 +117,13 @@ async function startServer() {
   // =========================================================================
   app.use('/api/v1/lesson-notes', lessonNotesRouter);
   app.use('/api/lesson-notes', lessonNotesRouter);
+
+  // =========================================================================
+  // BENUE STATE HQ TELEMETRY, DIRECTIVES & LIVE CHAT (PHASE 8E - POSTGRESQL AUTHORITATIVE)
+  // =========================================================================
+  app.use('/api/v1/hq/telemetry', hqTelemetryRouter);
+  app.use('/api/v1/hq/directives', hqDirectivesRouter);
+  app.use('/api/v1/hq/chat', hqChatRouter);
 
   // =========================================================================
   // VITE & STATIC SPA FALLBACK HANDLING

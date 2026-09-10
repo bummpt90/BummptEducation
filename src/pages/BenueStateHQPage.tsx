@@ -74,14 +74,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
   });
   const [authenticatedPasskey, setAuthenticatedPasskey] = useState<IssuedPasskey | null>(null);
   const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState<boolean>(false);
-  const [schoolOverrides, setSchoolOverrides] = useState<Record<string, Partial<GovSchool>>>(() => {
-    try {
-      const saved = localStorage.getItem('benue_state_school_overrides_v1');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [schoolOverrides, setSchoolOverrides] = useState<Record<string, Partial<GovSchool>>>({});
 
   // Cross-Session Live Telemetry State (Real-time updates as other sessions operate)
   const [isLiveFeedOpen, setIsLiveFeedOpen] = useState<boolean>(false);
@@ -102,6 +95,30 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
   const [schoolCategoryFilter, setSchoolCategoryFilter] = useState<string>('All');
   const [schoolSearchTerm, setSchoolSearchTerm] = useState<string>('');
 
+  const fetchLiveTelemetry = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch('/api/v1/hq/telemetry/overview');
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && body.data) {
+          if (typeof body.data.telemetryActivityCount === 'number') {
+            setTelemetryCount(body.data.telemetryActivityCount);
+          }
+          setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync live telemetry with HQ PostgreSQL backend', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchLiveTelemetry();
+  }, []);
+
   const handleUnlockSuccess = (passkey: IssuedPasskey) => {
     const sess = getStoredSession();
     saveStoredSession({ ...sess, isBenueHQUnlocked: true });
@@ -117,24 +134,14 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
   };
 
   const handleSyncLiveSessions = () => {
-    setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
-      setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setTelemetryCount(prev => prev + Math.floor(12 + Math.random() * 25));
-    }, 1200);
+    fetchLiveTelemetry();
   };
 
   const persistSchoolOverrides = (newOverrides: Record<string, Partial<GovSchool>>) => {
     setSchoolOverrides(newOverrides);
-    try {
-      localStorage.setItem('benue_state_school_overrides_v1', JSON.stringify(newOverrides));
-    } catch (e) {
-      console.error('Failed to save school overrides', e);
-    }
   };
 
-  const handleUpdateSchoolFinancials = (grantAmount: number, grantType: string, purpose: string) => {
+  const handleUpdateSchoolFinancials = async (grantAmount: number, grantType: string, purpose: string) => {
     const current = schoolOverrides[selectedSchoolId] || {};
     const baseFin = baseSelectedSchool.financialStatement;
     const currentFin = current.financialStatement ? { ...baseFin, ...current.financialStatement } : baseFin;
@@ -156,6 +163,16 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
       }
     };
     persistSchoolOverrides(updated);
+
+    try {
+      await fetch(`/api/v1/hq/telemetry/schools/${selectedSchoolId}/subvention`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grantAmount, grantType, purpose })
+      });
+    } catch (e) {
+      console.error('Failed to persist subvention to PostgreSQL', e);
+    }
   };
 
   const handleDeployTeacher = (subject: string, teacherName: string, qualification: string) => {
