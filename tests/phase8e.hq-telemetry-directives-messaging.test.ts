@@ -15,6 +15,8 @@
  */
 
 import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
 import http from 'http';
 import express from 'express';
 import { query, runMigrations, closeDatabasePool, withTransaction } from '../src/db';
@@ -90,6 +92,7 @@ async function runPhase8eTestSuite() {
     const bursarAId      = 'e8888888-8888-8888-8888-888888888888';
     const headmistressAId = 'e9999999-9999-9999-9999-999999999999';
     const headKinderAId  = 'eaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const admissionsAId  = 'ebbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
     await query(
       `INSERT INTO users (id, email, password_hash, full_name, role, school_id, is_active)
@@ -103,7 +106,8 @@ async function runPhase8eTestSuite() {
          ($7, 'super.admin.8e@bummpt.com', 'hashed_pass_placeholder', 'Super Admin Officer', 'super_admin', NULL, true),
          ($10, 'bursar.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mrs. Rebecca Ior', 'bursar', $8, true),
          ($11, 'headmistress.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Comfort Tor', 'headmistress', $8, true),
-         ($12, 'headkinder.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Grace Agbo', 'head_kindergarten', $8, true)
+         ($12, 'headkinder.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Grace Agbo', 'head_kindergarten', $8, true),
+         ($13, 'admissions.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mr. Emmanuel Agada', 'admissions_officer', $8, true)
        ON CONFLICT (id) DO UPDATE SET 
          email = EXCLUDED.email, 
          role = EXCLUDED.role, 
@@ -112,7 +116,7 @@ async function runPhase8eTestSuite() {
       [
         stateOfficerId, principalAId, principalBId, teacherAId, studentAId, parentAId, superAdminId,
         schoolA.id, schoolB.id,
-        bursarAId, headmistressAId, headKinderAId
+        bursarAId, headmistressAId, headKinderAId, admissionsAId
       ]
     );
 
@@ -193,6 +197,14 @@ async function runPhase8eTestSuite() {
       userId: headKinderAId,
       email: 'headkinder.a.8e@apex.edu.ng',
       role: 'head_kindergarten',
+      schoolId: schoolA.id,
+      isSuperAdmin: false,
+    });
+
+    const admissionsAToken = signAuthToken({
+      userId: admissionsAId,
+      email: 'admissions.a.8e@apex.edu.ng',
+      role: 'admissions_officer',
       schoolId: schoolA.id,
       isSuperAdmin: false,
     });
@@ -410,11 +422,167 @@ async function runPhase8eTestSuite() {
     // =========================================================================
     console.log('\n--- Category 4: Statewide HQ Telemetry & Subvention Operations ---');
 
-    // Test 4.0: Head of School is forbidden from accessing statewide Telemetry (403)
-    const res4_0a = await apiRequest('/api/v1/hq/telemetry/overview', { token: principalAToken });
+    // Test 4.0A: Comprehensive Telemetry Role Matrix for GET /overview
+    const [
+      res4_ov_sa, res4_ov_so, res4_ov_pr, res4_ov_hm, res4_ov_hk,
+      res4_ov_tc, res4_ov_bu, res4_ov_ad, res4_ov_pa, res4_ov_st
+    ] = await Promise.all([
+      apiRequest('/api/v1/hq/telemetry/overview', { token: superAdminToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: stateOfficerToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: principalAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: headmistressAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: headKinderAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: teacherAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: bursarAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: admissionsAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: parentAToken }),
+      apiRequest('/api/v1/hq/telemetry/overview', { token: studentAToken }),
+    ]);
+
+    record('Category 4', 'Telemetry overview: super_admin granted access (200)', res4_ov_sa.status === 200);
+    record('Category 4', 'Telemetry overview: state_officer granted access (200)', res4_ov_so.status === 200);
+    record('Category 4', 'Telemetry overview: principal denied access (403)', res4_ov_pr.status === 403);
+    record('Category 4', 'Telemetry overview: headmistress denied access (403)', res4_ov_hm.status === 403);
+    record('Category 4', 'Telemetry overview: head_kindergarten denied access (403)', res4_ov_hk.status === 403);
+    record('Category 4', 'Telemetry overview: teacher denied access (403)', res4_ov_tc.status === 403);
+    record('Category 4', 'Telemetry overview: bursar denied access (403)', res4_ov_bu.status === 403);
+    record('Category 4', 'Telemetry overview: admissions_officer denied access (403)', res4_ov_ad.status === 403);
+    record('Category 4', 'Telemetry overview: parent denied access (403)', res4_ov_pa.status === 403);
+    record('Category 4', 'Telemetry overview: student denied access (403)', res4_ov_st.status === 403);
+
+    // Test 4.0B: School Telemetry Authorization Matrix for GET /schools/:id
+    const [
+      res4_sc_so_a, res4_sc_sa_b, res4_sc_pr_a, res4_sc_pr_b,
+      res4_sc_tc_a, res4_sc_bu_a, res4_sc_ad_a, res4_sc_pa_a, res4_sc_st_a
+    ] = await Promise.all([
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: stateOfficerToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: superAdminToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: principalAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: principalAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: teacherAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: bursarAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: admissionsAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: parentAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: studentAToken }),
+    ]);
+
+    record('Category 4', 'School telemetry: HQ state_officer can inspect School A (200)', res4_sc_so_a.status === 200);
+    record('Category 4', 'School telemetry: HQ super_admin can inspect School B (200)', res4_sc_sa_b.status === 200);
+    record('Category 4', 'School telemetry: Head A can inspect School A (200)', res4_sc_pr_a.status === 200);
+    record('Category 4', 'School telemetry: Head A probing School B receives 404 (IDOR guard)', res4_sc_pr_b.status === 404);
+    record('Category 4', 'School telemetry: teacher denied access (403)', res4_sc_tc_a.status === 403);
+    record('Category 4', 'School telemetry: bursar denied access (403)', res4_sc_bu_a.status === 403);
+    record('Category 4', 'School telemetry: admissions_officer denied access (403)', res4_sc_ad_a.status === 403);
+    record('Category 4', 'School telemetry: parent denied access (403)', res4_sc_pa_a.status === 403);
+    record('Category 4', 'School telemetry: student denied access (403)', res4_sc_st_a.status === 403);
+
+    // Test 4.0C: KPI Telemetry Authorization Matrix for GET /schools/:id/kpis
+    const [
+      res4_kpi_so_a, res4_kpi_sa_b, res4_kpi_pr_a, res4_kpi_pr_b,
+      res4_kpi_tc_a, res4_kpi_bu_a, res4_kpi_ad_a, res4_kpi_pa_a, res4_kpi_st_a
+    ] = await Promise.all([
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: stateOfficerToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: superAdminToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: principalAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: principalAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: teacherAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: bursarAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: admissionsAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: parentAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: studentAToken }),
+    ]);
+
+    record('Category 4', 'School KPIs: HQ state_officer can inspect School A KPIs (200)', res4_kpi_so_a.status === 200);
+    record('Category 4', 'School KPIs: HQ super_admin can inspect School B KPIs (200)', res4_kpi_sa_b.status === 200);
+    record('Category 4', 'School KPIs: Head A can inspect School A KPIs (200)', res4_kpi_pr_a.status === 200);
+    record('Category 4', 'School KPIs: Head A probing School B KPIs receives 404 (IDOR guard)', res4_kpi_pr_b.status === 404);
+    record('Category 4', 'School KPIs: teacher denied access (403)', res4_kpi_tc_a.status === 403);
+    record('Category 4', 'School KPIs: bursar denied access (403)', res4_kpi_bu_a.status === 403);
+    record('Category 4', 'School KPIs: admissions_officer denied access (403)', res4_kpi_ad_a.status === 403);
+    record('Category 4', 'School KPIs: parent denied access (403)', res4_kpi_pa_a.status === 403);
+    record('Category 4', 'School KPIs: student denied access (403)', res4_kpi_st_a.status === 403);
+
+    // Test 4.0D: Synthetic Counter Detection (Static & Source Code Audit)
+    const hqPageContent = fs.readFileSync(path.join(process.cwd(), 'src/pages/BenueStateHQPage.tsx'), 'utf8');
+    const hqRepoContent = fs.readFileSync(path.join(process.cwd(), 'src/db/repositories/hqTelemetry.repository.ts'), 'utf8');
+    const has438InFrontend = hqPageContent.includes('438');
+    const has438InRepo = hqRepoContent.includes('438');
+    const hasRandomInRepo = hqRepoContent.includes('Math.random()');
+
+    record('Category 4', 'Frontend BenueStateHQPage does NOT contain hardcoded 438 telemetry default', !has438InFrontend);
+    record('Category 4', 'Repository hqTelemetry.repository does NOT contain 438 or synthetic Math.random()', !has438InRepo && !hasRandomInRepo);
+
+    // Test 4.0E: Directive Seed Isolation
+    const scanDirs = ['src/pages', 'src/components', 'src/api', 'src/db/repositories'];
+    let directiveSeedLeakFound = false;
+    for (const sDir of scanDirs) {
+      const fullDir = path.join(process.cwd(), sDir);
+      if (fs.existsSync(fullDir)) {
+        const files = fs.readdirSync(fullDir, { recursive: true }) as string[];
+        for (const file of files) {
+          if (typeof file === 'string' && (file.endsWith('.ts') || file.endsWith('.tsx'))) {
+            const filePath = path.join(fullDir, file);
+            const content = fs.readFileSync(filePath, 'utf8');
+            if (content.includes('INITIAL_MINISTRY_DIRECTIVES')) {
+              directiveSeedLeakFound = true;
+              console.error(`[Leak Check] INITIAL_MINISTRY_DIRECTIVES imported in ${filePath}`);
+            }
+          }
+        }
+      }
+    }
+    record('Category 4', 'INITIAL_MINISTRY_DIRECTIVES is strictly isolated and NEVER imported by production UI/API/repo code', !directiveSeedLeakFound);
+
+    // Test 4.0F: Subvention Role Gatekeeping Matrix
+    const [res4_sub_sa, res4_sub_so, res4_sub_pr, res4_sub_hm, res4_sub_tc, res4_sub_bu, res4_sub_ad] = await Promise.all([
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: superAdminToken,
+        body: { grantAmount: 100000, grantType: 'Emergency Grant', purpose: 'Roof repair' },
+      }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: stateOfficerToken,
+        body: { grantAmount: 100000, grantType: 'Special Subvention Grant', purpose: 'Science books' },
+      }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: principalAToken,
+        body: { grantAmount: 100000, grantType: 'Unauthorized Self Grant', purpose: 'Self grant' },
+      }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: headmistressAToken,
+        body: { grantAmount: 100000, grantType: 'Unauthorized Self Grant', purpose: 'Self grant' },
+      }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: teacherAToken,
+        body: { grantAmount: 100000, grantType: 'Unauthorized Teacher Grant', purpose: 'Teacher grant' },
+      }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: bursarAToken,
+        body: { grantAmount: 100000, grantType: 'Unauthorized Bursar Grant', purpose: 'Bursar grant' },
+      }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/subvention`, {
+        method: 'POST',
+        token: admissionsAToken,
+        body: { grantAmount: 100000, grantType: 'Unauthorized Admissions Grant', purpose: 'Admissions grant' },
+      }),
+    ]);
+
+    record('Category 4', 'Subvention: super_admin authorized to disburse grants (200)', res4_sub_sa.status === 200);
+    record('Category 4', 'Subvention: state_officer authorized to disburse grants (200)', res4_sub_so.status === 200);
+    record('Category 4', 'Subvention: principal denied grant disbursement (403)', res4_sub_pr.status === 403);
+    record('Category 4', 'Subvention: headmistress denied grant disbursement (403)', res4_sub_hm.status === 403);
+    record('Category 4', 'Subvention: teacher denied grant disbursement (403)', res4_sub_tc.status === 403);
+    record('Category 4', 'Subvention: bursar denied grant disbursement (403)', res4_sub_bu.status === 403);
+    record('Category 4', 'Subvention: admissions_officer denied grant disbursement (403)', res4_sub_ad.status === 403);
+
+    // Test 4.0G: Head of School is forbidden from accessing statewide LGA directories (403)
     const res4_0b = await apiRequest('/api/v1/hq/telemetry/lgas', { token: principalAToken });
     const res4_0c = await apiRequest('/api/v1/hq/telemetry/lgas/Makurdi', { token: principalAToken });
-    record('Category 4', 'Head of School is forbidden from statewide overview telemetry (403)', res4_0a.status === 403);
     record('Category 4', 'Head of School is forbidden from statewide LGAs directory (403)', res4_0b.status === 403);
     record('Category 4', 'Head of School is forbidden from LGA-level directory telemetry (403)', res4_0c.status === 403);
 

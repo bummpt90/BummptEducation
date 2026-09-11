@@ -32,7 +32,7 @@ function isHeadOfSchool(role: string): boolean {
  * Only authorized HQ Officers and authenticated Heads of School may enter.
  * Explicitly denies: teachers, bursars, admissions officers, parents, students (403)
  */
-hqTelemetryRouter.use((req: AuthenticatedRequest, res: Response, next) => {
+export function requireMinistryPortalAccess(req: AuthenticatedRequest, res: Response, next: () => void) {
   const user = req.user;
   if (!user || !MINISTRY_PORTAL_ROLES.includes(user.role)) {
     res.status(403).json({
@@ -43,19 +43,21 @@ hqTelemetryRouter.use((req: AuthenticatedRequest, res: Response, next) => {
     return;
   }
   next();
-});
+}
+
+hqTelemetryRouter.use(requireMinistryPortalAccess);
 
 /**
  * Middleware: Enforces HQ-only statewide telemetry access
  * Heads of School are restricted to their own school and may NOT access statewide telemetry
  */
-function requireHqOfficer(req: AuthenticatedRequest, res: Response, next: () => void) {
-  const user = req.user!;
-  if (!isHqOfficer(user.role)) {
+export function requireHqOfficer(req: AuthenticatedRequest, res: Response, next: () => void) {
+  const user = req.user;
+  if (!user || !isHqOfficer(user.role)) {
     res.status(403).json({
       success: false,
       error: 'FORBIDDEN_ROLE',
-      message: 'Heads of School are not authorized to access statewide administration telemetry.',
+      message: 'Heads of School and unauthorized personnel are not permitted to access statewide administration telemetry or disburse subventions.',
     });
     return;
   }
@@ -141,20 +143,33 @@ hqTelemetryRouter.get('/lgas/:lga', requireHqOfficer, async (req: AuthenticatedR
  * Retrieves school details along with performance KPIs
  * HQ Officers: may inspect authorized schools statewide
  * Heads of School: strictly restricted to their own assigned school
+ * Other roles (teacher, bursar, parent, student, etc.): forbidden (403)
  */
-hqTelemetryRouter.get('/schools/:id', async (req: AuthenticatedRequest, res: Response) => {
+hqTelemetryRouter.get('/schools/:id', requireMinistryPortalAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const { id } = req.params;
 
-    // Cross-School IDOR Guard: Head of School can only inspect their own school
-    if (isHeadOfSchool(user.role) && user.schoolId !== id) {
-      res.status(404).json({
-        success: false,
-        error: 'SCHOOL_NOT_FOUND',
-        message: `School with ID '${id}' not found in registry.`,
-      });
-      return;
+    // Authorization Check: Non-HQ and non-Head roles receive 403 Forbidden
+    if (!isHqOfficer(user.role)) {
+      if (!isHeadOfSchool(user.role)) {
+        res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN_ROLE',
+          message: 'Access denied. School telemetry is restricted to Ministry HQ Officers and authenticated Heads of School.',
+        });
+        return;
+      }
+
+      // Cross-School IDOR Guard: Head of School can only inspect their own school (404 for other schools)
+      if (user.schoolId !== id) {
+        res.status(404).json({
+          success: false,
+          error: 'SCHOOL_NOT_FOUND',
+          message: `School with ID '${id}' not found in registry.`,
+        });
+        return;
+      }
     }
 
     const details = await hqTelemetryRepository.getSchoolDetailsWithKpis(id);
@@ -187,20 +202,33 @@ hqTelemetryRouter.get('/schools/:id', async (req: AuthenticatedRequest, res: Res
  * Performance KPIs (Teachers, Students, Inspections, Governing Reviews) for a school
  * HQ Officers: may inspect authorized schools statewide
  * Heads of School: strictly restricted to their own assigned school
+ * Other roles (teacher, bursar, parent, student, etc.): forbidden (403)
  */
-hqTelemetryRouter.get('/schools/:id/kpis', async (req: AuthenticatedRequest, res: Response) => {
+hqTelemetryRouter.get('/schools/:id/kpis', requireMinistryPortalAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const { id } = req.params;
 
-    // Cross-School IDOR Guard: Head of School can only inspect their own school KPIs
-    if (isHeadOfSchool(user.role) && user.schoolId !== id) {
-      res.status(404).json({
-        success: false,
-        error: 'SCHOOL_NOT_FOUND',
-        message: `School with ID '${id}' not found in registry.`,
-      });
-      return;
+    // Authorization Check: Non-HQ and non-Head roles receive 403 Forbidden
+    if (!isHqOfficer(user.role)) {
+      if (!isHeadOfSchool(user.role)) {
+        res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN_ROLE',
+          message: 'Access denied. School telemetry KPIs are restricted to Ministry HQ Officers and authenticated Heads of School.',
+        });
+        return;
+      }
+
+      // Cross-School IDOR Guard: Head of School can only inspect their own school KPIs (404 for other schools)
+      if (user.schoolId !== id) {
+        res.status(404).json({
+          success: false,
+          error: 'SCHOOL_NOT_FOUND',
+          message: `School with ID '${id}' not found in registry.`,
+        });
+        return;
+      }
     }
 
     const kpis = await hqTelemetryRepository.getSchoolKpis(id);
@@ -262,9 +290,9 @@ async function handleSubventionDisbursement(req: AuthenticatedRequest, res: Resp
 /**
  * POST /api/v1/hq/telemetry/schools/:id/subvention
  * Approves and disburses special state grants/subventions to a school
- * Authorized: State Officers & Super Admins only
+ * Authorized: State Officers & Super Admins only (Heads and other roles denied 403)
  */
-hqTelemetryRouter.post('/schools/:id/subvention', async (req: AuthenticatedRequest, res: Response) => {
+hqTelemetryRouter.post('/schools/:id/subvention', requireHqOfficer, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     await handleSubventionDisbursement(req, res, id);
@@ -281,9 +309,9 @@ hqTelemetryRouter.post('/schools/:id/subvention', async (req: AuthenticatedReque
 /**
  * POST /api/v1/hq/telemetry/subvention
  * Generic subvention endpoint where target school ID is in the payload
- * Authorized: State Officers & Super Admins only
+ * Authorized: State Officers & Super Admins only (Heads and other roles denied 403)
  */
-hqTelemetryRouter.post('/subvention', async (req: AuthenticatedRequest, res: Response) => {
+hqTelemetryRouter.post('/subvention', requireHqOfficer, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const schoolId = req.body.schoolId || req.body.targetSchoolId;
     if (!schoolId) {
@@ -308,8 +336,9 @@ hqTelemetryRouter.post('/subvention', async (req: AuthenticatedRequest, res: Res
 /**
  * GET /api/v1/hq/telemetry/audit-logs
  * Retrieves security-sensitive audit logs scoped by role and school boundary
+ * Authorized: HQ Officers (statewide) & Heads of School (own school only)
  */
-hqTelemetryRouter.get('/audit-logs', async (req: AuthenticatedRequest, res: Response) => {
+hqTelemetryRouter.get('/audit-logs', requireMinistryPortalAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const limit = parseInt(req.query.limit as string || '50', 10);

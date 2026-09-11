@@ -80,7 +80,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
   const [isLiveFeedOpen, setIsLiveFeedOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
-  const [telemetryCount, setTelemetryCount] = useState<number>(438);
+  const [telemetryCount, setTelemetryCount] = useState<number>(0);
 
   const [selectedZone, setSelectedZone] = useState<SenatorialZone | 'All'>('All');
   const [selectedLGA, setSelectedLGA] = useState<BenueLGA>('Makurdi');

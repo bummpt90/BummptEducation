@@ -1,3 +1,16 @@
+/**
+ * BummptEducation — Benue State Ministry Directives Reference Data
+ * 
+ * DEVELOPMENT & REFERENCE SEED DATA ONLY:
+ * This dataset is retained strictly as initial reference seed material for database seeding
+ * scripts (`src/db/seed/reference/ministryDirectives.seed.ts`).
+ * 
+ * ARCHITECTURAL INVARIANT:
+ * This array is NEVER imported by production React UI components, API routes, or repositories.
+ * All production runtime applications retrieve directives exclusively from PostgreSQL relations
+ * via `/api/v1/hq/directives`.
+ */
+
 import { BenueLGA, SenatorialZone } from '../types';
 
 export interface MinistryDirective {
@@ -18,6 +31,9 @@ export interface MinistryDirective {
   status: 'Broadcasted & Active' | 'Acknowledged by Principals' | 'Archived';
 }
 
+/**
+ * Initial Reference Seed Directives (Development & Migration Seeding Only)
+ */
 export const INITIAL_MINISTRY_DIRECTIVES: MinistryDirective[] = [
   {
     id: 'DIR-MOE-2026-001',

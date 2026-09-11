@@ -215,10 +215,10 @@ Currently, `server.ts` stores lesson notes and parent feedback inquiries in memo
 
 ---
 
-## Phase 8E: Benue State HQ Telemetry & Ministry Directives PostgreSQL Integration (Hardened Phase 8E-H)
+## Phase 8E: Benue State HQ Telemetry & Ministry Directives PostgreSQL Integration (Certified & Hardened Phase 8E-H2)
 
 ### 1. Objective & Problem Statement
-`BenueStateHQPage.tsx` previously relied on static data, stored local overrides in `localStorage`, and used simulation or synthetic offsets for live telemetry. In production, State Ministry Officers require live aggregation across all 23 LGAs, while Heads of School require strictly scoped operational KPIs, directives compliance workflows, and inter-school communication dispatches with multi-tenant privacy.
+`BenueStateHQPage.tsx` previously relied on static data, stored local overrides in `localStorage`, and used simulation or synthetic offsets (such as hardcoded `438` default states) for live telemetry. In production, State Ministry Officers require live aggregation across all 23 LGAs, while Heads of School require strictly scoped operational KPIs, directives compliance workflows, and inter-school communication dispatches with multi-tenant privacy.
 
 ### 2. Relational Schema & Seeding (Migration 0011)
 - Seed `schools` table with all Benue Government Model Colleges and pilot institutions across Zone A, Zone B, and Zone C.
@@ -239,16 +239,19 @@ Currently, `server.ts` stores lesson notes and parent feedback inquiries in memo
 - `src/api/v1/hq-directives.routes.ts`: `GET /directives`, `GET /directives/:id`, `POST /directives`, `POST /directives/:id/acknowledge`, `GET /directives/:id/acknowledgements`.
 - `src/api/v1/hq-chat.routes.ts`: `GET /messages`, `GET /messages/:id`, `POST /messages`, `POST /messages/:id/reply`, `PATCH /messages/:id/status`.
 
-### 5. Role Boundary & Security Enforcement (Phase 8E-H)
+### 5. Role Boundary & Security Enforcement (Phase 8E-H2)
 - **Ministry Portal Role Boundary:** Only Authorized HQ Officers (`super_admin`, `state_officer`) and Authenticated Heads of School (`principal`, `headmistress`, `head_kindergarten`) have portal access. All other roles (`teacher`, `bursar`, `admissions_officer`, `parent`, `student`, etc.) receive HTTP 403 Forbidden.
-- **Zero Synthetic Telemetry:** All metrics derived from PostgreSQL queries over `schools`, `students`, `staff`, `lesson_notes`, and `attendance_registers`.
+- **Statewide vs. Own-School Scoping:** Heads of School are strictly forbidden (403) from accessing statewide telemetry overview and LGA directories. When requesting school-level telemetry or KPIs, they are restricted strictly to their own school; probing any other school returns HTTP 404 (IDOR guard).
+- **Subvention Authority Guard:** Subvention grant disbursements (`/subvention`) are restricted exclusively to HQ Officers (`state_officer`, `super_admin`). Heads of School and non-HQ roles receive HTTP 403.
+- **Zero Synthetic Telemetry & De-coupling:** Removed hardcoded `438` from frontend; all indicators aggregate directly from PostgreSQL operational and audit tables.
+- **Seed vs. Runtime Isolation:** `INITIAL_MINISTRY_DIRECTIVES` is strictly preserved for reference seeding and never imported by production components or runtime repositories.
 - **Cross-School Privacy & IDOR Protection:** Foreign directives and private dispatches return 404 Not Found to unauthorized school heads.
 - **Authoritative Identity Derivation:** Client attempts to forge sender name, role, or target schools are stripped on the server.
 
 ### 6. Verification & Automated Tests
 - Test file: `tests/phase8e.hq-telemetry-directives-messaging.test.ts`
 - Documentation: `docs/PHASE_8E_HQ_TELEMETRY_DIRECTIVES_MESSAGING.md`
-- Status: **CERTIFIED COMPLETE & HARDENED (92/92 Tests Passed across 11 Verification Categories)**
+- Status: **CERTIFIED COMPLETE & HARDENED (129/129 Tests Passed across 11 Verification Categories)**
 
 ---
 

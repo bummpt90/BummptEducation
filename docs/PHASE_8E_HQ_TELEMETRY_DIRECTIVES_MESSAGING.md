@@ -1,19 +1,19 @@
-# BummptEducation — Phase 8E & 8E-H: Benue State HQ Telemetry, Ministry Directives & Messaging Specification
+# BummptEducation — Phase 8E & 8E-H2: Benue State HQ Telemetry, Ministry Directives & Messaging Specification
 
-**Status:** CERTIFIED COMPLETE & SECURITY HARDENED (Phase 8E-H)  
+**Status:** CERTIFIED COMPLETE & SECURITY HARDENED (Phase 8E-H2 Final Correction Pass)  
 **Architecture:** 100% Server-Authoritative PostgreSQL Persistence  
-**Test Suite:** `tests/phase8e.hq-telemetry-directives-messaging.test.ts` (92/92 Tests Passed)  
+**Test Suite:** `tests/phase8e.hq-telemetry-directives-messaging.test.ts` (129/129 Tests Passed)  
 **Security Standard:** Strict Ministry Portal Role Boundaries, Server-Authoritative Identity Derivation, Zero Synthetic Telemetry, Multi-Tenant Boundary Isolation (Cross-School Privacy Protection), Audience-Scoped Directives & Dispatches (LGA, Zone, School), Idempotent Compliance Acknowledgement, and Immutable Audit Trails.
 
 ---
 
 ## 1. Executive Summary
 
-Phase 8E and its subsequent security hardening pass (Phase 8E-H) convert the Benue State Ministry of Education Headquarters operations and inter-school communication architecture from browser-simulated localStorage and mock stores into an authoritative, role-guarded PostgreSQL system.
+Phase 8E and its hardening passes (Phase 8E-H and Phase 8E-H2) convert the Benue State Ministry of Education Headquarters operations and inter-school communication architecture from browser-simulated localStorage and mock stores into an authoritative, role-guarded PostgreSQL system.
 
 All statewide operational telemetry across all 23 Local Government Areas (LGAs), official Ministry directives, school compliance acknowledgements, inter-school messaging dispatches, executive escalations, and audit trails are processed, stored, and audited through dedicated PostgreSQL tables and Express v1 REST APIs.
 
-Legacy fallback stores (`benue_state_school_overrides_v1`, `benue_moe_hq_chat_messages_v1`, and `INITIAL_MINISTRY_DIRECTIVES`) and synthetic telemetry offsets (such as hardcoded `+ 438` counts) have been completely removed from production workflows and repositories.
+Legacy fallback stores (`benue_state_school_overrides_v1`, `benue_moe_hq_chat_messages_v1`), synthetic frontend counters (such as hardcoded `438` default states), and synthetic telemetry offsets have been completely removed from production workflows, UI components, and repositories.
 
 ---
 
@@ -21,25 +21,50 @@ Legacy fallback stores (`benue_state_school_overrides_v1`, `benue_moe_hq_chat_me
 
 The Benue State Ministry Portal APIs (`/api/v1/hq/*`) are accessible ONLY to:
 
-### Authorized Roles:
-1. **Authorized HQ / State Officers:**
-   - `super_admin`
-   - `state_officer`
-2. **Authenticated Heads of School:**
-   - `principal`
-   - `headmistress`
-   - `head_kindergarten`
+### 2.1 Authorized Roles & Route Gatekeeping Matrix:
 
-### Explicitly Denied Roles (HTTP 403 Forbidden):
-- `teacher`
-- `bursar`
-- `admissions_officer`
-- `exam_officer`
-- `parent`
-- `student`
-- Any other non-HQ / non-Head-of-School role.
+| Role Category | Roles | Statewide Overview (`/overview`, `/lgas`) | Own School Telemetry (`/schools/:id`) | Cross School Telemetry | Subvention Disbursement (`/subvention`) | Directives & Messaging |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **HQ Officers** | `super_admin`, `state_officer` | **200 OK** | **200 OK** | **200 OK** | **200 OK** | **200 OK** (Full Broadcast) |
+| **Heads of School** | `principal`, `headmistress`, `head_kindergarten` | **403 Forbidden** | **200 OK** | **404 Not Found** (IDOR Guard) | **403 Forbidden** | **200 OK** (Scoped to School) |
+| **School Staff** | `teacher`, `bursar`, `admissions_officer`, `exam_officer` | **403 Forbidden** | **403 Forbidden** | **403 Forbidden** | **403 Forbidden** | **403 Forbidden** |
+| **Community** | `parent`, `student`, others | **403 Forbidden** | **403 Forbidden** | **403 Forbidden** | **403 Forbidden** | **403 Forbidden** |
 
-The boundary is enforced across all `/api/v1/hq/*` routes (`hq-telemetry.routes.ts`, `hq-directives.routes.ts`, and `hq-chat.routes.ts`) via server-side middleware and repository guards.
+### 2.2 Reusable Authorization Middleware:
+- `requireMinistryPortalAccess`: Applied universally across all Ministry Portal endpoints; denies any non-HQ and non-Head role with HTTP 403 Forbidden.
+- `requireHqOfficer`: Restricts statewide telemetry (`/overview`, `/lgas`) and subvention grant disbursements exclusively to `super_admin` and `state_officer` (Heads of School and unauthorized personnel receive HTTP 403 Forbidden).
+- **Own-School Constraint**: Heads of School querying `/schools/:id` or `/schools/:id/kpis` are restricted to their own assigned school ID (`user.schoolId === req.params.id`); probes targeting other schools return HTTP 404 Not Found to prevent tenant enumeration and information disclosure.
+
+---
+
+## 3. Data Authority & Zero Synthetic Telemetry
+
+### 3.1 Removal of Synthetic Counter Defaults:
+- The frontend state `useState<number>(438)` in `src/pages/BenueStateHQPage.tsx` has been eliminated and replaced with `useState<number>(0)`.
+- The live telemetry activity count is populated exclusively from `GET /api/v1/hq/telemetry/overview`.
+- The codebase contains zero occurrences of synthetic `438` counter seeds or `Math.random()` simulations.
+
+### 3.2 Live PostgreSQL Derivation:
+In `src/db/repositories/hqTelemetry.repository.ts`, all statistics are derived from live database relations:
+- `totalSchools`, `totalStudents`, `totalTeachers`, `subventionDisbursedNaira`, and `averagePassRate` are aggregated directly via `lga_metadata` across all 23 LGAs.
+- `telemetryActivityCount` aggregates the real event volume from operational tables:
+  ```sql
+  SELECT (
+    COALESCE((SELECT COUNT(*) FROM hq_audit_logs), 0) +
+    COALESCE((SELECT COUNT(*) FROM hq_dispatches), 0) +
+    COALESCE((SELECT COUNT(*) FROM hq_dispatch_replies), 0) +
+    COALESCE((SELECT COUNT(*) FROM ministry_directives), 0) +
+    COALESCE((SELECT COUNT(*) FROM directive_acknowledgements), 0) +
+    COALESCE((SELECT COUNT(*) FROM lesson_notes), 0) +
+    COALESCE((SELECT COUNT(*) FROM daily_attendance), 0) +
+    COALESCE((SELECT COUNT(*) FROM student_enrollments), 0)
+  )::text AS activity_count;
+  ```
+
+### 3.3 Reference Seed vs. Runtime Directive Isolation:
+- `INITIAL_MINISTRY_DIRECTIVES` in `src/data/benueDirectivesData.ts` is explicitly classified as development and migration seed material only (`src/db/seed/reference/ministryDirectives.seed.ts`).
+- It is **NEVER** imported by production React UI components, API routes, or repositories.
+- All production runtime applications retrieve, publish, and acknowledge directives exclusively through PostgreSQL relations via `/api/v1/hq/directives`.
 
 ---
 

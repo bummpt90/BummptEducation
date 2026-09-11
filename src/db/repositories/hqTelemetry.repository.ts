@@ -2,7 +2,7 @@
  * BummptEducation — Benue State HQ Telemetry Repository
  * 
  * Server-authoritative data layer for statewide education telemetry across all 23 LGAs.
- * Direct PostgreSQL queries, zero localStorage / Math.random() dependence.
+ * Direct PostgreSQL queries, zero localStorage or randomized synthetic generation.
  */
 
 import { query, withTransaction } from '../client';
@@ -52,7 +52,20 @@ export interface SchoolKpiSummary {
 
 export class HqTelemetryRepository {
   /**
-   * Fetches real aggregate statewide telemetry across all 23 LGAs from PostgreSQL
+   * Fetches real aggregate statewide telemetry across all 23 LGAs from PostgreSQL.
+   * 
+   * DATA AUTHORITY SPECIFICATION:
+   * - `totalSchools`: Aggregated via `SUM(total_government_schools) FROM lga_metadata` (authoritative statewide directory)
+   * - `totalStudents`: Aggregated via `SUM(total_student_population) FROM lga_metadata` (authoritative verified LGA census)
+   * - `totalTeachers`: Aggregated via `SUM(total_teacher_count) FROM lga_metadata` (TRCN & public teacher census)
+   * - `subventionDisbursedNaira`: Aggregated via `SUM(subvention_disbursed_naira) FROM lga_metadata` (updated atomically on grants)
+   * - `averagePassRate`: Aggregated via `AVG(average_pass_rate) FROM lga_metadata` (terminal examination baseline)
+   * - `telemetryActivityCount`: Real PostgreSQL live event total calculated directly from operational & audit tables:
+   *     `hq_audit_logs`, `hq_dispatches`, `hq_dispatch_replies`, `ministry_directives`, `directive_acknowledgements`,
+   *     `lesson_notes`, `daily_attendance`, `student_enrollments`.
+   * 
+   * ZERO SYNTHETIC METRICS INVARIANT:
+   * No hardcoded artificial offsets, random noise generation, or client-side synthetic simulations.
    */
   async getOverview(): Promise<StatewideOverview> {
     const lgaAggRes = await query<{
