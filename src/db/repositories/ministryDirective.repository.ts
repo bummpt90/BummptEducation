@@ -184,10 +184,42 @@ export class MinistryDirectiveRepository {
 
     const directive = res.rows[0];
 
-    // Privacy verification for specific-school directives
-    if (!isHq && directive.audience_type === 'SPECIFIC_SCHOOL') {
-      if (!user.schoolId || (directive.target_school_id && directive.target_school_id !== user.schoolId)) {
-        return null; // Block unauthorized school inspection
+    // Privacy & Audience Scoping: Logically identical to getDirectivesForUser
+    if (!isHq) {
+      if (directive.audience_type === 'ALL_SCHOOLS') {
+        return directive;
+      }
+
+      if (!user.schoolId) {
+        return null;
+      }
+
+      // Fetch Head of School's assigned school LGA and Senatorial Zone
+      let userSchoolLga = '';
+      let userSchoolZone = '';
+      const schoolRes = await query<{ lga: string; senatorial_zone: string }>(`
+        SELECT lga, senatorial_zone FROM schools WHERE id = $1 LIMIT 1;
+      `, [user.schoolId]);
+
+      if (schoolRes.rows.length > 0) {
+        userSchoolLga = schoolRes.rows[0].lga || '';
+        userSchoolZone = schoolRes.rows[0].senatorial_zone || '';
+      }
+
+      if (directive.audience_type === 'SPECIFIC_SCHOOL') {
+        if (directive.target_school_id !== user.schoolId) {
+          return null; // Block foreign school inspection
+        }
+      } else if (directive.audience_type === 'LGA') {
+        if (!userSchoolLga || !directive.target_lga || userSchoolLga.toLowerCase() !== directive.target_lga.toLowerCase()) {
+          return null; // Foreign LGA inspection denied
+        }
+      } else if (directive.audience_type === 'ZONE') {
+        if (!userSchoolZone || !directive.target_zone || userSchoolZone.toLowerCase() !== directive.target_zone.toLowerCase()) {
+          return null; // Foreign Zone inspection denied
+        }
+      } else {
+        return null;
       }
     }
 

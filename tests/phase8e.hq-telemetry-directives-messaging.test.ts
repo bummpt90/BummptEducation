@@ -87,6 +87,9 @@ async function runPhase8eTestSuite() {
     const studentAId     = 'e5555555-5555-5555-5555-555555555555';
     const parentAId      = 'e6666666-6666-6666-6666-666666666666';
     const superAdminId   = 'e7777777-7777-7777-7777-777777777777';
+    const bursarAId      = 'e8888888-8888-8888-8888-888888888888';
+    const headmistressAId = 'e9999999-9999-9999-9999-999999999999';
+    const headKinderAId  = 'eaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
     await query(
       `INSERT INTO users (id, email, password_hash, full_name, role, school_id, is_active)
@@ -97,13 +100,20 @@ async function runPhase8eTestSuite() {
          ($4, 'teacher.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mr. David Aondo', 'teacher', $8, true),
          ($5, 'student.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Master Bem Tyokyaa', 'student', $8, true),
          ($6, 'parent.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Chief Tyokyaa', 'parent', $8, true),
-         ($7, 'super.admin.8e@bummpt.com', 'hashed_pass_placeholder', 'Super Admin Officer', 'super_admin', NULL, true)
+         ($7, 'super.admin.8e@bummpt.com', 'hashed_pass_placeholder', 'Super Admin Officer', 'super_admin', NULL, true),
+         ($10, 'bursar.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mrs. Rebecca Ior', 'bursar', $8, true),
+         ($11, 'headmistress.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Comfort Tor', 'headmistress', $8, true),
+         ($12, 'headkinder.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Grace Agbo', 'head_kindergarten', $8, true)
        ON CONFLICT (id) DO UPDATE SET 
          email = EXCLUDED.email, 
          role = EXCLUDED.role, 
          school_id = EXCLUDED.school_id, 
          is_active = true;`,
-      [stateOfficerId, principalAId, principalBId, teacherAId, studentAId, parentAId, superAdminId, schoolA.id, schoolB.id]
+      [
+        stateOfficerId, principalAId, principalBId, teacherAId, studentAId, parentAId, superAdminId,
+        schoolA.id, schoolB.id,
+        bursarAId, headmistressAId, headKinderAId
+      ]
     );
 
     // Generate JWTs
@@ -161,6 +171,30 @@ async function runPhase8eTestSuite() {
       role: 'super_admin',
       schoolId: null,
       isSuperAdmin: true,
+    });
+
+    const bursarAToken = signAuthToken({
+      userId: bursarAId,
+      email: 'bursar.a.8e@apex.edu.ng',
+      role: 'bursar',
+      schoolId: schoolA.id,
+      isSuperAdmin: false,
+    });
+
+    const headmistressAToken = signAuthToken({
+      userId: headmistressAId,
+      email: 'headmistress.a.8e@apex.edu.ng',
+      role: 'headmistress',
+      schoolId: schoolA.id,
+      isSuperAdmin: false,
+    });
+
+    const headKinderAToken = signAuthToken({
+      userId: headKinderAId,
+      email: 'headkinder.a.8e@apex.edu.ng',
+      role: 'head_kindergarten',
+      schoolId: schoolA.id,
+      isSuperAdmin: false,
     });
 
     // Setup Test Express Server
@@ -321,9 +355,39 @@ async function runPhase8eTestSuite() {
     const res3_3 = await apiRequest('/api/v1/hq/chat/messages', { token: parentAToken });
     record('Category 3', 'Parent role is forbidden from HQ live chat channel (403)', res3_3.status === 403);
 
+    // Test 3.3b: Bursar cannot access HQ chat
+    const res3_3b = await apiRequest('/api/v1/hq/chat/messages', { token: bursarAToken });
+    record('Category 3', 'Bursar role is forbidden from HQ live chat channel (403)', res3_3b.status === 403);
+
+    // Test 3.3c: Non-heads forbidden from Directives
+    const res3_3c1 = await apiRequest('/api/v1/hq/directives', { token: teacherAToken });
+    const res3_3c2 = await apiRequest('/api/v1/hq/directives', { token: bursarAToken });
+    const res3_3c3 = await apiRequest('/api/v1/hq/directives', { token: studentAToken });
+    const res3_3c4 = await apiRequest('/api/v1/hq/directives', { token: parentAToken });
+    record('Category 3', 'Teacher role is forbidden from Ministry Directives (403)', res3_3c1.status === 403);
+    record('Category 3', 'Bursar role is forbidden from Ministry Directives (403)', res3_3c2.status === 403);
+    record('Category 3', 'Student role is forbidden from Ministry Directives (403)', res3_3c3.status === 403);
+    record('Category 3', 'Parent role is forbidden from Ministry Directives (403)', res3_3c4.status === 403);
+
+    // Test 3.3d: Non-heads and non-HQ forbidden from Telemetry
+    const res3_3d1 = await apiRequest('/api/v1/hq/telemetry/overview', { token: teacherAToken });
+    const res3_3d2 = await apiRequest('/api/v1/hq/telemetry/overview', { token: bursarAToken });
+    record('Category 3', 'Teacher role is forbidden from Ministry Telemetry (403)', res3_3d1.status === 403);
+    record('Category 3', 'Bursar role is forbidden from Ministry Telemetry (403)', res3_3d2.status === 403);
+
     // Test 3.4: Principal (Head of School) CAN access HQ chat
     const res3_4 = await apiRequest('/api/v1/hq/chat/messages', { token: principalAToken });
     record('Category 3', 'Principal (Head of School) is granted access to HQ chat (200)', res3_4.status === 200);
+
+    // Test 3.4b: Headmistress & Head of Kindergarten CAN access HQ chat & Directives
+    const res3_4b1 = await apiRequest('/api/v1/hq/chat/messages', { token: headmistressAToken });
+    const res3_4b2 = await apiRequest('/api/v1/hq/directives', { token: headmistressAToken });
+    const res3_4b3 = await apiRequest('/api/v1/hq/chat/messages', { token: headKinderAToken });
+    const res3_4b4 = await apiRequest('/api/v1/hq/directives', { token: headKinderAToken });
+    record('Category 3', 'Headmistress is granted access to HQ chat (200)', res3_4b1.status === 200);
+    record('Category 3', 'Headmistress is granted access to Ministry Directives (200)', res3_4b2.status === 200);
+    record('Category 3', 'Head of Kindergarten is granted access to HQ chat (200)', res3_4b3.status === 200);
+    record('Category 3', 'Head of Kindergarten is granted access to Ministry Directives (200)', res3_4b4.status === 200);
 
     // Test 3.5: State HQ Officer CAN access HQ chat
     const res3_5 = await apiRequest('/api/v1/hq/chat/messages', { token: stateOfficerToken });
@@ -346,6 +410,14 @@ async function runPhase8eTestSuite() {
     // =========================================================================
     console.log('\n--- Category 4: Statewide HQ Telemetry & Subvention Operations ---');
 
+    // Test 4.0: Head of School is forbidden from accessing statewide Telemetry (403)
+    const res4_0a = await apiRequest('/api/v1/hq/telemetry/overview', { token: principalAToken });
+    const res4_0b = await apiRequest('/api/v1/hq/telemetry/lgas', { token: principalAToken });
+    const res4_0c = await apiRequest('/api/v1/hq/telemetry/lgas/Makurdi', { token: principalAToken });
+    record('Category 4', 'Head of School is forbidden from statewide overview telemetry (403)', res4_0a.status === 403);
+    record('Category 4', 'Head of School is forbidden from statewide LGAs directory (403)', res4_0b.status === 403);
+    record('Category 4', 'Head of School is forbidden from LGA-level directory telemetry (403)', res4_0c.status === 403);
+
     // Test 4.1: Live overview metrics
     const res4_1 = await apiRequest('/api/v1/hq/telemetry/overview', { token: stateOfficerToken });
     const overviewData = res4_1.data?.data;
@@ -364,12 +436,32 @@ async function runPhase8eTestSuite() {
       res4_2.status === 200 && Array.isArray(lgasData) && lgasData.length === 23
     );
 
-    // Test 4.3: Specific School Telemetry
+    // Test 4.3: Specific School Telemetry for own school
     const res4_3 = await apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: principalAToken });
     record(
       'Category 4',
       'GET /api/v1/hq/telemetry/schools/:id returns live metrics for requested school',
       res4_3.status === 200 && res4_3.data?.data?.school?.id === schoolA.id
+    );
+
+    // Test 4.3b: Headmistress and Head Kindergarten can access own school telemetry
+    const res4_3b1 = await apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: headmistressAToken });
+    const res4_3b2 = await apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: headKinderAToken });
+    record('Category 4', 'Headmistress can access own school telemetry (200)', res4_3b1.status === 200);
+    record('Category 4', 'Head of Kindergarten can access own school telemetry (200)', res4_3b2.status === 200);
+
+    // Test 4.3c: Cross-School Telemetry IDOR protection
+    const res4_3c1 = await apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: principalAToken });
+    const res4_3c2 = await apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: principalAToken });
+    record('Category 4', 'Principal A probing School B telemetry is denied (404)', res4_3c1.status === 404);
+    record('Category 4', 'Principal A probing School B KPIs is denied (404)', res4_3c2.status === 404);
+
+    // Test 4.3d: School KPIs contain live relational stats
+    const res4_3d = await apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: principalAToken });
+    record(
+      'Category 4',
+      'School KPIs return liveStats object from database tables',
+      res4_3d.status === 200 && res4_3d.data?.data?.liveStats !== undefined
     );
 
     // Test 4.4: State Officer can disburse subvention
@@ -471,6 +563,36 @@ async function runPhase8eTestSuite() {
       res5_3.status === 403
     );
 
+    // Test 5.3b: Headmistress cannot publish state directives
+    const res5_3b = await apiRequest('/api/v1/hq/directives', {
+      method: 'POST',
+      token: headmistressAToken,
+      body: {
+        title: 'Headmistress Circular',
+        content: 'Unauthorized state directive.',
+      },
+    });
+    record(
+      'Category 5',
+      'Headmistress cannot publish state directives (403 forbidden)',
+      res5_3b.status === 403
+    );
+
+    // Test 5.3c: Bursar cannot publish state directives
+    const res5_3c = await apiRequest('/api/v1/hq/directives', {
+      method: 'POST',
+      token: bursarAToken,
+      body: {
+        title: 'Bursar Circular',
+        content: 'Unauthorized financial directive.',
+      },
+    });
+    record(
+      'Category 5',
+      'Bursar cannot publish state directives (403 forbidden)',
+      res5_3c.status === 403
+    );
+
     // Test 5.4: Missing required fields rejected (400)
     const res5_4 = await apiRequest('/api/v1/hq/directives', {
       method: 'POST',
@@ -550,6 +672,48 @@ async function runPhase8eTestSuite() {
       'GET /api/v1/hq/directives/:id denies School B from viewing School A private directive (404)',
       res6_5.status === 404
     );
+
+    // Test 6.6: LGA Scoping - Makurdi LGA directive visible to School A (Makurdi), invisible to School B (Gboko)
+    const res6_lga_create = await apiRequest('/api/v1/hq/directives', {
+      method: 'POST',
+      token: stateOfficerToken,
+      body: {
+        title: 'Makurdi Flood Preparedness Notice',
+        category: 'Security & Safety',
+        priority: 'Normal',
+        audienceType: 'LGA',
+        targetLga: 'Makurdi',
+        content: 'All schools in Makurdi LGA must verify flood barriers.',
+      },
+    });
+    const lgaDirective = res6_lga_create.data?.data;
+    const res6_6a = await apiRequest(`/api/v1/hq/directives/${lgaDirective?.id}`, { token: principalAToken });
+    const res6_6b = await apiRequest(`/api/v1/hq/directives/${lgaDirective?.id}`, { token: principalBToken });
+    record('Category 6', 'LGA-scoped directive is visible to school located in target LGA (200)', res6_6a.status === 200);
+    record('Category 6', 'LGA-scoped directive is denied to school in different LGA (404)', res6_6b.status === 404);
+
+    // Test 6.7: ZONE Scoping - Zone A directive visible to School B (Zone A), invisible to School A (Zone B)
+    const res6_zone_create = await apiRequest('/api/v1/hq/directives', {
+      method: 'POST',
+      token: stateOfficerToken,
+      body: {
+        title: 'Zone A Sports Festival Planning',
+        category: 'Academic Calendar',
+        priority: 'Normal',
+        audienceType: 'ZONE',
+        targetZone: 'Zone A (Benue North-East)',
+        content: 'All schools in Senatorial Zone A must register athletic teams.',
+      },
+    });
+    const zoneDirective = res6_zone_create.data?.data;
+    const res6_7a = await apiRequest(`/api/v1/hq/directives/${zoneDirective?.id}`, { token: principalBToken });
+    const res6_7b = await apiRequest(`/api/v1/hq/directives/${zoneDirective?.id}`, { token: principalAToken });
+    record('Category 6', 'Zone-scoped directive is visible to school in target senatorial zone (200)', res6_7a.status === 200);
+    record('Category 6', 'Zone-scoped directive is denied to school in different senatorial zone (404)', res6_7b.status === 404);
+
+    // Test 6.8: Acknowledgements route IDOR protection
+    const res6_8 = await apiRequest(`/api/v1/hq/directives/${targetedDirectiveA.id}/acknowledgements`, { token: principalBToken });
+    record('Category 6', 'School B cannot view acknowledgements for School A private directive (404)', res6_8.status === 404);
 
     // =========================================================================
     // Category 7: Directives Compliance Acknowledgment Workflow
@@ -690,6 +854,66 @@ async function runPhase8eTestSuite() {
     const hasPrivateInHq = res8_listHq.data?.data?.some((m: any) => m.id === privateDispatchA?.id);
     record('Category 8', 'Targeted dispatch from school is visible to State HQ Officer desk', hasPrivateInHq === true);
 
+    // Test 8.7: Direct lookup IDOR protection - Principal B cannot fetch School A private dispatch (404)
+    const res8_7 = await apiRequest(`/api/v1/hq/chat/messages/${privateDispatchA.id}`, { token: principalBToken });
+    record('Category 8', 'Direct GET /messages/:id denies School B from viewing School A private dispatch (404)', res8_7.status === 404);
+
+    // Test 8.8: Forged Sender Identity rejection/stripping
+    const res8_8 = await apiRequest('/api/v1/hq/chat/messages', {
+      method: 'POST',
+      token: principalAToken,
+      body: {
+        content: 'Forged sender spoofing test',
+        senderName: 'Dr. Fake Director',
+        senderRole: 'super_admin',
+        schoolId: schoolB.id,
+      },
+    });
+    const forgedDispatch = res8_8.data?.data;
+    record(
+      'Category 8',
+      'Server strictly strips forged senderName/role/schoolId and assigns authoritative identity',
+      res8_8.status === 201 &&
+        forgedDispatch?.sender_name === 'Principal Terver Tyokyaa' &&
+        (forgedDispatch?.sender_role === 'School Principal' || forgedDispatch?.sender_role?.includes('Principal')) &&
+        forgedDispatch?.school_id === schoolA.id
+    );
+
+    // Test 8.9: Forged Target School rejection for Head of School
+    const res8_9 = await apiRequest('/api/v1/hq/chat/messages', {
+      method: 'POST',
+      token: principalAToken,
+      body: {
+        content: 'Attempt to send dispatch to another school',
+        targetSchoolId: schoolB.id,
+      },
+    });
+    const forcedSelfDispatch = res8_9.data?.data;
+    record(
+      'Category 8',
+      'School Head cannot set targetSchoolId to another school; forced to null/own-school context',
+      res8_9.status === 201 && forcedSelfDispatch?.target_school_id === null
+    );
+
+    // Test 8.10: ALL_SCHOOLS Exception verification - only messages explicitly targeted to ALL_SCHOOLS are cross-school visible
+    const res8_10_all = await apiRequest('/api/v1/hq/chat/messages', {
+      method: 'POST',
+      token: stateOfficerToken,
+      body: {
+        content: 'Official Benue MOE Statewide Announcement to all schools',
+        audienceType: 'ALL_SCHOOLS',
+        channelId: 'announcements',
+      },
+    });
+    const broadcastDispatch = res8_10_all.data?.data;
+    const res8_10_probeA = await apiRequest(`/api/v1/hq/chat/messages/${broadcastDispatch?.id}`, { token: principalAToken });
+    const res8_10_probeB = await apiRequest(`/api/v1/hq/chat/messages/${broadcastDispatch?.id}`, { token: principalBToken });
+    record(
+      'Category 8',
+      'ALL_SCHOOLS audience is accessible cross-school by both School A and School B heads',
+      res8_10_probeA.status === 200 && res8_10_probeB.status === 200
+    );
+
     // =========================================================================
     // Category 9: Quick Replies & Escalation Workflow
     // =========================================================================
@@ -758,6 +982,16 @@ async function runPhase8eTestSuite() {
       parseInt(auditEscRes.rows[0].count, 10) > 0
     );
 
+    // Test 9.6: Unauthorized status update attempt by School B on School A dispatch (403/404)
+    const res9_6 = await apiRequest(`/api/v1/hq/chat/messages/${dispatchA.id}/status`, {
+      method: 'PATCH',
+      token: principalBToken,
+      body: {
+        status: 'closed',
+      },
+    });
+    record('Category 9', 'School B Head cannot update status of School A dispatch (403/404)', res9_6.status === 403 || res9_6.status === 404);
+
     // =========================================================================
     // Category 10: Memory Decoupling & PostgreSQL Authoritative Integrity
     // =========================================================================
@@ -825,6 +1059,52 @@ async function runPhase8eTestSuite() {
       }
     }
     record('Category 10', 'Atomic transaction rollbacks cleanly on simulated failure', rollbackSuccess);
+
+    // =========================================================================
+    // Category 11: Audit Trail Verification & Role-Scoped Audit Logs
+    // =========================================================================
+    console.log('\n--- Category 11: Audit Trail Verification & Role-Scoped Audit Logs ---');
+
+    // Test 11.1: State Officer can view statewide audit logs (200)
+    const res11_1 = await apiRequest('/api/v1/hq/telemetry/audit-logs', { token: stateOfficerToken });
+    const auditLogsState = res11_1.data?.data;
+    record(
+      'Category 11',
+      'GET /api/v1/hq/telemetry/audit-logs provides authoritative audit entries to State Officer',
+      res11_1.status === 200 && Array.isArray(auditLogsState) && auditLogsState.length > 0
+    );
+
+    // Test 11.2: School Head queries audit logs and receives only School A logs
+    const res11_2 = await apiRequest('/api/v1/hq/telemetry/audit-logs', { token: principalAToken });
+    const auditLogsPrincipalA = res11_2.data?.data;
+    const allMatchSchoolA = Array.isArray(auditLogsPrincipalA) &&
+      auditLogsPrincipalA.every((log: any) => log.school_id === schoolA.id);
+    record(
+      'Category 11',
+      'GET /api/v1/hq/telemetry/audit-logs restricts School Head strictly to own school audit records',
+      res11_2.status === 200 && allMatchSchoolA === true
+    );
+
+    // Test 11.3: Teacher/Bursar cannot access audit logs (403)
+    const res11_3a = await apiRequest('/api/v1/hq/telemetry/audit-logs', { token: teacherAToken });
+    const res11_3b = await apiRequest('/api/v1/hq/telemetry/audit-logs', { token: bursarAToken });
+    record('Category 11', 'Teacher role is forbidden from viewing audit logs (403)', res11_3a.status === 403);
+    record('Category 11', 'Bursar role is forbidden from viewing audit logs (403)', res11_3b.status === 403);
+
+    // Test 11.4: Immutable action types verified in audit logs
+    const actionTypesRes = await query<{ actions: string }>(
+      `SELECT string_agg(DISTINCT action, ', ') as actions FROM hq_audit_logs;`
+    );
+    const recordedActions = actionTypesRes.rows[0]?.actions || '';
+    const hasRequiredActions =
+      recordedActions.includes('SUBVENTION_DISBURSED') &&
+      recordedActions.includes('DIRECTIVE_ACKNOWLEDGED') &&
+      recordedActions.includes('DISPATCH_ESCALATED');
+    record(
+      'Category 11',
+      'Audit log accurately captures SUBVENTION_DISBURSED, DIRECTIVE_ACKNOWLEDGED, and DISPATCH_ESCALATED',
+      hasRequiredActions
+    );
 
     // =========================================================================
     // Summary

@@ -140,11 +140,10 @@ export class HqDispatchRepository {
     // Privacy & Scoping: If Head of School, strictly hide other schools' private messages
     if (!isHq) {
       if (!user.schoolId) {
-        sql += ` AND (d.channel_id = 'all-schools-announcements' OR d.audience_type = 'ALL_SCHOOLS')`;
+        sql += ` AND d.audience_type = 'ALL_SCHOOLS'`;
       } else {
         sql += ` AND (
-          d.channel_id = 'all-schools-announcements'
-          OR d.audience_type = 'ALL_SCHOOLS'
+          d.audience_type = 'ALL_SCHOOLS'
           OR d.school_id = $${params.length + 1}
           OR d.target_school_id = $${params.length + 1}
           OR (d.audience_type = 'LGA' AND LOWER(d.lga) = LOWER($${params.length + 2}))
@@ -240,13 +239,33 @@ export class HqDispatchRepository {
 
     const dispatch = res.rows[0];
 
-    // Privacy boundary check
+    // Privacy boundary check for Head of School
     if (!isHq) {
-      const isBroadcast = dispatch.channel_id === 'all-schools-announcements' || dispatch.audience_type === 'ALL_SCHOOLS';
-      const isOwnSchool = dispatch.school_id === user.schoolId || dispatch.target_school_id === user.schoolId;
+      if (dispatch.audience_type === 'ALL_SCHOOLS') {
+        // Explicit ALL_SCHOOLS broadcast is visible to all authorized school heads
+      } else {
+        if (!user.schoolId) {
+          return null;
+        }
 
-      if (!isBroadcast && !isOwnSchool) {
-        return null; // Invisible to other schools
+        let userSchoolLga = '';
+        let userSchoolZone = '';
+        const schoolRes = await query<{ lga: string; senatorial_zone: string }>(`
+          SELECT lga, senatorial_zone FROM schools WHERE id = $1 LIMIT 1;
+        `, [user.schoolId]);
+
+        if (schoolRes.rows.length > 0) {
+          userSchoolLga = schoolRes.rows[0].lga || '';
+          userSchoolZone = schoolRes.rows[0].senatorial_zone || '';
+        }
+
+        const isOwnSchool = dispatch.school_id === user.schoolId || dispatch.target_school_id === user.schoolId;
+        const isLgaAudience = dispatch.audience_type === 'LGA' && !!userSchoolLga && !!dispatch.lga && dispatch.lga.toLowerCase() === userSchoolLga.toLowerCase();
+        const isZoneAudience = dispatch.audience_type === 'ZONE' && !!userSchoolZone && !!dispatch.zone && dispatch.zone.toLowerCase() === userSchoolZone.toLowerCase();
+
+        if (!isOwnSchool && !isLgaAudience && !isZoneAudience) {
+          return null; // Invisible to foreign schools
+        }
       }
     }
 
@@ -309,10 +328,14 @@ export class HqDispatchRepository {
         }
 
         const school = schoolRes.rows[0];
+        senderName = user.fullName;
+        senderRole = getRoleDisplayName(user.role);
         schoolId = school.id;
         schoolName = school.name;
         lga = school.lga;
         zone = school.senatorial_zone;
+        targetSchoolId = null;
+        targetSchoolName = null;
         audienceType = 'SPECIFIC_SCHOOL';
       } else if (isHq && targetSchoolId) {
         // HQ sending to specific school
@@ -534,14 +557,15 @@ export class HqDispatchRepository {
     return withTransaction(async (client) => {
       // If Head of school, ensure they own the dispatch
       if (isHead && !isHq) {
-        const checkRes = await client.query<{ school_id: string }>(
-          'SELECT school_id FROM hq_dispatches WHERE id = $1 LIMIT 1;',
+        const checkRes = await client.query<{ school_id: string; target_school_id: string }>(
+          'SELECT school_id, target_school_id FROM hq_dispatches WHERE id = $1 LIMIT 1;',
           [dispatchId]
         );
         if (checkRes.rows.length === 0) {
           throw new Error('Dispatch not found.');
         }
-        if (checkRes.rows[0].school_id !== user.schoolId) {
+        const isOwn = checkRes.rows[0].school_id === user.schoolId || checkRes.rows[0].target_school_id === user.schoolId;
+        if (!isOwn) {
           throw new Error('FORBIDDEN: Cannot alter dispatch status for another school.');
         }
       }

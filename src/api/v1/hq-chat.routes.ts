@@ -238,10 +238,13 @@ hqChatRouter.patch('/messages/:id/status', async (req: AuthenticatedRequest, res
     });
   } catch (error: any) {
     console.error('[HqChatRoutes] Error updating dispatch status:', error);
-    res.status(500).json({
+    const msg = error.message || '';
+    const isForbidden = msg.includes('FORBIDDEN');
+    const isNotFound = msg.includes('not found');
+    res.status(isForbidden ? 403 : isNotFound ? 404 : 500).json({
       success: false,
-      error: 'INTERNAL_ERROR',
-      message: error.message || 'Failed to update dispatch status.',
+      error: isForbidden ? 'FORBIDDEN_ACTION' : isNotFound ? 'NOT_FOUND' : 'INTERNAL_ERROR',
+      message: msg || 'Failed to update dispatch status.',
     });
   }
 });

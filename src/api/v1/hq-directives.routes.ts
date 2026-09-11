@@ -17,6 +17,28 @@ export const hqDirectivesRouter = Router();
 
 hqDirectivesRouter.use(authenticateUser);
 
+const HQ_OFFICER_ROLES = ['super_admin', 'state_officer'];
+const HEAD_OF_SCHOOL_ROLES = ['principal', 'headmistress', 'head_kindergarten'];
+const MINISTRY_PORTAL_ROLES = [...HQ_OFFICER_ROLES, ...HEAD_OF_SCHOOL_ROLES];
+
+/**
+ * Middleware: Enforces Ministry Portal Directives access
+ * Only authorized HQ Officers and authenticated Heads of School may access Ministry Directives.
+ * Explicitly denies: teachers, bursars, admissions officers, parents, students (403)
+ */
+hqDirectivesRouter.use((req: AuthenticatedRequest, res: Response, next) => {
+  const user = req.user;
+  if (!user || !MINISTRY_PORTAL_ROLES.includes(user.role)) {
+    res.status(403).json({
+      success: false,
+      error: 'FORBIDDEN_ROLE',
+      message: 'Access denied. Ministry Directives are strictly restricted to Ministry HQ Officers and authenticated Heads of School.',
+    });
+    return;
+  }
+  next();
+});
+
 /**
  * GET /api/v1/hq/directives
  * Lists directives visible to the authenticated user under strict tenant & role scoping
@@ -198,6 +220,17 @@ hqDirectivesRouter.get('/:id/acknowledgements', async (req: AuthenticatedRequest
   try {
     const user = req.user!;
     const { id } = req.params;
+
+    // Verify user is authorized to see this directive first
+    const directive = await ministryDirectiveRepository.getDirectiveById(id, user);
+    if (!directive) {
+      res.status(404).json({
+        success: false,
+        error: 'DIRECTIVE_NOT_FOUND',
+        message: 'Ministry directive not found or access denied under tenant scoping rules.',
+      });
+      return;
+    }
 
     const acks = await ministryDirectiveRepository.getDirectiveAcknowledgements(id, user);
 

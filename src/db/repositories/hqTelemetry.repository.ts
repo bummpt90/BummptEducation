@@ -42,6 +42,12 @@ export interface SchoolKpiSummary {
   studentKPIs?: any;
   inspectionReports?: any[];
   governingBodyReview?: any;
+  liveStats?: {
+    enrolledStudents: number;
+    activeStaff: number;
+    publishedLessonNotes: number;
+    recordedAttendanceLogs: number;
+  };
 }
 
 export class HqTelemetryRepository {
@@ -67,20 +73,22 @@ export class HqTelemetryRepository {
       FROM lga_metadata;
     `);
 
-    // Authoritative event activity count directly from database activity logs
+    // Authoritative event activity count directly from database activity logs - 100% PostgreSQL derived
     const activityRes = await query<{ activity_count: string }>(`
       SELECT (
         COALESCE((SELECT COUNT(*) FROM hq_audit_logs), 0) +
         COALESCE((SELECT COUNT(*) FROM hq_dispatches), 0) +
+        COALESCE((SELECT COUNT(*) FROM hq_dispatch_replies), 0) +
         COALESCE((SELECT COUNT(*) FROM ministry_directives), 0) +
         COALESCE((SELECT COUNT(*) FROM directive_acknowledgements), 0) +
         COALESCE((SELECT COUNT(*) FROM lesson_notes), 0) +
-        438
+        COALESCE((SELECT COUNT(*) FROM daily_attendance), 0) +
+        COALESCE((SELECT COUNT(*) FROM student_enrollments), 0)
       )::text AS activity_count;
     `);
 
     const row = lgaAggRes.rows[0];
-    const activityCount = parseInt(activityRes.rows[0]?.activity_count || '438', 10);
+    const activityCount = parseInt(activityRes.rows[0]?.activity_count || '0', 10);
 
     return {
       totalSchools: parseInt(row?.total_schools || '0', 10),
@@ -171,12 +179,33 @@ export class HqTelemetryRepository {
       SELECT * FROM governing_body_reviews WHERE school_id = $1 ORDER BY review_date DESC LIMIT 1;
     `, [schoolId]);
 
+    const liveStatsRes = await query<{
+      student_count: string;
+      staff_count: string;
+      lesson_notes_count: string;
+      attendance_records_count: string;
+    }>(`
+      SELECT
+        (SELECT COUNT(*)::text FROM students WHERE school_id = $1) AS student_count,
+        (SELECT COUNT(*)::text FROM staff WHERE school_id = $1) AS staff_count,
+        (SELECT COUNT(*)::text FROM lesson_notes WHERE school_id = $1) AS lesson_notes_count,
+        (SELECT COUNT(*)::text FROM daily_attendance WHERE school_id = $1) AS attendance_records_count;
+    `, [schoolId]);
+
+    const liveStats = liveStatsRes.rows[0];
+
     return {
       schoolId,
       teacherKPIs: teacherKpiRes.rows[0] || null,
       studentKPIs: studentKpiRes.rows[0] || null,
       inspectionReports: inspectionRes.rows,
       governingBodyReview: reviewRes.rows[0] || null,
+      liveStats: {
+        enrolledStudents: parseInt(liveStats?.student_count || '0', 10),
+        activeStaff: parseInt(liveStats?.staff_count || '0', 10),
+        publishedLessonNotes: parseInt(liveStats?.lesson_notes_count || '0', 10),
+        recordedAttendanceLogs: parseInt(liveStats?.attendance_records_count || '0', 10),
+      },
     };
   }
 
@@ -241,6 +270,25 @@ export class HqTelemetryRepository {
       const updatedVal = parseFloat(lgaUpdateRes.rows[0]?.subvention_disbursed_naira || '0');
       return { success: true, updatedSubvention: updatedVal };
     });
+  }
+
+  /**
+   * Retrieves audit logs scoped by role and school boundary
+   */
+  async getAuditLogs(user: SafeUser, limit: number = 50): Promise<any[]> {
+    const isHq = user.role === 'super_admin' || user.role === 'state_officer';
+    if (isHq) {
+      const res = await query(`
+        SELECT * FROM hq_audit_logs ORDER BY created_at DESC LIMIT $1;
+      `, [limit]);
+      return res.rows;
+    } else {
+      if (!user.schoolId) return [];
+      const res = await query(`
+        SELECT * FROM hq_audit_logs WHERE school_id = $1 ORDER BY created_at DESC LIMIT $2;
+      `, [user.schoolId, limit]);
+      return res.rows;
+    }
   }
 }
 
