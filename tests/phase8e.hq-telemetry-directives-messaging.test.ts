@@ -93,6 +93,7 @@ async function runPhase8eTestSuite() {
     const headmistressAId = 'e9999999-9999-9999-9999-999999999999';
     const headKinderAId  = 'eaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
     const admissionsAId  = 'ebbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const examOfficerAId = 'eccccccc-cccc-cccc-cccc-cccccccccccc';
 
     await query(
       `INSERT INTO users (id, email, password_hash, full_name, role, school_id, is_active)
@@ -107,7 +108,8 @@ async function runPhase8eTestSuite() {
          ($10, 'bursar.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mrs. Rebecca Ior', 'bursar', $8, true),
          ($11, 'headmistress.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Comfort Tor', 'headmistress', $8, true),
          ($12, 'headkinder.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Headmistress Grace Agbo', 'head_kindergarten', $8, true),
-         ($13, 'admissions.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mr. Emmanuel Agada', 'admissions_officer', $8, true)
+         ($13, 'admissions.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mr. Emmanuel Agada', 'admissions_officer', $8, true),
+         ($14, 'exam.a.8e@apex.edu.ng', 'hashed_pass_placeholder', 'Mr. Barnabas Hemba', 'exam_officer', $8, true)
        ON CONFLICT (id) DO UPDATE SET 
          email = EXCLUDED.email, 
          role = EXCLUDED.role, 
@@ -116,7 +118,7 @@ async function runPhase8eTestSuite() {
       [
         stateOfficerId, principalAId, principalBId, teacherAId, studentAId, parentAId, superAdminId,
         schoolA.id, schoolB.id,
-        bursarAId, headmistressAId, headKinderAId, admissionsAId
+        bursarAId, headmistressAId, headKinderAId, admissionsAId, examOfficerAId
       ]
     );
 
@@ -205,6 +207,14 @@ async function runPhase8eTestSuite() {
       userId: admissionsAId,
       email: 'admissions.a.8e@apex.edu.ng',
       role: 'admissions_officer',
+      schoolId: schoolA.id,
+      isSuperAdmin: false,
+    });
+
+    const examOfficerAToken = signAuthToken({
+      userId: examOfficerAId,
+      email: 'exam.a.8e@apex.edu.ng',
+      role: 'exam_officer',
       schoolId: schoolA.id,
       isSuperAdmin: false,
     });
@@ -452,63 +462,95 @@ async function runPhase8eTestSuite() {
 
     // Test 4.0B: School Telemetry Authorization Matrix for GET /schools/:id
     const [
-      res4_sc_so_a, res4_sc_sa_b, res4_sc_pr_a, res4_sc_pr_b,
-      res4_sc_tc_a, res4_sc_bu_a, res4_sc_ad_a, res4_sc_pa_a, res4_sc_st_a
+      res4_sc_so_a, res4_sc_sa_a, res4_sc_sa_b,
+      res4_sc_pr_a, res4_sc_pr_b,
+      res4_sc_hm_a, res4_sc_hm_b,
+      res4_sc_hk_a, res4_sc_hk_b,
+      res4_sc_tc_a, res4_sc_bu_a, res4_sc_ad_a, res4_sc_ex_a, res4_sc_pa_a, res4_sc_st_a
     ] = await Promise.all([
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: stateOfficerToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: superAdminToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: superAdminToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: principalAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: principalAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: headmistressAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: headmistressAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: headKinderAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}`, { token: headKinderAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: teacherAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: bursarAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: admissionsAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: examOfficerAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: parentAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}`, { token: studentAToken }),
     ]);
 
     record('Category 4', 'School telemetry: HQ state_officer can inspect School A (200)', res4_sc_so_a.status === 200);
+    record('Category 4', 'School telemetry: HQ super_admin can inspect School A (200)', res4_sc_sa_a.status === 200);
     record('Category 4', 'School telemetry: HQ super_admin can inspect School B (200)', res4_sc_sa_b.status === 200);
-    record('Category 4', 'School telemetry: Head A can inspect School A (200)', res4_sc_pr_a.status === 200);
-    record('Category 4', 'School telemetry: Head A probing School B receives 404 (IDOR guard)', res4_sc_pr_b.status === 404);
+    record('Category 4', 'School telemetry: Principal A can inspect School A (200)', res4_sc_pr_a.status === 200);
+    record('Category 4', 'School telemetry: Principal A probing School B receives 404 (IDOR guard)', res4_sc_pr_b.status === 404);
+    record('Category 4', 'School telemetry: Headmistress A can inspect School A (200)', res4_sc_hm_a.status === 200);
+    record('Category 4', 'School telemetry: Headmistress A probing School B receives 404 (IDOR guard)', res4_sc_hm_b.status === 404);
+    record('Category 4', 'School telemetry: Head Kindergarten A can inspect School A (200)', res4_sc_hk_a.status === 200);
+    record('Category 4', 'School telemetry: Head Kindergarten A probing School B receives 404 (IDOR guard)', res4_sc_hk_b.status === 404);
     record('Category 4', 'School telemetry: teacher denied access (403)', res4_sc_tc_a.status === 403);
     record('Category 4', 'School telemetry: bursar denied access (403)', res4_sc_bu_a.status === 403);
     record('Category 4', 'School telemetry: admissions_officer denied access (403)', res4_sc_ad_a.status === 403);
+    record('Category 4', 'School telemetry: exam_officer denied access (403)', res4_sc_ex_a.status === 403);
     record('Category 4', 'School telemetry: parent denied access (403)', res4_sc_pa_a.status === 403);
     record('Category 4', 'School telemetry: student denied access (403)', res4_sc_st_a.status === 403);
 
     // Test 4.0C: KPI Telemetry Authorization Matrix for GET /schools/:id/kpis
     const [
-      res4_kpi_so_a, res4_kpi_sa_b, res4_kpi_pr_a, res4_kpi_pr_b,
-      res4_kpi_tc_a, res4_kpi_bu_a, res4_kpi_ad_a, res4_kpi_pa_a, res4_kpi_st_a
+      res4_kpi_so_a, res4_kpi_sa_a, res4_kpi_sa_b,
+      res4_kpi_pr_a, res4_kpi_pr_b,
+      res4_kpi_hm_a, res4_kpi_hm_b,
+      res4_kpi_hk_a, res4_kpi_hk_b,
+      res4_kpi_tc_a, res4_kpi_bu_a, res4_kpi_ad_a, res4_kpi_ex_a, res4_kpi_pa_a, res4_kpi_st_a
     ] = await Promise.all([
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: stateOfficerToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: superAdminToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: superAdminToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: principalAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: principalAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: headmistressAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: headmistressAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: headKinderAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolB.id}/kpis`, { token: headKinderAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: teacherAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: bursarAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: admissionsAToken }),
+      apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: examOfficerAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: parentAToken }),
       apiRequest(`/api/v1/hq/telemetry/schools/${schoolA.id}/kpis`, { token: studentAToken }),
     ]);
 
     record('Category 4', 'School KPIs: HQ state_officer can inspect School A KPIs (200)', res4_kpi_so_a.status === 200);
+    record('Category 4', 'School KPIs: HQ super_admin can inspect School A KPIs (200)', res4_kpi_sa_a.status === 200);
     record('Category 4', 'School KPIs: HQ super_admin can inspect School B KPIs (200)', res4_kpi_sa_b.status === 200);
-    record('Category 4', 'School KPIs: Head A can inspect School A KPIs (200)', res4_kpi_pr_a.status === 200);
-    record('Category 4', 'School KPIs: Head A probing School B KPIs receives 404 (IDOR guard)', res4_kpi_pr_b.status === 404);
+    record('Category 4', 'School KPIs: Principal A can inspect School A KPIs (200)', res4_kpi_pr_a.status === 200);
+    record('Category 4', 'School KPIs: Principal A probing School B KPIs receives 404 (IDOR guard)', res4_kpi_pr_b.status === 404);
+    record('Category 4', 'School KPIs: Headmistress A can inspect School A KPIs (200)', res4_kpi_hm_a.status === 200);
+    record('Category 4', 'School KPIs: Headmistress A probing School B KPIs receives 404 (IDOR guard)', res4_kpi_hm_b.status === 404);
+    record('Category 4', 'School KPIs: Head Kindergarten A can inspect School A KPIs (200)', res4_kpi_hk_a.status === 200);
+    record('Category 4', 'School KPIs: Head Kindergarten A probing School B KPIs receives 404 (IDOR guard)', res4_kpi_hk_b.status === 404);
     record('Category 4', 'School KPIs: teacher denied access (403)', res4_kpi_tc_a.status === 403);
     record('Category 4', 'School KPIs: bursar denied access (403)', res4_kpi_bu_a.status === 403);
     record('Category 4', 'School KPIs: admissions_officer denied access (403)', res4_kpi_ad_a.status === 403);
+    record('Category 4', 'School KPIs: exam_officer denied access (403)', res4_kpi_ex_a.status === 403);
     record('Category 4', 'School KPIs: parent denied access (403)', res4_kpi_pa_a.status === 403);
     record('Category 4', 'School KPIs: student denied access (403)', res4_kpi_st_a.status === 403);
 
     // Test 4.0D: Synthetic Counter Detection (Static & Source Code Audit)
     const hqPageContent = fs.readFileSync(path.join(process.cwd(), 'src/pages/BenueStateHQPage.tsx'), 'utf8');
     const hqRepoContent = fs.readFileSync(path.join(process.cwd(), 'src/db/repositories/hqTelemetry.repository.ts'), 'utf8');
+    const hasUseState438InFrontend = hqPageContent.includes('useState<number>(438)');
     const has438InFrontend = hqPageContent.includes('438');
     const has438InRepo = hqRepoContent.includes('438');
     const hasRandomInRepo = hqRepoContent.includes('Math.random()');
 
+    record('Category 4', 'Frontend BenueStateHQPage does NOT contain useState<number>(438)', !hasUseState438InFrontend);
     record('Category 4', 'Frontend BenueStateHQPage does NOT contain hardcoded 438 telemetry default', !has438InFrontend);
     record('Category 4', 'Repository hqTelemetry.repository does NOT contain 438 or synthetic Math.random()', !has438InRepo && !hasRandomInRepo);
 
