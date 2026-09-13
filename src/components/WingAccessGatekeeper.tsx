@@ -1,29 +1,25 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  ShieldAlert, 
   Lock, 
-  KeyRound, 
-  CheckCircle2, 
   ArrowLeft, 
   ShieldCheck, 
   UserCheck, 
   Building2, 
   LayoutDashboard, 
-  Eye, 
-  EyeOff, 
   AlertCircle, 
-  Landmark 
+  Landmark,
+  LogIn
 } from 'lucide-react';
-import { RestrictedWing, verifyPasskeyForWing, isUserAuthorizedForWing, IssuedPasskey } from '../utils/securityContext';
+import { RestrictedWing, isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 import { useAuth } from '../context/AuthContext';
 
 interface WingAccessGatekeeperProps {
   wing: RestrictedWing;
   title: string;
   subtitle: string;
-  onUnlockSuccess: (matchedPass?: IssuedPasskey) => void;
+  onUnlockSuccess: () => void;
   onReturnHome: () => void;
-  onOpenPasskeyManager?: () => void;
+  onOpenAuthModal?: () => void;
 }
 
 export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
@@ -32,15 +28,11 @@ export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
   subtitle,
   onUnlockSuccess,
   onReturnHome,
-  onOpenPasskeyManager,
+  onOpenAuthModal,
 }) => {
   const { currentUser, isAuthenticated } = useAuth();
-  const [passkeyInput, setPasskeyInput] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
 
-  const isSessionAuthorized = isAuthenticated && isUserAuthorizedForWing(currentUser, wing);
+  const isSessionAuthorized = isAuthenticated && isUserAuthorizedForWingDisplay(currentUser, wing);
 
   const getWingDetails = () => {
     switch (wing) {
@@ -51,9 +43,10 @@ export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
           borderColor: 'border-emerald-400',
           gradient: 'from-slate-950 via-emerald-950 to-slate-900',
           issuingBody: 'Benue State Ministry of Education, Science & Technology & SUBEB Headquarters, Makurdi',
+          allowedRoles: 'Super Admin, State Education Officer, Principal / Head of School',
           restrictedItems: [
             'Statewide Educational Telemetry & Monitoring (All 23 LGAs)',
-            'Executive Governor\'s Real-Time Briefing Engine & State Reports',
+            "Executive Governor's Real-Time Briefing Engine & State Reports",
             'Ministry Directives, Circulars & Statewide Policy Broadcasts',
             'State Subvention Disbursals, Lab Grants & Financial Audits',
             'TRCN Teacher Deployment, Deficit Allocations & School Accreditation'
@@ -65,7 +58,8 @@ export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
           badgeColor: 'bg-blue-900 text-blue-200 border-blue-700',
           borderColor: 'border-blue-300',
           gradient: 'from-slate-900 via-blue-950 to-indigo-950',
-          issuingBody: 'Directorate of Academic Planning, Examination Board & Principal\'s Office',
+          issuingBody: "Directorate of Academic Planning, Examination Board & Principal's Office",
+          allowedRoles: 'Super Admin, State Officer, Principal, Exam Officer, Teacher',
           restrictedItems: [
             'Terminal Report Cards (Full Subject Marks & GPA)',
             'Master Broadsheet Matrix & Cross-Subject Ranks',
@@ -81,7 +75,8 @@ export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
           badgeColor: 'bg-amber-900 text-amber-200 border-amber-700',
           borderColor: 'border-amber-300',
           gradient: 'from-slate-950 via-slate-900 to-amber-950',
-          issuingBody: 'Chief Bursar\'s Office, Internal Auditor & Executive Directorate',
+          issuingBody: "Chief Bursar's Office, Internal Auditor & Executive Directorate",
+          allowedRoles: 'Super Admin, State Officer, Principal, Bursar, Administrator',
           restrictedItems: [
             'School Fee Schedules & Compulsory Levy Structures',
             'Student Fee Payments, Bank Teller & POS Receipts',
@@ -92,56 +87,18 @@ export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
         };
       default:
         return {
-          icon: ShieldAlert,
+          icon: ShieldCheck,
           badgeColor: 'bg-slate-900 text-slate-200 border-slate-700',
           borderColor: 'border-slate-300',
           gradient: 'from-slate-950 to-slate-900',
           issuingBody: 'Central Administration & Executive Council',
+          allowedRoles: 'Institutional Staff Accounts',
           restrictedItems: ['All Institutional Vaults & Administrative Controls']
         };
     }
   };
 
   const wingDetails = getWingDetails();
-
-  const handleAuthorizeWithSession = () => {
-    if (!currentUser || !isSessionAuthorized) return;
-
-    setSuccessMessage(`Authorized via active session: ${currentUser.fullName} (${currentUser.role})`);
-    setTimeout(() => {
-      onUnlockSuccess({
-        id: `SESSION-${currentUser.id}`,
-        passkey: 'SESSION-VERIFIED',
-        staffId: currentUser.id,
-        staffName: currentUser.fullName,
-        role: currentUser.role,
-        wing,
-        arm: 'All',
-        issuedBy: 'Server Authentication Gateway (JWT + RBAC)',
-        issuingOffice: 'Central Directory Service',
-        issuedDate: new Date().toISOString().split('T')[0],
-        expiresAt: '2026-12-31',
-        status: 'Active',
-        permissions: ['verified_session']
-      });
-    }, 300);
-  };
-
-  const handleVerify = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    const result = verifyPasskeyForWing(passkeyInput, wing);
-    if (result.success) {
-      setSuccessMessage(result.message);
-      setTimeout(() => {
-        onUnlockSuccess(result.matchedPass);
-      }, 400);
-    } else {
-      setErrorMessage(result.message);
-    }
-  };
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center p-4 sm:p-6 lg:p-8" id="wing-security-gatekeeper">
@@ -159,193 +116,139 @@ export const WingAccessGatekeeper: React.FC<WingAccessGatekeeperProps> = ({
                   <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded border border-amber-400/30">
                     RESTRICTED ACCESS WING
                   </span>
-                  <span className="text-xs text-slate-300 font-medium">Bummpt Education Suite</span>
+                  <span className="text-slate-400 text-xs">•</span>
+                  <span className="text-xs text-slate-300 font-medium">Server RBAC Protected</span>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1">{title}</h2>
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1">
+                  {title}
+                </h2>
               </div>
             </div>
 
             <button
               onClick={onReturnHome}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-sm transition cursor-pointer self-start sm:self-auto"
+              id="gatekeeper-return-home-btn"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition self-start sm:self-center border border-white/10 cursor-pointer"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Back to Home</span>
+              <span>Back to Public Portal</span>
             </button>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-300 mt-3 max-w-2xl leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-300 mt-4 leading-relaxed max-w-2xl">
             {subtitle}
           </p>
         </div>
 
-        {/* Main Body Grid */}
-        <div className="p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Gatekeeper Clearance Body */}
+        <div className="p-6 sm:p-8 space-y-6">
           
-          {/* Left Column: Server Auth Session or Passkey Entry */}
-          <div className="lg:col-span-7 space-y-6">
-            
-            {/* Active Session Verification Card */}
-            {currentUser && (
-              <div className={`p-4 rounded-2xl border ${isSessionAuthorized ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-200 text-amber-950'}`}>
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-xl mt-0.5 ${isSessionAuthorized ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {isSessionAuthorized ? <ShieldCheck className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+          {/* Active Server Identity Verification Card */}
+          {isAuthenticated && currentUser ? (
+            <div className={`p-5 rounded-2xl border transition ${
+              isSessionAuthorized 
+                ? 'bg-emerald-50 border-emerald-300' 
+                : 'bg-amber-50 border-amber-300'
+            }`}>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="flex items-start gap-3.5">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    isSessionAuthorized ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                  }`}>
+                    {isSessionAuthorized ? <UserCheck className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
                   </div>
-                  <div className="flex-1">
+                  <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider">
-                        {isSessionAuthorized ? 'Active Session Verified' : 'Restricted Role'}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-white border border-current font-bold">
-                        {currentUser.role.toUpperCase()}
+                      <span className="text-xs font-bold text-slate-900">{currentUser.fullName}</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-white font-bold uppercase">
+                        {currentUser.role}
                       </span>
                     </div>
-                    <p className="text-xs mt-1 font-medium">
-                      Signed in as <strong>{currentUser.fullName}</strong> ({currentUser.email})
+                    <p className="text-xs text-slate-600 mt-0.5 font-mono">
+                      {currentUser.email} • School: {currentUser.schoolName || 'Central / Multi-School'}
                     </p>
-                    {isSessionAuthorized ? (
-                      <p className="text-[11px] text-emerald-800 mt-1">
-                        Your server-authoritative role has been verified with authorization to access this operational wing.
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-amber-800 mt-1">
-                        Your current role ({currentUser.role}) is not authorized for this wing. You may enter an ad-hoc staff passkey below if issued.
-                      </p>
-                    )}
-
-                    {isSessionAuthorized && (
-                      <button
-                        type="button"
-                        onClick={handleAuthorizeWithSession}
-                        className="mt-3 w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition shadow-sm cursor-pointer flex items-center justify-center gap-2"
-                      >
-                        <ShieldCheck className="h-4 w-4" />
-                        <span>Authorize & Open Wing as {currentUser.fullName}</span>
-                      </button>
-                    )}
+                    <p className="text-xs mt-1 font-semibold">
+                      {isSessionAuthorized ? (
+                        <span className="text-emerald-700">✓ Server identity verified. Role grants clearance for this wing.</span>
+                      ) : (
+                        <span className="text-amber-800">
+                          ⚠ Current role ({currentUser.role}) does not have clearance for this wing. Authorized roles: {wingDetails.allowedRoles}
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
-              </div>
-            )}
 
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <KeyRound className="h-4 w-4 text-blue-700" />
-                <h3 className="font-bold text-slate-900 text-sm">Or Enter Authorized Staff Passkey</h3>
-              </div>
-              <p className="text-xs text-slate-600">
-                Staff members, Form Tutors, Exam Officers, and Administrators may also authenticate using an issued passkey from the Security Registry.
-              </p>
-            </div>
-
-            <form onSubmit={handleVerify} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Authorization Passkey / PIN:
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={passkeyInput}
-                    onChange={(e) => {
-                      setPasskeyInput(e.target.value);
-                      setErrorMessage('');
-                    }}
-                    placeholder="e.g. ACAD-8921B"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 font-mono tracking-wider pr-11"
-                  />
+                {isSessionAuthorized ? (
                   <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                    onClick={onUnlockSuccess}
+                    id="gatekeeper-enter-wing-btn"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Enter Authorized Wing</span>
                   </button>
-                </div>
-              </div>
-
-              {errorMessage && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 flex-shrink-0 text-rose-600" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              {successMessage && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-600" />
-                  <span>{successMessage}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="submit"
-                  disabled={!passkeyInput.trim()}
-                  className="flex-1 rounded-2xl bg-blue-700 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 px-4 text-xs font-bold transition shadow-sm cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <KeyRound className="h-4 w-4" />
-                  <span>Authenticate & Open Wing</span>
-                </button>
-
-                {onOpenPasskeyManager && (
+                ) : (
                   <button
-                    type="button"
-                    onClick={onOpenPasskeyManager}
-                    className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-3 text-xs font-bold transition cursor-pointer shadow-xs whitespace-nowrap"
+                    onClick={onOpenAuthModal}
+                    id="gatekeeper-switch-account-btn"
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
                   >
-                    <UserCheck className="h-4 w-4 text-blue-700" />
-                    <span>Issue Passkeys</span>
+                    <LogIn className="h-3.5 w-3.5" />
+                    <span>Switch Account</span>
                   </button>
                 )}
               </div>
-            </form>
-
-            {/* Statutory Authority Card */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                <Building2 className="h-3.5 w-3.5 text-blue-700" />
-                <span>Statutory Issuing Authority:</span>
+            </div>
+          ) : (
+            <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto shadow-sm">
+                <Lock className="h-6 w-6" />
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                {wingDetails.issuingBody}. Passkeys are bound to staff designation and verified against server-authoritative RBAC.
-              </p>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Institutional Authentication Required</h3>
+                <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto">
+                  Access to this wing requires a server-authenticated session. Please sign in with your verified institutional staff credentials.
+                </p>
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={onOpenAuthModal}
+                  id="gatekeeper-signin-btn"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span>Sign In with Institutional Account</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Protected Assets Inventory */}
+          <div className="border-t border-slate-100 pt-5 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Protected Assets in this Wing</span>
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
+              {wingDetails.restrictedItems.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span className="font-medium truncate">{item}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Right Column: Protected Assets & Server Architecture */}
-          <div className="lg:col-span-5 space-y-5 lg:border-l lg:border-slate-200 lg:pl-8">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Restricted Institutional Assets
-              </span>
-              <h4 className="font-bold text-slate-900 text-xs">Items protected under this wing clearance:</h4>
-            </div>
-
-            <ul className="space-y-2">
-              {wingDetails.restrictedItems.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 bg-slate-50/80 p-2 rounded-xl border border-slate-100">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <span className="font-medium">{item}</span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="bg-slate-900 rounded-2xl p-4 text-slate-200 space-y-2 border border-slate-800">
-              <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
-                <ShieldAlert className="h-4 w-4" />
-                <span>Production Security Standard</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                All data in this wing is persisted to PostgreSQL and governed by multi-tenant school isolation. Hardcoded credentials are fully decommissioned.
-              </p>
-            </div>
-
+          {/* Security Governance Notice */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-500 space-y-1">
+            <p className="font-bold text-slate-700">Institutional Security Governance (Phase 8F):</p>
+            <p>
+              All data transmission and mutations are signed with server-authoritative JSON Web Tokens (JWT) verified against PostgreSQL. Client-side tampering is strictly prohibited; all requests without verified role credentials receive HTTP 401/403 responses.
+            </p>
           </div>
 
         </div>
-
       </div>
     </div>
   );

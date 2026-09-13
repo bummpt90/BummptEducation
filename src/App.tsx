@@ -21,7 +21,6 @@ import { AuthenticationGateway } from './pages/AuthenticationGateway';
 import { ReportCardModal } from './components/ReportCardModal';
 import { FeeReceiptModal } from './components/FeeReceiptModal';
 import { AiRemarkModal } from './components/AiRemarkModal';
-import { AccessManagementModal } from './components/AccessManagementModal';
 import { ParentReportPortalModal } from './components/ParentReportPortalModal';
 import { AuthLoginModal } from './components/AuthLoginModal';
 import { useAuth } from './context/AuthContext';
@@ -77,7 +76,6 @@ export function App() {
     reportCard: StudentReportCard;
   } | null>(null);
 
-  const [isGlobalPasskeyModalOpen, setIsGlobalPasskeyModalOpen] = useState(false);
   const [isGlobalParentPortalOpen, setIsGlobalParentPortalOpen] = useState(false);
   const [isGlobalAuthModalOpen, setIsGlobalAuthModalOpen] = useState(false);
 
@@ -167,7 +165,7 @@ export function App() {
         onTermChange={setSelectedTerm}
         selectedClass={selectedClass}
         onClassChange={setSelectedClass}
-        onOpenSecurityModal={() => setIsGlobalPasskeyModalOpen(true)}
+        onOpenSecurityModal={() => handleNavigate('admin', 'security')}
         onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
         onOpenAuthModal={() => setIsGlobalAuthModalOpen(true)}
       />
@@ -181,7 +179,7 @@ export function App() {
             assessments={assessments}
             onOpenReportCardModal={handleOpenReportCard}
             onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
-            onOpenSecurityModal={() => setIsGlobalPasskeyModalOpen(true)}
+            onOpenSecurityModal={() => setIsGlobalAuthModalOpen(true)}
           />
         )}
 
@@ -318,12 +316,6 @@ export function App() {
           onApplyRemarks={handleApplyAiRemarks}
         />
       )}
-
-      {/* Global Staff Passkeys & Security Authorization Modal */}
-      <AccessManagementModal
-        isOpen={isGlobalPasskeyModalOpen}
-        onClose={() => setIsGlobalPasskeyModalOpen(false)}
-      />
 
       {/* Global Parent Report Card Verification & Download Portal Modal */}
       <ParentReportPortalModal

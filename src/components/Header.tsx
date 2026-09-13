@@ -943,12 +943,12 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
-                onOpenSecurityModal?.();
+                navigateTo('admin', 'security');
               }}
-              className="p-2.5 rounded-xl bg-amber-50 text-amber-900 font-bold text-xs border border-amber-200 flex items-center justify-center gap-1.5"
+              className="p-2.5 rounded-xl bg-slate-100 text-slate-900 font-bold text-xs border border-slate-200 flex items-center justify-center gap-1.5"
             >
-              <KeyRound className="h-3.5 w-3.5 text-amber-600" />
-              <span>Passkeys</span>
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Security</span>
             </button>
             <button
               onClick={() => navigateTo('academic', 'reports')}

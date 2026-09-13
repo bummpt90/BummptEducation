@@ -52,14 +52,10 @@ import {
   simulateTermWeekProgress
 } from '../data/benueStateData';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
-import { AccessManagementModal } from '../components/AccessManagementModal';
 import { MinistryUpdatesCommand } from '../components/MinistryUpdatesCommand';
 import { HeadquartersLiveChat } from '../components/HeadquartersLiveChat';
-import { 
-  IssuedPasskey, 
-  getStoredSession, 
-  saveStoredSession 
-} from '../utils/securityContext';
+import { useAuth } from '../context/AuthContext';
+import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 
 interface BenueStateHQPageProps {
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
@@ -67,13 +63,11 @@ interface BenueStateHQPageProps {
 }
 
 export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStateHQPageProps) {
-  // Security Authentication Check for Benue State Education Headquarters
+  const { currentUser, isAuthenticated } = useAuth();
+  // Server-authoritative Authentication Check for Benue State Education Headquarters
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    const session = getStoredSession();
-    return !!session.isBenueHQUnlocked;
+    return isAuthenticated && isUserAuthorizedForWingDisplay(currentUser, 'benue_moe');
   });
-  const [authenticatedPasskey, setAuthenticatedPasskey] = useState<IssuedPasskey | null>(null);
-  const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState<boolean>(false);
   const [schoolOverrides, setSchoolOverrides] = useState<Record<string, Partial<GovSchool>>>({});
 
   // Cross-Session Live Telemetry State (Real-time updates as other sessions operate)
@@ -119,18 +113,12 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
     fetchLiveTelemetry();
   }, []);
 
-  const handleUnlockSuccess = (passkey: IssuedPasskey) => {
-    const sess = getStoredSession();
-    saveStoredSession({ ...sess, isBenueHQUnlocked: true });
+  const handleUnlockSuccess = () => {
     setIsUnlocked(true);
-    setAuthenticatedPasskey(passkey);
   };
 
   const handleLockHQPortal = () => {
-    const sess = getStoredSession();
-    saveStoredSession({ ...sess, isBenueHQUnlocked: false });
     setIsUnlocked(false);
-    setAuthenticatedPasskey(null);
   };
 
   const handleSyncLiveSessions = () => {
@@ -423,15 +411,10 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
         <WingAccessGatekeeper
           wing="benue_moe"
           title="Benue State Education Headquarters — Ministry Command Access"
-          subtitle="Restricted Central Headquarters. Only authorized executive officials from the Benue State Ministry of Education, Science & Technology and SUBEB can access statewide school records, telemetry, and dispatch school updates. Enter your authorized passkey."
+          subtitle="Restricted Central Headquarters. Only authorized executive officials from the Benue State Ministry of Education, Science & Technology and SUBEB can access statewide school records, telemetry, and dispatch school updates."
           onUnlockSuccess={handleUnlockSuccess}
+          onReturnHome={() => onNavigate ? onNavigate('home') : undefined}
         />
-        {isPasskeyModalOpen && (
-          <AccessManagementModal
-            onClose={() => setIsPasskeyModalOpen(false)}
-            onPasskeysUpdated={() => {}}
-          />
-        )}
       </div>
     );
   }
@@ -461,7 +444,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                   <span className="text-[11px] text-emerald-300 font-bold">STATE SEC-HQ CLEARANCE</span>
                 </div>
                 <div className="text-xs text-white font-black mt-0.5">
-                  {authenticatedPasskey?.staffName || 'Prof. Frederick Ikyaan'} — <span className="text-amber-300 font-medium">{authenticatedPasskey?.role || 'Hon. Commissioner for Education, Science & Technology'}</span>
+                  {currentUser?.fullName || 'Prof. Frederick Ikyaan'} — <span className="text-amber-300 font-medium">{currentUser?.role || 'Hon. Commissioner for Education, Science & Technology'}</span>
                 </div>
               </div>
             </div>
@@ -496,15 +479,6 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
               >
                 <TrendingUp className="h-3.5 w-3.5 text-amber-300" />
                 <span>Live Feed ({telemetryCount} Synced)</span>
-              </button>
-
-              <button
-                onClick={() => setIsPasskeyModalOpen(true)}
-                id="manage-hq-passkeys-btn"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs border border-white/20 transition cursor-pointer"
-              >
-                <Users className="h-3.5 w-3.5" />
-                <span>Passkeys Hub</span>
               </button>
 
               <button
@@ -1744,8 +1718,8 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                     onUpdateAccreditation={handleUpdateAccreditation}
                     currentLga={selectedLGA}
                     currentZone={activeSchool.zone}
-                    authenticatedStaffName={authenticatedPasskey?.staffName || 'Prof. Frederick Ikyaan'}
-                    authenticatedStaffRole={authenticatedPasskey?.role || 'Hon. Commissioner for Education, Science & Technology'}
+                    authenticatedStaffName={currentUser?.fullName || 'Prof. Frederick Ikyaan'}
+                    authenticatedStaffRole={currentUser?.role || 'Hon. Commissioner for Education, Science & Technology'}
                   />
                 </div>
               )}
@@ -1987,14 +1961,6 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
 
           </div>
         </div>
-      )}
-
-      {/* Security & Access Management Modal */}
-      {isPasskeyModalOpen && (
-        <AccessManagementModal
-          onClose={() => setIsPasskeyModalOpen(false)}
-          onPasskeysUpdated={() => {}}
-        />
       )}
 
     </div>

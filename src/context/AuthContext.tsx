@@ -7,7 +7,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { SafeUser, Permission, AuthRole } from '../auth/types';
-import { unlockAllWings, updateSecuritySessionStaff, clearSecuritySession } from '../utils/securityContext';
 
 interface AuthContextType {
   currentUser: SafeUser | null;
@@ -25,31 +24,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<SafeUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // Synchronize legacy security context for backwards compatibility with existing UI wings
-  const syncWithLegacyWings = (user: SafeUser | null) => {
-    if (!user) {
-      clearSecuritySession();
-      return;
-    }
-
-    // Map role to wing
-    let wing: any = 'academic';
-    if (user.role === 'super_admin') wing = 'all';
-    else if (user.role === 'state_officer') wing = 'benue_moe';
-    else if (user.role === 'bursar') wing = 'bursary';
-    else if (user.role === 'admissions_officer') wing = 'admin';
-
-    // Unlock corresponding wings
-    unlockAllWings();
-    updateSecuritySessionStaff({
-      name: user.fullName,
-      role: user.role,
-      staffId: user.id.slice(0, 8).toUpperCase(),
-      wing,
-      passkeyUsed: 'PRODUCTION_AUTH',
-    });
-  };
 
   // Restore authenticated session from server on initial mount
   const refreshUser = async () => {
@@ -70,7 +44,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const data = await res.json();
         if (data.success && data.user) {
           setCurrentUser(data.user);
-          syncWithLegacyWings(data.user);
         } else {
           setCurrentUser(null);
         }
@@ -113,7 +86,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       setCurrentUser(data.user);
-      syncWithLegacyWings(data.user);
 
       return { success: true };
     } catch (err: any) {
@@ -140,7 +112,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       sessionStorage.removeItem('bummpt_token');
       setCurrentUser(null);
-      clearSecuritySession();
     }
   };
 

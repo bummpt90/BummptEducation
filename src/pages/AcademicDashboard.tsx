@@ -88,14 +88,8 @@ import {
 import { NavigationPage } from '../types';
 import { AttendancePage } from './AttendancePage';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
-import { AccessManagementModal } from '../components/AccessManagementModal';
-import { 
-  getStoredSession, 
-  saveStoredSession, 
-  getGlobalReportCardPublicationStatus, 
-  setGlobalReportCardPublicationStatus,
-  IssuedPasskey 
-} from '../utils/securityContext';
+import { useAuth } from '../context/AuthContext';
+import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 
 interface AcademicDashboardProps {
   students: Student[];
@@ -636,26 +630,20 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
     { subject: 'Civic Ed', average: 83.5 },
   ];
 
-  // Access Control & Wing Restriction State
+  const { currentUser, isAuthenticated } = useAuth();
+
+  // Access Control & Wing Restriction State (Server RBAC)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    const sess = getStoredSession();
-    return sess.isAcademicUnlocked;
+    return isAuthenticated && isUserAuthorizedForWingDisplay(currentUser, 'academic');
   });
-  const [authenticatedStaff, setAuthenticatedStaff] = useState<IssuedPasskey | null>(null);
-  const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState<boolean>(false);
-  const [isParentUploadPublished, setIsParentUploadPublished] = useState<boolean>(() => getGlobalReportCardPublicationStatus());
+  const [isParentUploadPublished, setIsParentUploadPublished] = useState<boolean>(true);
 
   const handleLockWing = () => {
     setIsUnlocked(false);
-    setAuthenticatedStaff(null);
-    const sess = getStoredSession();
-    saveStoredSession({ ...sess, isAcademicUnlocked: false });
   };
 
   const handleToggleParentUpload = () => {
-    const next = !isParentUploadPublished;
-    setIsParentUploadPublished(next);
-    setGlobalReportCardPublicationStatus(next);
+    setIsParentUploadPublished(prev => !prev);
   };
 
   // If Wing is Locked, show Institutional Gatekeeper Barrier
@@ -665,21 +653,9 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
         <WingAccessGatekeeper
           wing="academic"
           title="Academic Wing — Restricted Authorization Clearance"
-          subtitle="Access to terminal report cards, master broadsheets, continuous assessment (40/60) scoresheets, and behavioral evaluations is restricted. Enter your authorized staff passkey issued by the Directorate of Academic Planning & Examination Board."
-          onUnlockSuccess={(matchedPass) => {
-            setIsUnlocked(true);
-            setAuthenticatedStaff(matchedPass || null);
-            const sess = getStoredSession();
-            saveStoredSession({ ...sess, isAcademicUnlocked: true });
-          }}
+          subtitle="Access to terminal report cards, master broadsheets, continuous assessment (40/60) scoresheets, and behavioral evaluations is restricted to authorized teaching and examination personnel."
+          onUnlockSuccess={() => setIsUnlocked(true)}
           onReturnHome={() => onNavigate?.('home')}
-          onOpenPasskeyManager={() => setIsPasskeyModalOpen(true)}
-        />
-
-        <AccessManagementModal
-          isOpen={isPasskeyModalOpen}
-          onClose={() => setIsPasskeyModalOpen(false)}
-          initialWingFilter="academic"
         />
       </div>
     );
@@ -700,7 +676,7 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
                 CLEARANCE ACTIVE
               </span>
               <span className="text-xs font-bold text-slate-200">
-                {authenticatedStaff ? `${authenticatedStaff.staffName} (${authenticatedStaff.role})` : 'Academic Board & Directorate Clearance'}
+                {currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Academic Board & Directorate Clearance'}
               </span>
             </div>
             <p className="text-[11px] text-slate-300 mt-0.5">
@@ -723,16 +699,6 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
           >
             {isParentUploadPublished ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             <span>Parent Download: {isParentUploadPublished ? 'Uploaded & Published' : 'Draft / Restricted'}</span>
-          </button>
-
-          {/* Passkey Manager */}
-          <button
-            onClick={() => setIsPasskeyModalOpen(true)}
-            id="academic-open-passkeys-btn"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer shadow-xs"
-          >
-            <KeyRound className="h-3.5 w-3.5" />
-            <span>Staff Passkeys</span>
           </button>
 
           {/* Lock Wing */}
@@ -2400,13 +2366,6 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
           />
         </div>
       )}
-
-      {/* Access Passkeys & Authorization Hub Modal */}
-      <AccessManagementModal
-        isOpen={isPasskeyModalOpen}
-        onClose={() => setIsPasskeyModalOpen(false)}
-        initialWingFilter="academic"
-      />
 
     </div>
   );

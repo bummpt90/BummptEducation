@@ -364,7 +364,9 @@ parentsRouter.post('/verify-pin', async (req, res) => {
         details: { admissionNumber, reason: verification.error },
       });
 
-      const statusCode = verification.error === 'PIN_LOCKED' ? 429 : 401;
+      const statusCode = verification.error === 'PIN_LOCKED' 
+        ? 429 
+        : (verification.error === 'STUDENT_NOT_FOUND' ? 404 : 401);
       res.status(statusCode).json({
         success: false,
         error: verification.error,

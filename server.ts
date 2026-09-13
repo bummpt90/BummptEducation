@@ -31,15 +31,31 @@ import { seedOperationalFoundation } from './src/db/seed/operational.seed';
 import { seedFinancialFoundation } from './src/db/seed/financial.seed';
 import { seedLessonNotesFoundation } from './src/db/seed/lessonNotes.seed';
 import type { AuthenticatedRequest } from './src/auth/types';
+import { securityHeadersMiddleware } from './src/security/headers';
+import { corsMiddleware } from './src/security/cors';
+import { csrfProtectionMiddleware, getCsrfTokenHandler } from './src/security/csrf';
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // OWASP Recommended Security Headers
+  app.use(securityHeadersMiddleware);
+
+  // Strict CORS origin control
+  app.use(corsMiddleware);
+
   // Cookie and JSON Body parsing
   app.use(cookieParser());
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+
+  // CSRF token endpoint
+  app.get('/api/v1/auth/csrf-token', getCsrfTokenHandler);
+  app.get('/api/v1/security/csrf-token', getCsrfTokenHandler);
+
+  // CSRF Defense middleware for state-changing cookie-authenticated requests
+  app.use(csrfProtectionMiddleware);
 
   // =========================================================================
   // API ROUTES (Mounted BEFORE Vite Middleware)

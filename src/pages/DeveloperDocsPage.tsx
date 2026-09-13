@@ -403,10 +403,16 @@ export const DeveloperDocsPage: React.FC<DeveloperDocsPageProps> = ({ onNavigate
     │   ├── benueStateData.ts    # 23 Benue LGAs, schools, SUBEB basic education records
     │   └── lessonNotesData.ts   # Initial syllabus notes, parent inquiries & stats
     │
-    ├── utils/                   # Business Logic, Algorithmic & Security Engines
+    ├── utils/                   # Business Logic, Algorithmic & UI Helpers
     │   ├── grading.ts           # 40% CA + 60% Exam scoring, WAEC/Primary grade mappers
     │   ├── pdfGenerator.ts      # jsPDF programmatic report card & receipt compilers
-    │   └── securityContext.ts   # Role-based access control, PIN & gatekeeper tokens
+    │   └── wingClearance.ts     # UI display helpers for wing navigation
+    │
+    ├── security/                # Cryptographic Hardening & Middleware (Phase 8F)
+    │   ├── headers.ts           # OWASP-recommended HTTP security headers
+    │   ├── cors.ts              # Strict CORS origin whitelisting & preflight handling
+    │   ├── csrf.ts              # CSRF protection engine & token handlers
+    │   └── encryption.ts        # AES-256-GCM authenticated application encryption
     │
     ├── components/              # Reusable Modular UI Components & Modals
     │   ├── Header.tsx           # Global responsive navigation header & context bar

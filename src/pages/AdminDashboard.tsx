@@ -54,21 +54,8 @@ import {
 
 import { NavigationPage } from '../types';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
-import { AccessManagementModal } from '../components/AccessManagementModal';
 import { AccountRequestsManager } from '../components/AccountRequestsManager';
-import {
-  getStoredSession,
-  saveStoredSession,
-  getIssuedPasskeys,
-  issueNewPasskey,
-  revokePasskey,
-  IssuedPasskey,
-  RestrictedWing,
-  generateRandomPasskey,
-  getGlobalReportCardPublicationStatus,
-  setGlobalReportCardPublicationStatus,
-  isUserAuthorizedForWing
-} from '../utils/securityContext';
+import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -107,84 +94,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     updateAdmissionStatus: serverUpdateAdmissionStatus
   } = useData();
 
-  // Security Clearance & Access Passkeys State
-  const isAuthorizedBySession = isUserAuthorizedForWing(currentUser, 'admin') || isUserAuthorizedForWing(currentUser, 'bursary');
-  const [isBursaryUnlocked, setIsBursaryUnlocked] = useState<boolean>(() => {
-    const sess = getStoredSession();
-    return sess.isBursaryUnlocked || sess.isAdminUnlocked;
-  });
+  // Security Clearance & Access State (Server RBAC)
+  const isAuthorizedBySession = isUserAuthorizedForWingDisplay(currentUser, 'admin') || isUserAuthorizedForWingDisplay(currentUser, 'bursary');
+  const [isBursaryUnlocked, setIsBursaryUnlocked] = useState<boolean>(() => isAuthorizedBySession);
   const isUnlocked = isBursaryUnlocked || isAuthorizedBySession;
-  const [authenticatedStaff, setAuthenticatedStaff] = useState<IssuedPasskey | null>(null);
-  const [isPasskeyModalOpen, setIsPasskeyModalOpen] = useState(false);
-  const [passkeys, setPasskeys] = useState<IssuedPasskey[]>(() => getIssuedPasskeys());
-  const [isParentPublished, setIsParentPublished] = useState<boolean>(() => getGlobalReportCardPublicationStatus());
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-
-  // New Passkey Form state for in-page Security Tab
-  const [newStaffName, setNewStaffName] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState('Senior Form Tutor & Exam Officer');
-  const [newStaffWing, setNewStaffWing] = useState<RestrictedWing>('academic');
-  const [newStaffArm, setNewStaffArm] = useState<SchoolArm | 'All'>('All');
-  const [newCustomPasskey, setNewCustomPasskey] = useState('');
-  const [passkeyCreationNotice, setPasskeyCreationNotice] = useState('');
-
-  const refreshPasskeys = () => {
-    setPasskeys(getIssuedPasskeys());
-  };
-
-  const handleGeneratePasskey = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newStaffName.trim()) return;
-
-    const generatedKey = newCustomPasskey.trim() || generateRandomPasskey(
-      newStaffWing === 'academic' ? 'ACAD' : newStaffWing === 'bursary' ? 'BURS' : 'ADM'
-    );
-
-    const created = issueNewPasskey({
-      passkey: generatedKey,
-      staffId: `STF-${Math.floor(100 + Math.random() * 900)}`,
-      staffName: newStaffName.trim(),
-      role: newStaffRole,
-      wing: newStaffWing,
-      arm: newStaffArm,
-      issuedBy: 'General Administrator (Matthew Ternenge Beeun)',
-      issuingOffice: 'Executive Directorate',
-      expiresAt: '2026-12-31',
-      permissions: [newStaffWing],
-      notes: `Authorized access to ${newStaffWing.toUpperCase()} wing operations for ${newStaffArm} arm.`
-    });
-
-    refreshPasskeys();
-    setNewStaffName('');
-    setNewCustomPasskey('');
-    setPasskeyCreationNotice(`Passkey "${created.passkey}" successfully issued to ${created.staffName}!`);
-    setTimeout(() => setPasskeyCreationNotice(''), 5000);
-  };
-
-  const handleRevokePass = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to revoke authorization passkey for ${name}?`)) {
-      revokePasskey(id);
-      refreshPasskeys();
-    }
-  };
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopyFeedback(text);
-    setTimeout(() => setCopyFeedback(null), 2000);
-  };
+  const [isParentPublished, setIsParentPublished] = useState<boolean>(true);
 
   const handleToggleParentAccess = () => {
-    const next = !isParentPublished;
-    setIsParentPublished(next);
-    setGlobalReportCardPublicationStatus(next);
+    setIsParentPublished(prev => !prev);
   };
 
   const handleLockBursary = () => {
     setIsBursaryUnlocked(false);
-    setAuthenticatedStaff(null);
-    const sess = getStoredSession();
-    saveStoredSession({ ...sess, isBursaryUnlocked: false, isAdminUnlocked: false });
   };
 
   // Fees State from Server Data Context
@@ -360,21 +281,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <WingAccessGatekeeper
           wing="bursary"
           title="Bursary & Administrative Wing — Clearance Required"
-          subtitle="Official tuition billing schedules, payment receipts, student finance ledgers, and staff authorization passkeys are restricted. Enter your authorized Bursar or Administrative passkey to proceed."
-          onUnlockSuccess={(matchedPass) => {
-            setIsBursaryUnlocked(true);
-            setAuthenticatedStaff(matchedPass || null);
-            const sess = getStoredSession();
-            saveStoredSession({ ...sess, isBursaryUnlocked: true, isAdminUnlocked: true });
-          }}
+          subtitle="Official tuition billing schedules, payment receipts, student finance ledgers, and staff authorization controls are restricted to authorized Bursar and Administrative personnel."
+          onUnlockSuccess={() => setIsBursaryUnlocked(true)}
           onReturnHome={() => onNavigate?.('home')}
-          onOpenPasskeyManager={() => setActiveSubTab('security')}
-        />
-
-        <AccessManagementModal
-          isOpen={isPasskeyModalOpen}
-          onClose={() => setIsPasskeyModalOpen(false)}
-          initialWingFilter="bursary"
         />
       </div>
     );
@@ -395,7 +304,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ADMIN & BURSARY CLEARANCE ACTIVE
               </span>
               <span className="text-xs font-bold text-slate-200">
-                {authenticatedStaff ? `${authenticatedStaff.staffName} (${authenticatedStaff.role})` : 'Executive Administration Desk'}
+                {currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Executive Administration Desk'}
               </span>
             </div>
             <p className="text-[11px] text-slate-300 mt-0.5">
@@ -430,8 +339,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
             }`}
           >
-            <KeyRound className="h-3.5 w-3.5" />
-            <span>Generate Passkeys</span>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>Security & RBAC</span>
           </button>
 
           {/* Lock Bursary */}
@@ -1180,29 +1089,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-                    Staff Authorization Passkeys & Wing Restriction Desk
+                    Staff Clearances & Department Wing Access Desk
                   </h3>
                   <p className="text-xs text-slate-300">
-                    Issue cryptographically distinct passkeys to form tutors, exam officers, bursars, and departmental heads.
+                    Department wing authorizations and administrative privileges are enforced authoritatively via PostgreSQL roles and JWT tokens.
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={refreshPasskeys}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition cursor-pointer border border-white/10"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  <span>Refresh Passes</span>
-                </button>
-                <button
-                  onClick={() => setIsPasskeyModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition cursor-pointer shadow-xs"
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  <span>Open Security Modal</span>
-                </button>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>Zero-Trust RBAC Active</span>
+                </span>
               </div>
             </div>
 
@@ -1237,235 +1136,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Creation Form & Quick Reference */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Form */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <UserPlus className="h-4 w-4 text-emerald-600" />
-                  <span>Issue New Staff Authorization Passkey</span>
-                </h4>
-                <span className="text-[11px] text-slate-500 font-mono">Role-Based Clearance</span>
-              </div>
-
-              {passkeyCreationNotice && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 font-medium animate-in fade-in">
-                  <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span>{passkeyCreationNotice}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleGeneratePasskey} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Staff / Officer Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Mrs. Blessing Aondoaver"
-                      value={newStaffName}
-                      onChange={(e) => setNewStaffName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Designation / Role
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Form Tutor (SSS 2 Science)"
-                      value={newStaffRole}
-                      onChange={(e) => setNewStaffRole(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Restricted Wing Authorization
-                    </label>
-                    <select
-                      value={newStaffWing}
-                      onChange={(e) => setNewStaffWing(e.target.value as RestrictedWing)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
-                    >
-                      <option value="academic">Academic Wing (Report Cards, Broadsheets, Scoresheets)</option>
-                      <option value="bursary">Bursary Wing (Fee Schedules, Billing Ledgers, Receipts)</option>
-                      <option value="admin">Administrative Wing (Admissions, HR & Student Registers)</option>
-                      <option value="all">Full Executive Access (All Wings)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      School Arm Scope
-                    </label>
-                    <select
-                      value={newStaffArm}
-                      onChange={(e) => setNewStaffArm(e.target.value as SchoolArm | 'All')}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
-                    >
-                      <option value="All">All School Arms (KG, Primary, Secondary)</option>
-                      <option value="kindergarten">Kindergarten Arm Only (KG 1 - 3)</option>
-                      <option value="primary">Primary Arm Only (Basic 1 - 6)</option>
-                      <option value="secondary">Secondary College Arm Only (JSS 1 - SSS 3)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Custom Passkey (Leave blank for automated 8-character generation)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. SSS2-EXAM-2026 or leave blank"
-                    value={newCustomPasskey}
-                    onChange={(e) => setNewCustomPasskey(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none uppercase"
-                  />
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-md"
-                  >
-                    <KeyRound className="h-4 w-4 text-amber-400" />
-                    <span>Generate & Issue Authorized Passkey</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* Server-Authoritative RBAC Architecture Panel */}
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                  <span>Production RBAC Security</span>
-                </h4>
-                <span className="text-[10px] font-mono font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                  PostgreSQL Active
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-600">
-                Wing clearance is strictly governed by server-authoritative roles and database-backed authentication. Prototype credentials have been decommissioned.
-              </p>
-
-              <div className="space-y-2.5">
-                <div className="p-3 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-950 text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold">Active User Session</span>
-                    <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-300">
-                      {currentUser?.role?.toUpperCase() || 'ANONYMOUS'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-emerald-800">
-                    {currentUser?.fullName || 'Not authenticated'} ({currentUser?.email || 'Guest'})
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl border bg-blue-50 border-blue-200 text-blue-950 text-xs space-y-1">
-                  <span className="font-bold block">Dynamic Passkey Issuance</span>
-                  <p className="text-[11px] text-blue-800">
-                    Form tutors and exam officers receive unique cryptographically generated credentials, logged to the audit registry below.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Active Issued Passkeys Table */}
+          {/* Server-Authoritative RBAC & Security Infrastructure Panel */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-2">
               <div>
-                <h4 className="font-bold text-slate-900 text-sm">Issued Staff Access Passkeys Registry ({passkeys.length})</h4>
-                <p className="text-xs text-slate-500">Live registry of authorized personnel passkeys. Passkeys can be copied or revoked at any time.</p>
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                  <span>Server-Authoritative RBAC & Identity Administration (Phase 8F)</span>
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Authentication and wing access are governed exclusively by server-side PostgreSQL identity, Argon2id credentials, and JWT sessions.
+                </p>
               </div>
-              {copyFeedback && (
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 animate-in fade-in">
-                  ✓ Copied "{copyFeedback}" to clipboard!
-                </span>
-              )}
+              <span className="text-xs font-mono font-bold uppercase bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-300">
+                PostgreSQL Server RBAC Active
+              </span>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 uppercase">
-                    <th className="py-2.5 px-3">Passkey ID / Code</th>
-                    <th className="py-2.5 px-3">Staff Holder & Designation</th>
-                    <th className="py-2.5 px-3">Wing Clearance</th>
-                    <th className="py-2.5 px-3">Arm Scope</th>
-                    <th className="py-2.5 px-3">Issued Date</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {passkeys.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50 transition">
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <code className="px-2 py-0.5 rounded bg-slate-900 text-amber-400 font-mono font-bold text-[11px]">
-                            {p.passkey}
-                          </code>
-                          <button
-                            onClick={() => handleCopy(p.passkey)}
-                            className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
-                            title="Copy passkey"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <strong className="text-slate-900 block font-bold">{p.staffName}</strong>
-                        <span className="text-[10px] text-slate-500">{p.role}</span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          p.wing === 'academic' ? 'bg-blue-100 text-blue-800' :
-                          p.wing === 'bursary' ? 'bg-emerald-100 text-emerald-800' :
-                          p.wing === 'admin' ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800'
-                        }`}>
-                          {p.wing}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="text-[11px] font-bold text-slate-700 uppercase">
-                          {p.arm}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[10px]">
-                        {p.issuedDate}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          <Check className="h-3 w-3" />
-                          Active
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => handleRevokePass(p.id, p.staffName)}
-                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] border border-rose-200 transition cursor-pointer"
-                          title="Revoke passkey"
-                        >
-                          Revoke
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="p-4 rounded-xl border bg-slate-50 border-slate-200 space-y-2">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Active Server Identity</span>
+                <div className="text-sm font-bold text-slate-900">{currentUser?.fullName || 'Not Signed In'}</div>
+                <div className="text-xs text-slate-600 font-mono">{currentUser?.email || 'N/A'}</div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[10px] font-mono font-bold uppercase bg-slate-900 text-white px-2 py-0.5 rounded">
+                    Role: {currentUser?.role || 'Guest'}
+                  </span>
+                  {currentUser?.isSuperAdmin && (
+                    <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-900 px-2 py-0.5 rounded border border-amber-300">
+                      Super Admin
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl border bg-slate-50 border-slate-200 space-y-2">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Security Hardening Standards</span>
+                <ul className="text-xs text-slate-600 space-y-1">
+                  <li>• <strong>Argon2id:</strong> Enterprise-grade password & PIN verification</li>
+                  <li>• <strong>AES-256-GCM:</strong> Application-level authenticated field encryption</li>
+                  <li>• <strong>HTTP-Only Cookie:</strong> Secure JWT session transport</li>
+                  <li>• <strong>CSRF Defense:</strong> Cryptographic token validation on state-modifying requests</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
@@ -1477,16 +1190,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <AccountRequestsManager />
         </div>
       )}
-
-      {/* Access Management Modal */}
-      <AccessManagementModal
-        isOpen={isPasskeyModalOpen}
-        onClose={() => {
-          setIsPasskeyModalOpen(false);
-          refreshPasskeys();
-        }}
-        initialWingFilter="bursary"
-      />
     </div>
   );
 };
