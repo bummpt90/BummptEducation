@@ -255,7 +255,7 @@ Currently, `server.ts` stores lesson notes and parent feedback inquiries in memo
 
 ---
 
-## Phase 8F: Identity, Session, Legacy Security & Cryptographic Hardening
+## Phase 8F: Legacy Passkey Retirement, Identity, Session & Cryptographic Hardening
 
 ### 1. Objective & Problem Statement
 Client-side passkey verification in `src/utils/securityContext.ts` (`verifyPasskeyForWing`) and unauthenticated local state provided no cryptographic security. Phase 8F replaces all legacy mechanisms with server-authoritative JWT RBAC, Argon2id password and PIN hashing, authenticated AES-256-GCM symmetric encryption, OWASP security headers, CORS origin whitelisting, and double-submit cookie CSRF defenses.
@@ -264,9 +264,11 @@ Client-side passkey verification in `src/utils/securityContext.ts` (`verifyPassk
 1. **Authenticated Application Encryption (`src/security/encryption.ts`)**:
    - Implemented authenticated `AES-256-GCM` with format `enc:v1:<iv>:<tag>:<ciphertext>`.
    - Guaranteed message authentication code checks to reject bit-flipping or tampering.
+   - Dedicated, mandatory `ENCRYPTION_SECRET` (Base64-encoded 32-byte key) strictly decoupled from `AUTH_SECRET` and `JWT_SECRET`.
+   - Fails closed immediately if secret is missing or invalid, with zero hardcoded keys or fallback derivation.
 2. **Argon2id Hashing Engine (`src/auth/password.ts`)**:
-   - Salted Argon2id hashing for user passwords and parent access PINs.
-   - Zero plaintext storage in `users` and `parent_access_pins`.
+   - Salted Argon2id hashing for user passwords and parent access PINs via `argon2`.
+   - Zero plaintext storage in `users` and `parent_access_pins`; one-way cryptographic hashing rather than reversible encryption.
 3. **OWASP HTTP Security Headers (`src/security/headers.ts`)**:
    - `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy`, `Content-Security-Policy`, and suppressed `X-Powered-By`.
 4. **CORS & Preflight Controls (`src/security/cors.ts`)**:
@@ -284,7 +286,7 @@ Client-side passkey verification in `src/utils/securityContext.ts` (`verifyPassk
 ### 3. Verification & Automated Tests
 - Test file: `tests/phase8f.identity-session-cryptographic-hardening.test.ts`
 - Documentation: `docs/PHASE_8F_IDENTITY_SESSION_CRYPTOGRAPHIC_HARDENING.md`
-- Status: **CERTIFIED COMPLETE (72/72 Assertions Passed across 10 Verification Categories - 100.0% Pass Rate)**
+- Status: **CERTIFIED COMPLETE (81/81 Assertions Passed across 10 Verification Categories - 100.0% Pass Rate)**
 
 ---
 

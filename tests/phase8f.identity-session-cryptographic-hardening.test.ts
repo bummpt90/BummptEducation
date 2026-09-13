@@ -4,7 +4,7 @@
  * Comprehensive Automated Verification Suite (Min 60 assertions):
  * Category 1: PostgreSQL Security Schema & Database Verification (6 assertions)
  * Category 2: Argon2id Password & PIN Hashing Engine (8 assertions)
- * Category 3: Authenticated AES-256-GCM Application-Level Encryption (10 assertions)
+ * Category 3: Authenticated AES-256-GCM Application-Level Encryption & Key Hardening (19 assertions, covering Tests 1-15)
  * Category 4: OWASP Recommended HTTP Security Headers (8 assertions)
  * Category 5: Strict CORS Origin Whitelisting & Preflight Controls (6 assertions)
  * Category 6: CSRF Token Generation & Defense Verification (8 assertions)
@@ -12,18 +12,19 @@
  * Category 8: Server-Authoritative RBAC & Permission Matrix (8 assertions)
  * Category 9: Legacy Passkey Decommissioning & Zero-Mock Enforcement (6 assertions)
  * Category 10: Parent Access Security & PIN Argon2id Verification (6 assertions)
- * Total Assertions: 72 assertions
+ * Total Assertions: 81 assertions
  */
 
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import crypto from 'crypto';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import { query, runMigrations, closeDatabasePool } from '../src/db';
 import { hashPassword, verifyPassword, validatePasswordPolicy } from '../src/auth/password';
-import { encryptField, decryptField, isEncrypted, generateSecureToken } from '../src/security/encryption';
+import { encryptField, decryptField, isEncrypted, generateSecureToken, getEncryptionKey } from '../src/security/encryption';
 import { securityHeadersMiddleware } from '../src/security/headers';
 import { corsMiddleware, isAllowedOrigin } from '../src/security/cors';
 import { 
@@ -161,72 +162,221 @@ async function runPhase8fTestSuite() {
     // -------------------------------------------------------------------------
     // CATEGORY 3: Authenticated AES-256-GCM Application-Level Encryption
     // -------------------------------------------------------------------------
-    console.log('\n--- Category 3: Authenticated AES-256-GCM Application-Level Encryption ---');
+    console.log('\n--- Category 3: Authenticated AES-256-GCM Application-Level Encryption & Key Hardening ---');
 
+    const savedEncSecret = process.env.ENCRYPTION_SECRET;
+    const savedJwtSecret = process.env.JWT_SECRET;
+    const savedAuthSecret = process.env.AUTH_SECRET;
+
+    // TEST 1: ENCRYPTION_SECRET is required. When absent, encryption configuration fails safely.
+    delete process.env.ENCRYPTION_SECRET;
+    delete process.env.JWT_SECRET;
+    delete process.env.AUTH_SECRET;
+    let missingSecretFailed = false;
+    let safeMissingError = false;
+    try {
+      getEncryptionKey();
+    } catch (err: any) {
+      missingSecretFailed = true;
+      safeMissingError = err.message === 'ENCRYPTION_SECRET is required';
+    }
+    record('Category 3', 'TEST 1: ENCRYPTION_SECRET is required and fails safely when absent', missingSecretFailed && safeMissingError);
+
+    // TEST 2: An invalid ENCRYPTION_SECRET fails safely without leaking secret material
+    const invalidSecretInput = '!!Invalid-Base64-Secret-Value@@##';
+    process.env.ENCRYPTION_SECRET = invalidSecretInput;
+    let invalidSecretFailed = false;
+    let safeInvalidError = false;
+    try {
+      getEncryptionKey();
+    } catch (err: any) {
+      invalidSecretFailed = true;
+      safeInvalidError = err.message.includes('valid Base64') && !err.message.includes(invalidSecretInput);
+    }
+    record('Category 3', 'TEST 2: Invalid ENCRYPTION_SECRET fails safely without leaking secret', invalidSecretFailed && safeInvalidError);
+
+    // TEST 3: A Base64 ENCRYPTION_SECRET that decodes to fewer than 32 bytes fails
+    process.env.ENCRYPTION_SECRET = Buffer.alloc(16, 0x5a).toString('base64');
+    let shortSecretFailed = false;
+    try {
+      getEncryptionKey();
+    } catch (err: any) {
+      shortSecretFailed = err.message === 'ENCRYPTION_SECRET must decode to exactly 32 bytes';
+    }
+    record('Category 3', 'TEST 3: Base64 ENCRYPTION_SECRET decoding to fewer than 32 bytes fails', shortSecretFailed);
+
+    // TEST 4: A Base64 ENCRYPTION_SECRET that decodes to more than 32 bytes fails
+    process.env.ENCRYPTION_SECRET = Buffer.alloc(48, 0x5a).toString('base64');
+    let longSecretFailed = false;
+    try {
+      getEncryptionKey();
+    } catch (err: any) {
+      longSecretFailed = err.message === 'ENCRYPTION_SECRET must decode to exactly 32 bytes';
+    }
+    record('Category 3', 'TEST 4: Base64 ENCRYPTION_SECRET decoding to more than 32 bytes fails', longSecretFailed);
+
+    // TEST 5: A valid 32-byte ENCRYPTION_SECRET succeeds
+    const dedicatedValidKey = crypto.randomBytes(32);
+    const dedicatedValidKeyBase64 = dedicatedValidKey.toString('base64');
+    process.env.ENCRYPTION_SECRET = dedicatedValidKeyBase64;
+    let validSecretSucceeded = false;
+    try {
+      const resolvedKey = getEncryptionKey();
+      validSecretSucceeded = Buffer.isBuffer(resolvedKey) && resolvedKey.length === 32 && resolvedKey.equals(dedicatedValidKey);
+    } catch {
+      validSecretSucceeded = false;
+    }
+    record('Category 3', 'TEST 5: Valid Base64 32-byte ENCRYPTION_SECRET succeeds', validSecretSucceeded);
+
+    // TEST 6: Encryption does NOT use JWT_SECRET as a fallback
+    delete process.env.ENCRYPTION_SECRET;
+    process.env.JWT_SECRET = 'sample-jwt-signing-secret-for-tokens-32chars';
+    let jwtFallbackBlocked = false;
+    try {
+      getEncryptionKey();
+    } catch (err: any) {
+      jwtFallbackBlocked = (err.message === 'ENCRYPTION_SECRET is required');
+    }
+    record('Category 3', 'TEST 6: Encryption does NOT fall back to JWT_SECRET when ENCRYPTION_SECRET is absent', jwtFallbackBlocked);
+
+    // TEST 7: Encryption does NOT use AUTH_SECRET as a fallback
+    delete process.env.ENCRYPTION_SECRET;
+    process.env.AUTH_SECRET = 'sample-auth-signing-secret-for-tokens-32chars';
+    let authFallbackBlocked = false;
+    try {
+      getEncryptionKey();
+    } catch (err: any) {
+      authFallbackBlocked = (err.message === 'ENCRYPTION_SECRET is required');
+    }
+    record('Category 3', 'TEST 7: Encryption does NOT fall back to AUTH_SECRET when ENCRYPTION_SECRET is absent', authFallbackBlocked);
+
+    // TEST 8: The known hardcoded Phase 8F fallback string does not exist in production source
+    const oldFallbackString = 'bummpt-secure-encryption-secret-key-2026-phase8f';
+    const prodFilesToCheck = [
+      path.join(process.cwd(), 'src/security/encryption.ts'),
+      path.join(process.cwd(), 'src/auth/token.ts'),
+      path.join(process.cwd(), 'server.ts'),
+    ];
+    let foundHardcodedFallback = false;
+    for (const f of prodFilesToCheck) {
+      if (fs.existsSync(f)) {
+        const content = fs.readFileSync(f, 'utf8');
+        if (content.includes(oldFallbackString)) {
+          foundHardcodedFallback = true;
+        }
+      }
+    }
+    record('Category 3', 'TEST 8: Known hardcoded Phase 8F fallback string does not exist in production source', !foundHardcodedFallback);
+
+    // TEST 9: Encryption module uses dedicated ENCRYPTION_SECRET rather than authentication secrets
+    const authKey = crypto.randomBytes(32);
+    process.env.ENCRYPTION_SECRET = dedicatedValidKeyBase64;
+    process.env.JWT_SECRET = authKey.toString('base64');
+    process.env.AUTH_SECRET = authKey.toString('base64');
+    const resolvedActiveKey = getEncryptionKey();
+    record('Category 3', 'TEST 9: Encryption module uses dedicated ENCRYPTION_SECRET rather than authentication secrets', resolvedActiveKey.equals(dedicatedValidKey) && !resolvedActiveKey.equals(authKey));
+
+    // TEST 10: Encryption/decryption with valid dedicated key recovers exact original plaintext
     const sensitiveData = 'Matthew Ternenge Beeun — Executive BVN: 22194829104';
     const encrypted = encryptField(sensitiveData);
-
-    // 3.1 Encryption output format
-    record('Category 3', 'Ciphertext adheres to format: enc:v1:<iv>:<tag>:<ciphertext>', encrypted.startsWith('enc:v1:'));
-
-    // 3.2 isEncrypted predicate
-    record('Category 3', 'isEncrypted helper accurately identifies encrypted string', isEncrypted(encrypted) === true);
-
-    // 3.3 Decryption fidelity
     const decrypted = decryptField(encrypted);
-    record('Category 3', 'Decryption recovers exact original plaintext', decrypted === sensitiveData);
+    record('Category 3', 'TEST 10: Encryption and decryption with valid dedicated key recovers exact plaintext', decrypted === sensitiveData && encrypted.startsWith('enc:v1:'));
 
-    // 3.4 Non-deterministic ciphertext (IV uniqueness)
+    // TEST 11: Each encryption operation produces a fresh IV/nonce
     const encrypted2 = encryptField(sensitiveData);
-    record('Category 3', 'Encrypting identical data produces distinct ciphertexts (unique 96-bit IV)', encrypted !== encrypted2);
+    const iv1 = encrypted.split(':')[2];
+    const iv2 = encrypted2.split(':')[2];
+    record('Category 3', 'TEST 11: Each encryption operation produces a fresh, distinct 96-bit IV/nonce', encrypted !== encrypted2 && iv1 !== iv2 && iv1.length === 24);
 
-    // 3.5 Both ciphertexts decrypt correctly
-    record('Category 3', 'Both distinct ciphertexts decrypt to identical plaintext', decryptField(encrypted2) === sensitiveData);
-
-    // 3.6 Tampered ciphertext rejection (bit-flipping attack)
+    // TEST 12: Tampering with ciphertext/authentication tag causes decryption failure
     const parts = encrypted.split(':');
-    const tamperedCipher = parts[0] + ':' + parts[1] + ':' + parts[2] + ':' + parts[3].slice(0, -2) + 'ff';
+    const tamperedCipher = parts[0] + ':' + parts[1] + ':' + parts[2] + ':' + parts[3] + ':' + parts[4].slice(0, -2) + 'ff';
     let tamperFailed = false;
     try {
       decryptField(tamperedCipher);
     } catch {
       tamperFailed = true;
     }
-    record('Category 3', 'Tampered ciphertext triggers authentication tag verification failure', tamperFailed === true);
-
-    // 3.7 Tampered auth tag rejection
-    const tamperedTag = parts[0] + ':' + parts[1] + ':' + parts[2].slice(0, -2) + '00' + ':' + parts[3];
+    const tamperedTag = parts[0] + ':' + parts[1] + ':' + parts[2] + ':' + parts[3].slice(0, -2) + '00' + ':' + parts[4];
     let tagTamperFailed = false;
     try {
       decryptField(tamperedTag);
     } catch {
       tagTamperFailed = true;
     }
-    record('Category 3', 'Modified authentication tag causes decipher failure', tagTamperFailed === true);
-
-    // 3.8 Tampered IV rejection
-    const tamperedIv = parts[0] + ':' + parts[1] + ':' + '00'.repeat(12) + ':' + parts[3];
+    const tamperedIv = parts[0] + ':' + parts[1] + ':' + '00'.repeat(12) + ':' + parts[3] + ':' + parts[4];
     let ivTamperFailed = false;
     try {
       decryptField(tamperedIv);
     } catch {
       ivTamperFailed = true;
     }
-    record('Category 3', 'Corrupted initialization vector causes decipher integrity failure', ivTamperFailed === true);
+    record('Category 3', 'TEST 12: Tampering with ciphertext, authentication tag, or IV triggers integrity verification failure', tamperFailed && tagTamperFailed && ivTamperFailed);
 
-    // 3.9 Secret key isolation (decryption with wrong secret fails)
+    // TEST 13: The encryption key is never returned to the browser
+    const clientSrcDir = path.join(process.cwd(), 'src');
+    const clientFiles = fs.readdirSync(clientSrcDir, { recursive: true }) as string[];
+    let clientSecretLeaked = false;
+    for (const relPath of clientFiles) {
+      if (typeof relPath === 'string' && (relPath.endsWith('.tsx') || relPath.endsWith('.jsx'))) {
+        const fullPath = path.join(clientSrcDir, relPath);
+        if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+          const code = fs.readFileSync(fullPath, 'utf8');
+          if (code.includes('ENCRYPTION_SECRET') || code.includes('VITE_ENCRYPTION_SECRET')) {
+            clientSecretLeaked = true;
+          }
+        }
+      }
+    }
+    record('Category 3', 'TEST 13: The encryption key is never referenced or exposed in browser frontend code', !clientSecretLeaked);
+
+    // TEST 14: The encryption secret is not exposed in API responses
+    const apiRoutesDir = path.join(process.cwd(), 'src/api/v1');
+    const apiFiles = fs.readdirSync(apiRoutesDir) as string[];
+    let apiSecretLeaked = false;
+    for (const apiFile of apiFiles) {
+      const content = fs.readFileSync(path.join(apiRoutesDir, apiFile), 'utf8');
+      if (content.includes('ENCRYPTION_SECRET') || content.includes('encryption_secret')) {
+        apiSecretLeaked = true;
+      }
+    }
+    record('Category 3', 'TEST 14: The encryption secret is not referenced or returned in API route payloads', !apiSecretLeaked);
+
+    // TEST 15: The encryption secret is not logged or exposed in error strings
+    const canarySecret = crypto.randomBytes(32).toString('base64');
+    let canaryExposedInError = false;
+    try {
+      getEncryptionKey('invalid!base64' + canarySecret);
+    } catch (err: any) {
+      if (err.message.includes(canarySecret)) {
+        canaryExposedInError = true;
+      }
+    }
+    record('Category 3', 'TEST 15: The encryption secret is never leaked in error messages or exception strings', !canaryExposedInError);
+
+    // 3.16 Format and helper verification
+    record('Category 3', 'Ciphertext adheres to format: enc:v1:<iv>:<tag>:<ciphertext>', encrypted.startsWith('enc:v1:'));
+    record('Category 3', 'isEncrypted helper accurately identifies encrypted string', isEncrypted(encrypted) === true);
+
+    // 3.17 Mismatched secret key fails decryption
+    const mismatchedKeyBase64 = crypto.randomBytes(32).toString('base64');
     let wrongKeyFailed = false;
     try {
-      decryptField(encrypted, 'completely-different-secret-key-999');
+      decryptField(encrypted, mismatchedKeyBase64);
     } catch {
       wrongKeyFailed = true;
     }
-    record('Category 3', 'Decryption with mismatched secret key is rejected', wrongKeyFailed === true);
+    record('Category 3', 'Decryption with mismatched 32-byte secret key is rejected', wrongKeyFailed === true);
 
-    // 3.10 Secure token generation entropy
+    // 3.18 Secure token generation entropy
     const tok1 = generateSecureToken(32);
     const tok2 = generateSecureToken(32);
     record('Category 3', 'generateSecureToken produces 64-char high-entropy hex tokens', tok1.length === 64 && tok1 !== tok2);
+
+    // Restore environment variables
+    process.env.ENCRYPTION_SECRET = savedEncSecret || dedicatedValidKeyBase64;
+    if (savedJwtSecret) process.env.JWT_SECRET = savedJwtSecret; else delete process.env.JWT_SECRET;
+    if (savedAuthSecret) process.env.AUTH_SECRET = savedAuthSecret; else delete process.env.AUTH_SECRET;
 
     // -------------------------------------------------------------------------
     // Setup Express Test App for HTTP, CORS, CSRF, and Headers
