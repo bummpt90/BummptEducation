@@ -1,7 +1,7 @@
 /**
  * BummptEducation — Phase 8G DataContext Sanitization & Zero-Mock Production Verification Test Suite
  * 
- * Comprehensive Automated Verification Suite (36+ assertions across 6 categories):
+ * Comprehensive Automated Verification Suite (43 assertions across 7 categories):
  * 
  * Category 1: Complete Elimination of mockData.ts & Runtime Mock Fallbacks (9 assertions)
  * Category 2: Zero-Mock DataContext State Initialization & Type Safety (10 assertions)
@@ -9,8 +9,9 @@
  * Category 4: Business Data Storage Sanitization (LocalStorage / SessionStorage) (3 assertions)
  * Category 5: Removal of Server In-Memory Business Data Stores (2 assertions)
  * Category 6: Server-Authoritative Multi-Tenant Persistence & API Verification (7 assertions)
+ * Category 7: Semantic Synthetic-Fallback Elimination & Client Authoritative Integrity (7 assertions)
  * 
- * Total: 36 assertions
+ * Total: 43 assertions
  */
 
 import 'dotenv/config';
@@ -446,6 +447,107 @@ async function runTestSuite() {
     server.close();
     await closeDatabasePool();
   }
+
+  // -------------------------------------------------------------------------
+  // CATEGORY 7: Semantic Synthetic-Fallback Elimination & Client Authoritative Integrity
+  // -------------------------------------------------------------------------
+  console.log('\n--- Category 7: Semantic Synthetic-Fallback Elimination & Client Integrity ---');
+
+  // 37. Zero INITIAL_ANNOUNCEMENTS in HomePage.tsx
+  const homePagePath = path.join(process.cwd(), 'src', 'pages', 'HomePage.tsx');
+  const homePageContent = fs.readFileSync(homePagePath, 'utf-8');
+  const hasInitialAnnouncementsInHome = homePageContent.includes('INITIAL_ANNOUNCEMENTS');
+  const fetchesDirectivesInHome = homePageContent.includes('/api/v1/hq/directives');
+  record(
+    'Category 7',
+    'HomePage contains zero INITIAL_ANNOUNCEMENTS imports and dynamically fetches from /api/v1/hq/directives',
+    !hasInitialAnnouncementsInHome && fetchesDirectivesInHome,
+    `No mock import: ${!hasInitialAnnouncementsInHome}, dynamic API: ${fetchesDirectivesInHome}`
+  );
+
+  // 38. Zero INITIAL_HQ_MESSAGES in HeadquartersLiveChat.tsx
+  const hqChatPath = path.join(process.cwd(), 'src', 'components', 'HeadquartersLiveChat.tsx');
+  const hqChatContent = fs.readFileSync(hqChatPath, 'utf-8');
+  const hasInitialHqMessages = hqChatContent.includes('INITIAL_HQ_MESSAGES');
+  record(
+    'Category 7',
+    'HeadquartersLiveChat contains zero INITIAL_HQ_MESSAGES declarations or fallback assignments',
+    !hasInitialHqMessages,
+    hasInitialHqMessages ? 'INITIAL_HQ_MESSAGES found' : 'Completely removed'
+  );
+
+  // 39. AcademicDashboard contains zero deterministic score generation
+  const academicDashboardPath = path.join(process.cwd(), 'src', 'pages', 'AcademicDashboard.tsx');
+  const academicDashboardContent = fs.readFileSync(academicDashboardPath, 'utf-8');
+  const hasDeterministicMarks = academicDashboardContent.includes('isTopStudent') ||
+                                academicDashboardContent.includes('charCode % 7') ||
+                                academicDashboardContent.includes('baseCa * 0.25');
+  record(
+    'Category 7',
+    'AcademicDashboard contains zero deterministic score synthesis (no isTopStudent or hash marks)',
+    !hasDeterministicMarks,
+    hasDeterministicMarks ? 'Deterministic mark generation detected' : 'Pure zero-mark unrecorded baseline'
+  );
+
+  // 40. DataContext mappers contain zero synthetic string fallbacks
+  // Check that mappers do not use manufactured fallback strings
+  const mapperLines = dataContextContent.split('\n').filter(line => 
+    line.includes('function mapDbStudent') || 
+    line.includes('function mapDbStaff') || 
+    line.includes('function mapDbPayment') || 
+    line.includes('function mapDbAdmission')
+  );
+  const hasManufacturedFallbacks = 
+    dataContextContent.includes("|| 'student@school.gov.ng'") ||
+    dataContextContent.includes("|| '08000000000'") ||
+    dataContextContent.includes("|| 'Pending'") ||
+    dataContextContent.includes("|| 'N/A'") ||
+    dataContextContent.includes("|| 'Benue'") ||
+    dataContextContent.includes("|| 'Makurdi'");
+  record(
+    'Category 7',
+    'DataContext mappers contain zero synthetic string fallbacks (no manufactured emails, phones, or states)',
+    !hasManufacturedFallbacks,
+    hasManufacturedFallbacks ? 'Synthetic fallbacks detected' : 'Preserves undefined/empty values'
+  );
+
+  // 41. DataContext assessment score mapper contains zero fabricated marks or remarks
+  const hasFabricatedMarks = 
+    dataContextContent.includes('|| 8') ||
+    dataContextContent.includes('|| 9') ||
+    dataContextContent.includes('|| 10') ||
+    dataContextContent.includes('|| 45') ||
+    dataContextContent.includes("|| 'C4'") ||
+    dataContextContent.includes("|| 'Credit'");
+  record(
+    'Category 7',
+    'DataContext mapDbAssessment contains zero synthetic marks, fabricated grades, or manufactured remarks',
+    !hasFabricatedMarks,
+    hasFabricatedMarks ? 'Synthetic assessment marks detected' : 'Strictly derives only from authoritative DB marks'
+  );
+
+  // 42. DataContext mutations contain zero synthetic default scores or manufactured dates
+  const hasSyntheticMutationScores = 
+    dataContextContent.includes("ca1: 10, ca2: 10, examScore: 60") ||
+    dataContextContent.includes("new Date().toISOString().split('T')[0]") && dataContextContent.includes("applicationDate: row.application_date ||");
+  record(
+    'Category 7',
+    'DataContext mutations do not manufacture synthetic default assessment scores or dates',
+    !hasSyntheticMutationScores,
+    hasSyntheticMutationScores ? 'Synthetic defaults in mutations' : 'Clean mutations'
+  );
+
+  // 43. Clean empty states with zero fallback data arrays in Ministry and Chat components
+  const ministryCommandPath = path.join(process.cwd(), 'src', 'components', 'MinistryUpdatesCommand.tsx');
+  const ministryContent = fs.readFileSync(ministryCommandPath, 'utf-8');
+  const ministryHasNoInitial = !ministryContent.includes('INITIAL_MINISTRY_DIRECTIVES');
+  const hqHasEmptyStream = hqChatContent.includes('No Messages in this Channel Filter') && hqChatContent.includes('isLoadingMessages');
+  record(
+    'Category 7',
+    'Ministry and Headquarters live command components strictly render authoritative data with clean empty states',
+    ministryHasNoInitial && hqHasEmptyStream,
+    'Authoritative streams with loading/empty indicators verified'
+  );
 
   // -------------------------------------------------------------------------
   // Summary

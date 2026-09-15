@@ -274,29 +274,12 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
     }
   }, [selectedClass, classStudents, activeScoresheetStudentId]);
 
-  // Helper to get or build deterministic single subject score
+  // Helper to get authoritative single subject score (or zero unrecorded mark)
   const getSubjectScore = (studentId: string, subjectId: string): AssessmentScore => {
     const existing = localAssessments.find(
       (a) => a.studentId === studentId && a.subjectId === subjectId && a.term === selectedTerm
     );
     if (existing) return existing;
-
-    const stu = students.find((s) => s.id === studentId);
-    const stuArm = stu?.arm || currentArm;
-    const isTopStudent = studentId === 'STU-001' || studentId === 'STU-KG-001' || studentId === 'STU-PRI-001';
-    
-    // Deterministic base marks based on student ID hash
-    const charCode = studentId.charCodeAt(studentId.length - 1) || 0;
-    const baseCa = isTopStudent ? 36 : 30 + (charCode % 7);
-    const baseExam = isTopStudent ? 54 : 42 + ((charCode * 3) % 15);
-    const total = baseCa + baseExam;
-    
-    const grade = stuArm === 'primary' 
-      ? calculatePrimaryGrade(total).grade 
-      : calculateGrade(total).grade;
-    const remark = stuArm === 'primary'
-      ? calculatePrimaryGrade(total).remark
-      : calculateGrade(total).remark;
 
     return {
       studentId,
@@ -304,15 +287,15 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
       classLevel: selectedClass,
       term: selectedTerm,
       academicYear: selectedSession,
-      ca1: Math.round(baseCa * 0.25 * 10) / 10,
-      ca2: Math.round(baseCa * 0.25 * 10) / 10,
-      assignment: Math.round(baseCa * 0.25 * 10) / 10,
-      attendance: Math.round(baseCa * 0.25 * 10) / 10,
-      totalCa: baseCa,
-      examScore: baseExam,
-      totalScore: total,
-      grade: grade as any,
-      remark,
+      ca1: 0,
+      ca2: 0,
+      assignment: 0,
+      attendance: 0,
+      totalCa: 0,
+      examScore: 0,
+      totalScore: 0,
+      grade: '-' as any,
+      remark: 'Not recorded',
     };
   };
 

@@ -168,24 +168,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Map server DB student row to UI Student interface
   const mapDbStudent = useCallback((s: any, classLevelMap: Record<string, ClassLevel>): Student => {
-    const classLevel = classLevelMap[s.current_class_id] || s.current_class || s.currentClass || 'SSS 2 Science';
-    const arm = s.arm || getSchoolArm(classLevel);
+    const classLevel = (classLevelMap[s.current_class_id] || s.current_class || s.currentClass || '') as ClassLevel;
+    const arm = s.arm || (classLevel ? getSchoolArm(classLevel) : 'secondary');
     
     return {
       id: s.id,
       admissionNumber: s.admission_number || s.admissionNumber || `ADM-${s.id.slice(0, 6)}`,
       fullName: s.full_name || s.fullName || `${s.first_name || ''} ${s.surname || ''}`.trim(),
       gender: s.gender === 'Female' ? 'Female' : 'Male',
-      dateOfBirth: s.date_of_birth ? new Date(s.date_of_birth).toISOString().split('T')[0] : '2008-05-14',
+      dateOfBirth: s.date_of_birth ? new Date(s.date_of_birth).toISOString().split('T')[0] : (s.dateOfBirth || undefined),
       currentClass: classLevel,
       arm: arm,
-      house: s.house || 'Eagle House (Blue)',
-      guardianName: s.guardian_name || s.guardianName || 'Guardian',
-      guardianPhone: s.guardian_phone || s.guardianPhone || '+234 800 000 0000',
-      guardianEmail: s.guardian_email || s.guardianEmail || 'parent@bummpt.edu.ng',
-      address: s.address || 'Makurdi, Benue State',
-      stateOfOrigin: s.state_of_origin || s.stateOfOrigin || 'Benue',
-      dateEnrolled: s.date_enrolled ? new Date(s.date_enrolled).toISOString().split('T')[0] : '2024-09-10',
+      house: s.house || undefined,
+      guardianName: s.guardian_name || s.guardianName || undefined,
+      guardianPhone: s.guardian_phone || s.guardianPhone || undefined,
+      guardianEmail: s.guardian_email || s.guardianEmail || undefined,
+      address: s.address || undefined,
+      stateOfOrigin: s.state_of_origin || s.stateOfOrigin || undefined,
+      dateEnrolled: s.date_enrolled ? new Date(s.date_enrolled).toISOString().split('T')[0] : (s.dateEnrolled || undefined),
       status: s.status === 'Withdrawn' || s.status === 'Graduated' || s.status === 'Suspended' ? s.status : 'Active',
       isPrefect: !!s.is_prefect,
       prefectRole: s.prefect_role || undefined,
@@ -201,23 +201,23 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       staffId: st.staff_id_number || st.staffId || `STF-${st.id.slice(0, 6).toUpperCase()}`,
       fullName: st.full_name || st.fullName || `${st.first_name || ''} ${st.surname || ''}`.trim(),
       type: st.staff_type === 'Non-Teaching' ? 'Non-Teaching' : 'Teaching',
-      departmentId: st.department_id || st.departmentId || 'Academics',
+      departmentId: st.department_id || st.departmentId || '',
       arm: st.arm || 'All',
-      designation: st.designation || 'Master / Instructor',
-      role: st.role || 'Subject Teacher',
+      designation: st.designation || '',
+      role: (st.role as any) || 'Staff',
       assignedClass: assignedClass || st.assignedClass,
-      qualifications: st.qualifications || 'B.Ed (TRCN)',
-      email: st.email || 'staff@anchor.bummpt.edu.ng',
-      phone: st.phone || '+234 800 000 0000',
-      dateJoined: st.date_joined ? new Date(st.date_joined).toISOString().split('T')[0] : '2024-01-10',
+      qualifications: st.qualifications || '',
+      email: st.email || '',
+      phone: st.phone || '',
+      dateJoined: st.date_joined ? new Date(st.date_joined).toISOString().split('T')[0] : (st.dateJoined || ''),
       status: st.status === 'On Leave' || st.status === 'Resigned' ? st.status : 'Active',
     };
   }, []);
 
   // Map server DB payment row to UI FeePayment interface
   const mapDbPayment = useCallback((p: any, classLevelMap: Record<string, ClassLevel>): FeePayment => {
-    const classLevel = classLevelMap[p.class_id] || p.class_level || p.classLevel || 'SSS 2 Science';
-    const arm = p.arm || getSchoolArm(classLevel);
+    const classLevel = (classLevelMap[p.class_id] || p.class_level || p.classLevel || '') as ClassLevel;
+    const arm = p.arm || (classLevel ? getSchoolArm(classLevel) : 'secondary');
     const amountPaid = Number(p.amount_paid ?? p.amountPaid ?? 0);
     const totalBilled = Number(p.total_billed ?? p.totalBilled ?? amountPaid);
     const balance = Number(p.balance ?? Math.max(0, totalBilled - amountPaid));
@@ -228,80 +228,87 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       studentId: p.student_id || p.studentId || '',
       classLevel,
       arm,
-      term: p.term || '2nd Term',
-      academicYear: p.academic_year || '2025/2026',
+      term: (p.term || p.term_name || '') as any,
+      academicYear: (p.academic_year || p.session_name || '') as any,
       amountPaid,
       totalBilled,
       balance,
-      paymentDate: p.payment_date ? new Date(p.payment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      paymentMethod: p.payment_method || 'Bank Transfer',
-      status: balance <= 0 ? 'Fully Paid' : amountPaid > 0 ? 'Partial' : 'Unpaid',
-      collectedBy: p.collected_by || 'Bursary Clearance Desk',
+      paymentDate: p.payment_date ? new Date(p.payment_date).toISOString().split('T')[0] : (p.paymentDate || ''),
+      paymentMethod: (p.payment_method || p.paymentMethod || '') as any,
+      status: p.status || (balance <= 0 && amountPaid > 0 ? 'Fully Paid' : amountPaid > 0 ? 'Partial' : 'Unpaid'),
+      collectedBy: p.collected_by || p.collectedBy || '',
     };
   }, []);
 
   // Map server DB admission row to UI AdmissionApplication interface
   const mapDbAdmission = useCallback((a: any, classLevelMap: Record<string, ClassLevel>): AdmissionApplication => {
-    const appliedClass = classLevelMap[a.applied_class_id] || a.applied_class || a.appliedClass || 'JSS 1';
-    const arm = a.arm || getSchoolArm(appliedClass);
+    const appliedClass = (classLevelMap[a.applied_class_id] || a.applied_class || a.appliedClass || '') as ClassLevel;
+    const arm = a.arm || (appliedClass ? getSchoolArm(appliedClass) : 'secondary');
 
     return {
       id: a.id,
       applicationNumber: a.application_number || a.applicationNumber || `ADM-${a.id.slice(0, 6)}`,
-      studentName: a.applicant_name || a.applicantName || a.studentName || 'Applicant',
+      studentName: a.applicant_name || a.applicantName || a.studentName || '',
       appliedClass,
       arm,
-      guardianName: a.guardian_name || a.guardianName || 'Guardian',
-      guardianPhone: a.guardian_phone || a.guardianPhone || '+234 800 000 0000',
-      guardianEmail: a.guardian_email || a.guardianEmail || 'admissions@bummpt.edu.ng',
+      guardianName: a.guardian_name || a.guardianName || '',
+      guardianPhone: a.guardian_phone || a.guardianPhone || '',
+      guardianEmail: a.guardian_email || a.guardianEmail || '',
       previousSchool: a.previous_school || a.previousSchool || undefined,
-      entranceExamScore: a.entrance_exam_score ? Number(a.entrance_exam_score) : undefined,
-      interviewScore: a.interview_score ? Number(a.interview_score) : undefined,
+      entranceExamScore: (a.entrance_exam_score !== undefined && a.entrance_exam_score !== null) ? Number(a.entrance_exam_score) : (a.entranceExamScore !== undefined ? Number(a.entranceExamScore) : undefined),
+      interviewScore: (a.interview_score !== undefined && a.interview_score !== null) ? Number(a.interview_score) : (a.interviewScore !== undefined ? Number(a.interviewScore) : undefined),
       status: a.status || 'SUBMITTED',
-      submittedDate: a.submitted_at ? new Date(a.submitted_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      developmentalReadinessScore: a.readiness_score ? Number(a.readiness_score) : undefined,
-      immunizationCompleted: a.immunization_completed ?? true,
-      toiletTrained: a.toilet_trained ?? true,
+      submittedDate: a.submitted_at ? new Date(a.submitted_at).toISOString().split('T')[0] : (a.submittedDate || ''),
+      developmentalReadinessScore: (a.readiness_score !== undefined && a.readiness_score !== null) ? Number(a.readiness_score) : (a.developmentalReadinessScore !== undefined ? Number(a.developmentalReadinessScore) : undefined),
+      immunizationCompleted: a.immunization_completed !== undefined ? !!a.immunization_completed : (a.immunizationCompleted !== undefined ? !!a.immunizationCompleted : undefined),
+      toiletTrained: a.toilet_trained !== undefined ? !!a.toilet_trained : (a.toiletTrained !== undefined ? !!a.toiletTrained : undefined),
     };
   }, []);
 
   // Map server DB assessment row to UI AssessmentScore interface
   const mapDbAssessment = useCallback((ass: any, classLevelMap: Record<string, ClassLevel>): AssessmentScore => {
-    const classLevel = classLevelMap[ass.class_id] || ass.class_level || ass.classLevel || 'SSS 2 Science';
-    const ca1 = Number(ass.ca1_score ?? ass.ca1 ?? 8);
-    const ca2 = Number(ass.ca2_score ?? ass.ca2 ?? 8);
-    const assignment = Number(ass.assignment_score ?? ass.assignment ?? 9);
-    const attendance = Number(ass.attendance_score ?? ass.attendance ?? 10);
-    const totalCa = ca1 + ca2 + assignment + attendance;
-    const examScore = Number(ass.exam_score ?? ass.examScore ?? 45);
-    const totalScore = totalCa + examScore;
+    const classLevel = (classLevelMap[ass.class_id] || ass.class_level || ass.classLevel || '') as ClassLevel;
+    const ca1 = ass.ca1_score !== undefined && ass.ca1_score !== null ? Number(ass.ca1_score) : (ass.ca1 !== undefined && ass.ca1 !== null ? Number(ass.ca1) : undefined);
+    const ca2 = ass.ca2_score !== undefined && ass.ca2_score !== null ? Number(ass.ca2_score) : (ass.ca2 !== undefined && ass.ca2 !== null ? Number(ass.ca2) : undefined);
+    const assignment = ass.assignment_score !== undefined && ass.assignment_score !== null ? Number(ass.assignment_score) : (ass.assignment !== undefined && ass.assignment !== null ? Number(ass.assignment) : undefined);
+    const attendance = ass.attendance_score !== undefined && ass.attendance_score !== null ? Number(ass.attendance_score) : (ass.attendance !== undefined && ass.attendance !== null ? Number(ass.attendance) : undefined);
+    const examScore = ass.exam_score !== undefined && ass.exam_score !== null ? Number(ass.exam_score) : (ass.examScore !== undefined && ass.examScore !== null ? Number(ass.examScore) : undefined);
 
-    let grade = 'C4';
-    if (totalScore >= 75) grade = 'A1';
-    else if (totalScore >= 70) grade = 'B2';
-    else if (totalScore >= 65) grade = 'B3';
-    else if (totalScore >= 60) grade = 'C4';
-    else if (totalScore >= 55) grade = 'C5';
-    else if (totalScore >= 50) grade = 'C6';
-    else if (totalScore >= 45) grade = 'D7';
-    else if (totalScore >= 40) grade = 'E8';
-    else grade = 'F9';
+    const hasAnyCa = ca1 !== undefined || ca2 !== undefined || assignment !== undefined || attendance !== undefined;
+    const totalCa = hasAnyCa ? (ca1 || 0) + (ca2 || 0) + (assignment || 0) + (attendance || 0) : undefined;
+    const hasScores = totalCa !== undefined || examScore !== undefined;
+    const totalScore = hasScores ? (totalCa || 0) + (examScore || 0) : undefined;
+
+    let grade: string | undefined = undefined;
+    let remark: string | undefined = undefined;
+
+    if (totalScore !== undefined) {
+      if (totalScore >= 75) { grade = 'A1'; remark = 'Distinction'; }
+      else if (totalScore >= 70) { grade = 'B2'; remark = 'Very Good'; }
+      else if (totalScore >= 65) { grade = 'B3'; remark = 'Good'; }
+      else if (totalScore >= 60) { grade = 'C4'; remark = 'Credit'; }
+      else if (totalScore >= 55) { grade = 'C5'; remark = 'Credit'; }
+      else if (totalScore >= 50) { grade = 'C6'; remark = 'Credit'; }
+      else if (totalScore >= 45) { grade = 'D7'; remark = 'Pass'; }
+      else if (totalScore >= 40) { grade = 'E8'; remark = 'Pass'; }
+      else { grade = 'F9'; remark = 'Fail'; }
+    }
 
     return {
-      studentId: ass.student_id || ass.studentId,
-      subjectId: ass.subject_id || ass.subjectId,
+      studentId: ass.student_id || ass.studentId || '',
+      subjectId: ass.subject_id || ass.subjectId || '',
       classLevel,
-      term: ass.term || '2nd Term',
-      academicYear: ass.academic_year || '2025/2026',
-      ca1,
-      ca2,
-      assignment,
-      attendance,
-      totalCa,
-      examScore,
-      totalScore,
-      grade,
-      remark: totalScore >= 75 ? 'Distinction' : totalScore >= 60 ? 'Credit' : 'Pass',
+      term: (ass.term || ass.term_name || '') as any,
+      academicYear: (ass.academic_year || ass.session_name || '') as any,
+      ca1: ca1 ?? 0,
+      ca2: ca2 ?? 0,
+      assignment: assignment ?? 0,
+      attendance: attendance ?? 0,
+      totalCa: totalCa ?? 0,
+      examScore: examScore ?? 0,
+      totalScore: totalScore ?? 0,
+      grade: grade || (hasScores ? 'F9' : '-'),
+      remark: remark || (hasScores ? 'Fail' : 'Not recorded'),
     };
   }, []);
 
@@ -309,25 +316,27 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const mapDbFeeStructureToSchedules = useCallback((structures: any[], classLevelMap: Record<string, ClassLevel>): FeeSchedule[] => {
     const scheduleMap = new Map<string, FeeSchedule>();
     for (const s of structures) {
-      const classLevel = classLevelMap[s.class_id] || (s.class_level as ClassLevel) || 'SSS 2 Science';
-      const arm = getSchoolArm(classLevel);
-      if (!scheduleMap.has(classLevel)) {
-        scheduleMap.set(classLevel, {
+      const classLevel = (classLevelMap[s.class_id] || s.class_level || s.classLevel || '') as ClassLevel;
+      if (!classLevel) continue;
+      const arm = s.arm || getSchoolArm(classLevel);
+      const scheduleKey = `${classLevel}_${s.term_name || s.term || ''}_${s.session_name || s.academic_year || ''}`;
+      if (!scheduleMap.has(scheduleKey)) {
+        scheduleMap.set(scheduleKey, {
           classLevel,
           arm,
-          term: (s.term_name || '2nd Term') as any,
-          academicYear: (s.session_name || '2025/2026') as any,
+          term: (s.term_name || s.term || '') as any,
+          academicYear: (s.session_name || s.academic_year || s.academicYear || '') as any,
           items: [],
           totalAmount: 0,
         });
       }
-      const sched = scheduleMap.get(classLevel)!;
+      const sched = scheduleMap.get(scheduleKey)!;
       sched.items.push({
         id: s.id,
-        name: s.name,
+        name: s.name || '',
         amount: Number(s.amount || 0),
         isCompulsory: !!s.is_mandatory,
-        category: s.category_name || 'Tuition',
+        category: s.category_name || s.category || '',
       });
       sched.totalAmount += Number(s.amount || 0);
     }
@@ -607,8 +616,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           guardian_email: admissionData.guardianEmail,
           applied_class: admissionData.appliedClass,
           previous_school: admissionData.previousSchool,
-          entrance_exam_score: admissionData.entranceExamScore || 85,
-          interview_score: admissionData.interviewScore || 88,
+          entrance_exam_score: admissionData.entranceExamScore,
+          interview_score: admissionData.interviewScore,
         }),
       });
 
@@ -654,7 +663,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         body: JSON.stringify({
           student_id: paymentData.studentId,
           amount_paid: paymentData.amountPaid,
-          payment_method: paymentData.paymentMethod || 'Bank Transfer',
+          payment_method: paymentData.paymentMethod,
           term: paymentData.term,
           academic_year: paymentData.academicYear,
         }),
@@ -689,12 +698,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         credentials: 'include',
         body: JSON.stringify({
           student_id: scoreData.studentId,
-          class_id: scoreData.classId || classes[0]?.id,
+          class_id: scoreData.classId,
           subject_id: scoreData.subjectId,
-          term_id: scoreData.termId || 'term-2',
+          term_id: scoreData.termId,
+          academic_session_id: scoreData.sessionId,
           assessment_type: scoreData.assessmentType,
           score: scoreData.score,
-          max_score: scoreData.maxScore || 10,
+          max_score: scoreData.maxScore,
         }),
       });
 

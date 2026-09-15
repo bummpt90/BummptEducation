@@ -290,33 +290,40 @@ Client-side passkey verification in `src/utils/securityContext.ts` (`verifyPassk
 
 ---
 
-## Phase 8G: DataContext Sanitization & Zero-Mock Production Verification (Certified Complete)
+## Phase 8G & 8G-H: DataContext Sanitization, Semantic Fallback Elimination & Zero-Mock Production Verification (Certified Complete)
 
 ### 1. Objective & Problem Statement
-The final sub-phase severs the remaining fallback ties in `src/context/DataContext.tsx`. When the server returns 0 records, the context must preserve the empty state rather than populating `INITIAL_*` mock arrays.
+The final sub-phase severs all remaining fallback ties in `src/context/DataContext.tsx`, pages, and components. When the server returns 0 records, the context and components must preserve the empty state rather than populating `INITIAL_*` mock arrays or fabricating synthetic values (such as fake scores, manufactured phone numbers, placeholder emails, or deterministic hash marks).
 
 ### 2. Implementation Deliverables
 1. **Zero Runtime Mock Dependencies**:
    - `src/data/mockData.ts` permanently deleted from filesystem.
    - All runtime imports of `INITIAL_STUDENTS`, `INITIAL_STAFF`, `INITIAL_PAYMENTS`, `INITIAL_FEE_SCHEDULES`, `INITIAL_ADMISSIONS`, `INITIAL_ASSESSMENTS` eradicated.
    - Static curriculum reference data cleanly isolated in `src/data/reference/` (subjects, organogram, announcements).
-2. **DataContext Zero-Mock State & Lifecycle Management**:
+2. **Phase 8G-H: Semantic Synthetic-Fallback Elimination**:
+   - `DataContext.tsx` mappers (`mapDbStudent`, `mapDbStaff`, `mapDbPayment`, `mapDbAdmission`, `mapDbAssessment`, `mapDbFeeStructureToSchedules`) preserve genuine undefined/null states rather than defaulting to `'N/A'`, `'Pending'`, `'08000000000'`, `'student@school.gov.ng'`, `'Makurdi'`, or `'Benue'`.
+   - `mapDbAssessment` derives exclusively from authoritative continuous assessment and exam numbers without manufacturing default marks (`|| 8`, `|| 9`, `|| 10`, `|| 45`) or fabricated grades (`|| 'C4'`).
+   - `HomePage.tsx` eliminates `INITIAL_ANNOUNCEMENTS` and dynamically queries `/api/v1/hq/directives`.
+   - `HeadquartersLiveChat.tsx` eliminates `INITIAL_HQ_MESSAGES` fixture, connecting directly to live `/api/v1/hq/chat/messages` with dedicated loading and empty states.
+   - `AcademicDashboard.tsx` eliminates deterministic mark generation (`isTopStudent`, `charCode % 7`, `baseCa * 0.25`); unrecorded assessments render a clean unrecorded baseline without manufactured scores.
+   - `MinistryUpdatesCommand.tsx` renders authoritative circulars with resilient loading and empty states.
+3. **DataContext Zero-Mock State & Lifecycle Management**:
    - Initial domain states initialize to empty arrays `[]`.
    - Introduced `ResourceState` (`'LOADING' | 'SUCCESS' | 'EMPTY' | 'ERROR'`) and `DataContextStatus`.
    - Replaced ternary fallbacks in `refreshAll` with server-authoritative state assignments.
    - Failures set explicit `error` states and `ERROR` resource status; empty results set `EMPTY` resource status.
    - Authoritative fee structures mapped dynamically via `mapDbFeeStructureToSchedules`.
-3. **Storage Sanitization**:
+4. **Storage Sanitization**:
    - Business data persistence in `localStorage` eliminated.
    - `sessionStorage` strictly scoped to authentication credentials (`bummpt_token`, `bummpt_user`).
    - Legacy passkey stores completely removed.
-4. **Server In-Memory Decommissioning**:
+5. **Server In-Memory Decommissioning**:
    - `server.ts` contains zero in-memory volatile business stores; delegates 100% to PostgreSQL v1 API routers.
 
 ### 3. Verification & Automated Tests
 - Test file: `tests/phase8g.datacontext-zero-mock.test.ts` (`npm run test:phase8g`)
 - Documentation: `docs/PHASE_8G_DATACONTEXT_ZERO_MOCK_PRODUCTION_VERIFICATION.md`
-- Status: **CERTIFIED COMPLETE (36/36 Assertions Passed across 6 Verification Categories - 100.0% Pass Rate)**
+- Status: **CERTIFIED COMPLETE (43/43 Assertions Passed across 7 Verification Categories - 100.0% Pass Rate)**
 
 ---
 
@@ -328,7 +335,7 @@ All sub-phases of Phase 8 are certified and production verified:
 - **Phase 8D — Lesson Notes & Parent Feedback Server Authority:** CERTIFIED (49/49 Tests Passed)
 - **Phase 8E — Benue State HQ Telemetry & Ministry Directives:** CERTIFIED (142/142 Tests Passed)
 - **Phase 8F — Identity, Session & Cryptographic Hardening:** CERTIFIED (81/81 Tests Passed)
-- **Phase 8G — DataContext Sanitization & Zero-Mock Production:** CERTIFIED (36/36 Tests Passed)
+- **Phase 8G & 8G-H — DataContext Sanitization & Zero-Mock Production:** CERTIFIED (43/43 Tests Passed)
 
 ---
 

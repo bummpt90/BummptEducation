@@ -435,55 +435,70 @@ export const MinistryUpdatesCommand: React.FC<MinistryUpdatesCommandProps> = ({
               </div>
 
               <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
-                {directives.map((dir) => (
-                  <div key={dir.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3 hover:border-emerald-300 transition">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
-                            dir.priority === 'Executive Order' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
-                            dir.priority === 'Urgent / High Priority' ? 'bg-amber-100 text-amber-900 border border-amber-200' :
-                            'bg-blue-100 text-blue-900 border border-blue-200'
-                          }`}>
-                            {dir.priority}
-                          </span>
-                          <span className="text-[10px] font-mono font-bold text-slate-500">
-                            {dir.referenceNumber}
-                          </span>
-                          <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
-                            {dir.category}
-                          </span>
+                {isLoadingDirectives ? (
+                  <div className="text-center py-12 space-y-2 bg-slate-50 rounded-2xl border border-slate-200">
+                    <Clock className="h-6 w-6 text-emerald-600 animate-spin mx-auto" />
+                    <p className="text-xs font-semibold text-slate-600">Loading authoritative ministry circulars...</p>
+                  </div>
+                ) : directives.length === 0 ? (
+                  <div className="text-center py-12 space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                    <Building2 className="h-8 w-8 text-slate-300 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">No Active Ministry Directives</p>
+                    <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                      Use the official broadcast dispatch form to issue circulars to state school portals.
+                    </p>
+                  </div>
+                ) : (
+                  directives.map((dir) => (
+                    <div key={dir.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3 hover:border-emerald-300 transition">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                              dir.priority === 'Executive Order' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                              dir.priority === 'Urgent / High Priority' ? 'bg-amber-100 text-amber-900 border border-amber-200' :
+                              'bg-blue-100 text-blue-900 border border-blue-200'
+                            }`}>
+                              {dir.priority}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-slate-500">
+                              {dir.referenceNumber}
+                            </span>
+                            <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
+                              {dir.category}
+                            </span>
+                          </div>
+                          <h5 className="text-xs font-black text-slate-900 mt-1.5 leading-snug">
+                            {dir.title}
+                          </h5>
                         </div>
-                        <h5 className="text-xs font-black text-slate-900 mt-1.5 leading-snug">
-                          {dir.title}
-                        </h5>
+
+                        <button
+                          onClick={() => setActiveSlipDirective(dir)}
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer shrink-0 flex items-center gap-1"
+                          title="View & Print Official Circular"
+                        >
+                          <Printer className="h-3 w-3" />
+                          <span>Print</span>
+                        </button>
                       </div>
 
-                      <button
-                        onClick={() => setActiveSlipDirective(dir)}
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer shrink-0 flex items-center gap-1"
-                        title="View & Print Official Circular"
-                      >
-                        <Printer className="h-3 w-3" />
-                        <span>Print</span>
-                      </button>
-                    </div>
+                      <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        {dir.content}
+                      </p>
 
-                    <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      {dir.content}
-                    </p>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex-wrap gap-2">
-                      <span className="font-semibold text-emerald-800">
-                        Scope: <strong>{dir.targetAudience}</strong>
-                      </span>
-                      <span>Issued: {dir.issuedDate}</span>
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[10px]">
-                        <Check className="h-3 w-3" /> Dispatched to Portals
-                      </span>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex-wrap gap-2">
+                        <span className="font-semibold text-emerald-800">
+                          Scope: <strong>{dir.targetAudience}</strong>
+                        </span>
+                        <span>Issued: {dir.issuedDate}</span>
+                        <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[10px]">
+                          <Check className="h-3 w-3" /> Dispatched to Portals
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 

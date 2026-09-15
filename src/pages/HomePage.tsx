@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { NavigationPage, Student, AssessmentScore, StudentReportCard, ClassLevel } from '../types';
+import React, { useState, useEffect } from 'react';
+import { NavigationPage, Student, AssessmentScore, StudentReportCard, ClassLevel, Announcement } from '../types';
 import { 
   GraduationCap, 
   Award, 
@@ -26,9 +26,9 @@ import {
   FileText,
   Download,
   Landmark,
-  MapPin
+  MapPin,
+  Loader2
 } from 'lucide-react';
-import { INITIAL_ANNOUNCEMENTS } from '../data/reference/announcements';
 
 interface HomePageProps {
   setActivePage?: (page: NavigationPage) => void;
@@ -52,6 +52,39 @@ export const HomePage: React.FC<HomePageProps> = ({
   onOpenSecurityModal
 }) => {
   const [announcementFilter, setAnnouncementFilter] = useState<'All' | 'Academic' | 'Administrative' | 'Sports & Events' | 'Examination'>('All');
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchDirectivesAsAnnouncements = async () => {
+      try {
+        const res = await fetch('/api/v1/hq/directives');
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.data) && isMounted) {
+            const mapped: Announcement[] = body.data.map((d: any) => ({
+              id: d.id || d.reference_number || `ANN-${Math.random()}`,
+              title: d.title || 'Official Bulletin',
+              date: d.issued_date ? new Date(d.issued_date).toISOString().split('T')[0] : '',
+              arm: 'All',
+              category: d.category === 'Academic' || d.category === 'Examination' ? d.category : 'Administrative',
+              content: d.content || '',
+              targetAudience: d.target_audience || 'All Staff & Parents',
+              isImportant: d.priority === 'Executive Order' || d.priority === 'Urgent / High Priority',
+            }));
+            setAnnouncements(mapped);
+          }
+        }
+      } catch {
+        if (isMounted) setAnnouncements([]);
+      } finally {
+        if (isMounted) setIsLoadingAnnouncements(false);
+      }
+    };
+    fetchDirectivesAsAnnouncements();
+    return () => { isMounted = false; };
+  }, []);
 
   const navigateTo = (page: NavigationPage, subTab?: string, param?: any) => {
     if (onNavigate) {
@@ -68,6 +101,10 @@ export const HomePage: React.FC<HomePageProps> = ({
       const isKg = stu.currentClass.startsWith('KG');
       const isPrimary = stu.currentClass.startsWith('Basic');
 
+      const totalScoreObtained = stuScores.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
+      const totalPossibleScore = stuScores.length * 100;
+      const overallPercentage = totalPossibleScore > 0 ? Math.round((totalScoreObtained / totalPossibleScore) * 1000) / 10 : 0;
+
       const rc: StudentReportCard = {
         id: `RC-${stu.id}-2026-T2`,
         studentId: stu.id,
@@ -75,29 +112,12 @@ export const HomePage: React.FC<HomePageProps> = ({
         classLevel: stu.currentClass,
         term: '2nd Term',
         academicYear: '2025/2026',
-        scores: stuScores.length > 0 ? stuScores : [
-          {
-            studentId: stu.id,
-            subjectId: 'SUB-MAT',
-            classLevel: stu.currentClass,
-            term: '2nd Term',
-            academicYear: '2025/2026',
-            ca1: 9,
-            ca2: 9,
-            assignment: 9,
-            attendance: 9,
-            totalCa: 36,
-            examScore: 54,
-            totalScore: 90,
-            grade: isPrimary ? 'A+' : 'A1',
-            remark: 'Distinction / Exceptional Mastery',
-          }
-        ],
-        totalScoreObtained: 811,
-        totalPossibleScore: 900,
-        overallPercentage: 90.1,
-        classAverage: 68.4,
-        positionInClass: 1,
+        scores: stuScores,
+        totalScoreObtained,
+        totalPossibleScore,
+        overallPercentage,
+        classAverage: stuScores.length > 0 ? 68.4 : 0,
+        positionInClass: stuScores.length > 0 ? 1 : 0,
         totalStudentsInClass: 38,
         affective: {
           punctuality: 5,
@@ -146,8 +166,8 @@ export const HomePage: React.FC<HomePageProps> = ({
   };
 
   const filteredAnnouncements = announcementFilter === 'All'
-    ? INITIAL_ANNOUNCEMENTS
-    : INITIAL_ANNOUNCEMENTS.filter((a) => a.category === announcementFilter);
+    ? announcements
+    : announcements.filter((a) => a.category === announcementFilter);
 
   return (
     <div className="space-y-12 pb-16" id="home-page-container">
@@ -658,29 +678,42 @@ export const HomePage: React.FC<HomePageProps> = ({
             </div>
 
             <div className="space-y-3">
-              {filteredAnnouncements.map((ann) => (
-                <div
-                  key={ann.id}
-                  className={`rounded-xl p-4 border transition ${
-                    ann.isImportant
-                      ? 'bg-amber-50/50 border-amber-200'
-                      : 'bg-white border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                      ann.category === 'Academic' ? 'bg-blue-100 text-blue-800' :
-                      ann.category === 'Examination' ? 'bg-rose-100 text-rose-800' :
-                      ann.category === 'Sports & Events' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'
-                    }`}>
-                      {ann.category}
-                    </span>
-                    <span className="text-[11px] text-slate-500 font-mono">{ann.date}</span>
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-900 mt-2">{ann.title}</h4>
-                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">{ann.content}</p>
+              {isLoadingAnnouncements ? (
+                <div className="flex items-center justify-center p-8 text-slate-400 gap-2 border border-slate-100 rounded-xl bg-slate-50/50">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-xs">Loading official circulars...</span>
                 </div>
-              ))}
+              ) : filteredAnnouncements.length === 0 ? (
+                <div className="rounded-xl p-8 border border-dashed border-slate-200 text-center bg-slate-50/50 space-y-2">
+                  <Bell className="h-8 w-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-semibold text-slate-600">No announcements published</p>
+                  <p className="text-[11px] text-slate-400">Official bulletins and circulars will appear here when issued by school administration or the Ministry.</p>
+                </div>
+              ) : (
+                filteredAnnouncements.map((ann) => (
+                  <div
+                    key={ann.id}
+                    className={`rounded-xl p-4 border transition ${
+                      ann.isImportant
+                        ? 'bg-amber-50/50 border-amber-200'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                        ann.category === 'Academic' ? 'bg-blue-100 text-blue-800' :
+                        ann.category === 'Examination' ? 'bg-rose-100 text-rose-800' :
+                        ann.category === 'Sports & Events' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'
+                      }`}>
+                        {ann.category}
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-mono">{ann.date}</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900 mt-2">{ann.title}</h4>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">{ann.content}</p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

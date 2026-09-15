@@ -57,108 +57,6 @@ export interface HQChatMessage {
   isEscalatedToCommissioner?: boolean;
 }
 
-const INITIAL_HQ_MESSAGES: HQChatMessage[] = [
-  {
-    id: 'MSG-BN-001',
-    senderName: 'Prof. Frederick Ikyaan',
-    senderRole: 'Hon. Commissioner for Education, Science & Technology',
-    schoolName: 'Ministry of Education Headquarters, Makurdi',
-    lga: 'Makurdi',
-    zone: 'Zone B (Benue North-West)',
-    channelId: 'all-schools-announcements',
-    messageType: 'directive',
-    priority: 'urgent',
-    timestamp: 'Today at 08:30 AM',
-    content: 'EXECUTIVE DIRECTIVE: All 23 LGA School Heads (Principals & Headteachers) must finalize 2nd Term 2025/2026 Continuous Assessment (40/60 CA/Exam) broadsheets by Friday. The State Ministry Inspectorate will initiate random biometric faculty audits next Monday.',
-    status: 'resolved',
-    officialRefNumber: 'MOE/BN/ADM/2026/CIRC-089',
-    isEscalatedToCommissioner: true
-  },
-  {
-    id: 'MSG-BN-002',
-    senderName: 'Mr. Terver Tyokyaa',
-    senderRole: 'Principal / School Head',
-    schoolName: 'Government College Makurdi',
-    lga: 'Makurdi',
-    zone: 'Zone B (Benue North-West)',
-    channelId: 'statutory-requests',
-    messageType: 'request',
-    priority: 'high',
-    timestamp: 'Today at 09:15 AM',
-    content: 'Formal Requisition: We urgently request the deployment of 2 TRCN-certified Physics and Further Mathematics teachers for our SSS 2 and SSS 3 classes preparing for WAEC/NECO. Current teacher-student ratio in senior STEM exceeds 1:55.',
-    status: 'forwarded-to-head',
-    officialRefNumber: 'GCM/REQ/TRCN/2026/014',
-    attachmentName: 'Teacher_Deficit_Audit_GCMakurdi_2026.pdf',
-    hqResponse: {
-      responderName: 'Dr. Grace Adagba',
-      responderRole: 'Executive Chairman, Benue SUBEB / Teaching Service Board',
-      replyContent: 'Requisition received and evaluated. 2 Teachers under the Benue State Special STEM Recruitment have been shortlisted for posting to Gov College Makurdi by Wednesday.',
-      timestamp: 'Today at 10:45 AM'
-    },
-    isEscalatedToCommissioner: true
-  },
-  {
-    id: 'MSG-BN-003',
-    senderName: 'Mrs. Bridget Shima',
-    senderRole: 'Headteacher / School Administrator',
-    schoolName: 'LGEA Central Primary School, Gboko',
-    lga: 'Gboko',
-    zone: 'Zone A (Benue North-East)',
-    channelId: 'complaints-and-grievances',
-    messageType: 'complaint',
-    priority: 'urgent',
-    timestamp: 'Today at 10:05 AM',
-    content: 'URGENT FACILITY COMPLAINT: Recent rainfall caused roof deterioration in the Basic 4 and Basic 5 classroom block. We request an emergency structural assessment from the SUBEB Physical Planning Unit to prevent pupil disruptions.',
-    status: 'in-review',
-    officialRefNumber: 'LGEA/GBK/FAC/2026/041',
-    attachmentName: 'Damage_Photos_Classroom_BlockB.pdf',
-    hqResponse: {
-      responderName: 'Engr. Iorfa Bem',
-      responderRole: 'Director of Quality Assurance & Physical Infrastructure',
-      replyContent: 'Zone A Engineering Field Officer dispatched to Gboko LGA. Emergency reroofing intervention registered under Q1 SUBEB Capital Repairs.',
-      timestamp: 'Today at 11:20 AM'
-    },
-    isEscalatedToCommissioner: true
-  },
-  {
-    id: 'MSG-BN-004',
-    senderName: 'Dr. Godwin Ochigbo',
-    senderRole: 'Principal / Chief Executive',
-    schoolName: 'Jesus College, Otukpo',
-    lga: 'Otukpo',
-    zone: 'Zone C (Benue South)',
-    channelId: 'statutory-requests',
-    messageType: 'request',
-    priority: 'normal',
-    timestamp: 'Yesterday at 04:20 PM',
-    content: 'Reconciliation Request: We submit our 2nd Term 2025/2026 WAEC and NECO registration fee subsidy receipt schedule for state counterpart grant verification (₦4,200,000 reconciled).',
-    status: 'approved',
-    officialRefNumber: 'JCO/FIN/SUB/2026/009',
-    attachmentName: 'WAEC_NECO_Counterpart_Subsidy_Schedule.pdf',
-    hqResponse: {
-      responderName: 'Hon. Bursar General',
-      responderRole: 'Director of Finance & Accounts, MOE Makurdi',
-      replyContent: 'Subsidy schedule verified and approved. Electronic payment voucher forwarded to State Treasury for direct disbursement.',
-      timestamp: 'Yesterday at 05:40 PM'
-    }
-  },
-  {
-    id: 'MSG-BN-005',
-    senderName: 'Mr. Emmanuel Agbo',
-    senderRole: 'Principal',
-    schoolName: 'Government Model Secondary School, Katsina-Ala',
-    lga: 'Katsina-Ala',
-    zone: 'Zone A (Benue North-East)',
-    channelId: 'direct-hq-helpdesk',
-    messageType: 'update',
-    priority: 'normal',
-    timestamp: 'Yesterday at 02:10 PM',
-    content: 'Weekly Term Progress Update: Week 8 continuous assessment completed across all 18 classes. TRCN faculty biometric attendance index recorded at 96.4%. No security incidents reported.',
-    status: 'received',
-    officialRefNumber: 'GMSK/WK8/AUDIT/2026'
-  }
-];
-
 const CHANNELS = [
   { id: 'all-schools-announcements', label: '📢 Official Ministry Circulars', desc: 'Broadcast directives from Hon. Commissioner & SUBEB' },
   { id: 'direct-hq-helpdesk', label: '💬 General Inquiries & Helpdesk', desc: 'Direct Q&A with Ministry desk officers' },
@@ -240,6 +138,7 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
 }) => {
   const [messages, setMessages] = useState<HQChatMessage[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const [activeChannelId, setActiveChannelId] = useState<string>('all-schools-announcements');
   const [selectedZoneFilter, setSelectedZoneFilter] = useState<string>('All');
@@ -276,6 +175,7 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
 
   const fetchMessages = async () => {
     setIsLoadingMessages(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams();
       if (activeChannelId) params.append('channelId', activeChannelId);
@@ -286,10 +186,17 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
         const payload = await res.json();
         if (payload.success && Array.isArray(payload.data)) {
           setMessages(payload.data.map(mapApiToChatMessage));
+        } else {
+          setMessages([]);
         }
+      } else {
+        setFetchError('Unable to load headquarters messages at this time.');
+        setMessages([]);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load authoritative HQ chat messages', e);
+      setFetchError(e.message || 'Connection failure while contacting headquarters server.');
+      setMessages([]);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -721,9 +628,28 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
 
           {/* Chat Messages Stream */}
           <div className="p-4 sm:p-5 space-y-4 overflow-y-auto max-h-[460px] min-h-[380px]">
-            {filteredMessages.length === 0 ? (
+            {isLoadingMessages ? (
               <div className="text-center py-16 space-y-3">
-                <MessageSquare className="h-10 w-10 text-slate-300 mx-auto animate-bounce" />
+                <RefreshCw className="h-8 w-8 text-emerald-500 mx-auto animate-spin" />
+                <h4 className="text-sm font-bold text-slate-600">Connecting to Headquarters Dispatch...</h4>
+              </div>
+            ) : fetchError ? (
+              <div className="text-center py-16 space-y-3">
+                <AlertCircle className="h-8 w-8 text-rose-500 mx-auto" />
+                <h4 className="text-sm font-bold text-slate-700">Dispatch Offline or Unavailable</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">{fetchError}</p>
+                <button
+                  type="button"
+                  onClick={() => fetchMessages()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Retry Connection
+                </button>
+              </div>
+            ) : filteredMessages.length === 0 ? (
+              <div className="text-center py-16 space-y-3">
+                <MessageSquare className="h-10 w-10 text-slate-300 mx-auto" />
                 <h4 className="text-sm font-bold text-slate-600">No Messages in this Channel Filter</h4>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
                   Be the first to submit a request, update, or complaint to the Benue State Education Headquarters.
