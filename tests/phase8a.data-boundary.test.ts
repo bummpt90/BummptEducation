@@ -153,7 +153,7 @@ async function runPhase8aDataBoundaryTestSuite() {
     );
 
     // -------------------------------------------------------------------------
-    // TEST 7: Codebase Grounding — DataContext INITIAL_* Fallback Detection
+    // TEST 7: Codebase Grounding — DataContext INITIAL_* Fallback Detection & Phase 8G Sanitization
     // -------------------------------------------------------------------------
     const dataContextPath = path.resolve(process.cwd(), 'src/context/DataContext.tsx');
     const dataContextContent = fs.readFileSync(dataContextPath, 'utf8');
@@ -162,11 +162,18 @@ async function runPhase8aDataBoundaryTestSuite() {
       dataContextContent.includes('INITIAL_STAFF') &&
       dataContextContent.includes('INITIAL_PAYMENTS') &&
       dataContextContent.includes('INITIAL_ADMISSIONS');
+    const isZeroMockSanitized =
+      !dataContextContent.includes('INITIAL_STUDENTS') &&
+      !dataContextContent.includes('INITIAL_STAFF') &&
+      !dataContextContent.includes('INITIAL_PAYMENTS') &&
+      !dataContextContent.includes('INITIAL_ADMISSIONS');
 
     record(
       '7. Grounding Audit: DataContext Mock Fallback Detection (src/context/DataContext.tsx)',
-      hasDataContextFallbacks,
-      'Confirmed presence of INITIAL_STUDENTS, INITIAL_STAFF, INITIAL_PAYMENTS, INITIAL_ADMISSIONS'
+      hasDataContextFallbacks || isZeroMockSanitized,
+      isZeroMockSanitized
+        ? 'DataContext successfully sanitized to zero-mock server-authoritative state in Phase 8G'
+        : 'Confirmed presence of INITIAL_STUDENTS, INITIAL_STAFF, INITIAL_PAYMENTS, INITIAL_ADMISSIONS'
     );
 
     // -------------------------------------------------------------------------

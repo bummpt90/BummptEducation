@@ -27,8 +27,8 @@ import { useAuth } from './context/AuthContext';
 import { useData } from './context/DataContext';
 import { GraduationCap, ShieldCheck } from 'lucide-react';
 import { 
-  INITIAL_SUBJECTS, 
-} from './data/mockData';
+  ALL_SUBJECTS as INITIAL_SUBJECTS, 
+} from './data/reference/subjects';
 import { 
   NavigationPage, 
   UserRole, 

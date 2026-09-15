@@ -9,7 +9,6 @@ import {
   StudentAttendanceSummary, 
   ClassAttendanceSessionSummary 
 } from '../types';
-import { INITIAL_STUDENTS } from './mockData';
 
 // ==================== ALL 21 CLASSES STRUCTURE (KG 1 to SSS 3) ====================
 export interface ClassDefinition {
@@ -406,14 +405,9 @@ export const ALL_CLASSES_DEFINITIONS: ClassDefinition[] = [
 /**
  * @deprecated Non-authoritative legacy fixture generator.
  * Production code MUST NOT import or execute this function.
+ * Use DataContext / StudentRepository for server-authoritative roster.
  */
 export function getAllStudentsForClass(classLevel: ClassLevel): Student[] {
-  // First check if INITIAL_STUDENTS has students for this class
-  const existing = INITIAL_STUDENTS.filter(s => s.currentClass === classLevel);
-  if (existing.length >= 8) {
-    return existing;
-  }
-
   // Supplementary generator to ensure full, rich roster for every class
   const classDef = ALL_CLASSES_DEFINITIONS.find(c => c.level === classLevel) || ALL_CLASSES_DEFINITIONS[0];
   const arm = classDef.arm;
@@ -503,15 +497,7 @@ export function getAllStudentsForClass(classLevel: ClassLevel): Student[] {
     };
   });
 
-  // Combine with existing if any to avoid duplication
-  const combined = [...existing];
-  generatedList.forEach(gen => {
-    if (!combined.some(c => c.fullName.toLowerCase() === gen.fullName.toLowerCase())) {
-      combined.push(gen);
-    }
-  });
-
-  return combined;
+  return generatedList;
 }
 
 // ==================== 13-WEEK TERM CALENDAR ENGINE ====================
@@ -628,61 +614,26 @@ export function generateDefaultAttendanceRecordsForClass(
 }
 
 // ==================== STORAGE & PERSISTENCE ENGINE ====================
-const STORAGE_KEY_PREFIX = 'bummpt_attendance_register_v2';
-
 /**
- * @deprecated Non-authoritative legacy localStorage loader.
- * Production code MUST NOT use client-side storage for attendance.
+ * Authoritative attendance persistence is strictly handled via PostgreSQL / REST API.
+ * LocalStorage storage of attendance records is prohibited (Zero-Mock mandate).
  */
 export function getStoredAttendanceRecords(
   classLevel: ClassLevel,
-  term: Term = '2nd Term',
-  academicYear: AcademicYear = '2025/2026',
+  _term: Term = '2nd Term',
+  _academicYear: AcademicYear = '2025/2026',
   students: Student[]
 ): Record<string, Record<string, DailyAttendanceEntry>> {
-  if (typeof window === 'undefined') {
-    return generateDefaultAttendanceRecordsForClass(classLevel, students);
-  }
-
-  const key = `${STORAGE_KEY_PREFIX}_${classLevel.replace(/\s+/g, '_')}_${term.replace(/\s+/g, '_')}_${academicYear.replace(/\//g, '_')}`;
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        return parsed;
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to parse attendance records from storage, generating fresh seed:', err);
-  }
-
-  const initial = generateDefaultAttendanceRecordsForClass(classLevel, students);
-  try {
-    localStorage.setItem(key, JSON.stringify(initial));
-  } catch (e) {
-    // Ignore storage quota limits
-  }
-  return initial;
+  return generateDefaultAttendanceRecordsForClass(classLevel, students);
 }
 
-/**
- * @deprecated Non-authoritative legacy localStorage writer.
- * Production code MUST NOT use client-side storage for attendance.
- */
 export function saveStoredAttendanceRecords(
-  classLevel: ClassLevel,
-  term: Term = '2nd Term',
-  academicYear: AcademicYear = '2025/2026',
-  records: Record<string, Record<string, DailyAttendanceEntry>>
+  _classLevel: ClassLevel,
+  _term: Term = '2nd Term',
+  _academicYear: AcademicYear = '2025/2026',
+  _records: Record<string, Record<string, DailyAttendanceEntry>>
 ): void {
-  if (typeof window === 'undefined') return;
-  const key = `${STORAGE_KEY_PREFIX}_${classLevel.replace(/\s+/g, '_')}_${term.replace(/\s+/g, '_')}_${academicYear.replace(/\//g, '_')}`;
-  try {
-    localStorage.setItem(key, JSON.stringify(records));
-  } catch (err) {
-    console.error('Failed to save attendance records:', err);
-  }
+  // No-op: LocalStorage persistence of business data is strictly prohibited.
 }
 
 // ==================== ATTENDANCE COMPUTATIONS & TOTALS ====================

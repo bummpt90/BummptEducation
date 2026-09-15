@@ -10,7 +10,7 @@
  */
 
 import type { PoolClient } from 'pg';
-import { ALL_SUBJECTS } from '../../../data/mockData';
+import { ALL_SUBJECTS } from '../data/subjects.seed.data';
 import type { SeedResultSummary } from './organizations.seed';
 
 export async function seedSubjects(client: PoolClient): Promise<SeedResultSummary> {

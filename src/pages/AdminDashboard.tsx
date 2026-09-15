@@ -12,12 +12,6 @@ import {
 } from '../types';
 import { formatNaira } from '../utils/grading';
 import { 
-  INITIAL_FEE_SCHEDULES, 
-  INITIAL_PAYMENTS, 
-  INITIAL_ADMISSIONS, 
-  INITIAL_STAFF 
-} from '../data/mockData';
-import { 
   Building2, 
   CreditCard, 
   UserPlus, 
@@ -109,19 +103,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Fees State from Server Data Context
-  const payments = serverPayments.length > 0 ? serverPayments : INITIAL_PAYMENTS;
-  const feeSchedules = serverFeeSchedules.length > 0 ? serverFeeSchedules : INITIAL_FEE_SCHEDULES;
+  const payments = serverPayments;
+  const feeSchedules = serverFeeSchedules;
   const [selectedFeeClass, setSelectedFeeClass] = useState<ClassLevel>('SSS 2 Science');
   
   // Admissions State from Server Data Context
-  const [admissions, setAdmissions] = useState<AdmissionApplication[]>(() => 
-    serverAdmissions.length > 0 ? serverAdmissions : INITIAL_ADMISSIONS
-  );
+  const [admissions, setAdmissions] = useState<AdmissionApplication[]>(() => serverAdmissions);
 
   React.useEffect(() => {
-    if (serverAdmissions.length > 0) {
-      setAdmissions(serverAdmissions);
-    }
+    setAdmissions(serverAdmissions);
   }, [serverAdmissions]);
 
   const [newApplicantName, setNewApplicantName] = useState('');
@@ -149,7 +139,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   // Staff State from Server Data Context
-  const staffList = serverStaff.length > 0 ? serverStaff : INITIAL_STAFF;
+  const staffList = serverStaff;
   const [applicants] = useState<StaffApplicant[]>([
     {
       id: 'APP-01',

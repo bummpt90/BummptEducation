@@ -13,7 +13,7 @@
  */
 
 import type { PoolClient } from 'pg';
-import { ORGANOGRAM_DATA } from '../../../data/mockData';
+import { ORGANOGRAM_DATA } from '../data/organogram.seed.data';
 import type { SeedResultSummary } from './organizations.seed';
 
 export async function seedOrganogramNodes(client: PoolClient): Promise<SeedResultSummary> {

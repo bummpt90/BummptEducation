@@ -30,14 +30,21 @@ import {
   LessonFeedback
 } from '../types';
 import { useAuth } from './AuthContext';
-import { 
-  INITIAL_STUDENTS, 
-  INITIAL_STAFF, 
-  INITIAL_PAYMENTS, 
-  INITIAL_FEE_SCHEDULES, 
-  INITIAL_ADMISSIONS, 
-  INITIAL_ASSESSMENTS 
-} from '../data/mockData';
+
+export type ResourceState = 'IDLE' | 'LOADING' | 'SUCCESS' | 'EMPTY' | 'ERROR';
+
+export interface DataContextStatus {
+  students: ResourceState;
+  staff: ResourceState;
+  schools: ResourceState;
+  classes: ResourceState;
+  payments: ResourceState;
+  feeSchedules: ResourceState;
+  admissions: ResourceState;
+  assessments: ResourceState;
+  bursaries: ResourceState;
+  lessonNotes: ResourceState;
+}
 
 export interface DbClass {
   id: string;
@@ -79,6 +86,7 @@ interface DataContextType {
   isSyncing: boolean;
   error: string | null;
   lastSyncedAt: Date | null;
+  resourceStatus: DataContextStatus;
 
   // Authoritative Server Actions
   refreshAll: () => Promise<void>;
@@ -134,7 +142,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [schools, setSchools] = useState<DbSchool[]>([]);
   const [classes, setClasses] = useState<DbClass[]>([]);
   const [payments, setPayments] = useState<FeePayment[]>([]);
-  const [feeSchedules, setFeeSchedules] = useState<FeeSchedule[]>(INITIAL_FEE_SCHEDULES);
+  const [feeSchedules, setFeeSchedules] = useState<FeeSchedule[]>([]);
   const [admissions, setAdmissions] = useState<AdmissionApplication[]>([]);
   const [assessments, setAssessments] = useState<AssessmentScore[]>([]);
   const [bursaries, setBursaries] = useState<any[]>([]);
@@ -144,6 +152,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+
+  const [resourceStatus, setResourceStatus] = useState<DataContextStatus>({
+    students: 'IDLE',
+    staff: 'IDLE',
+    schools: 'IDLE',
+    classes: 'IDLE',
+    payments: 'IDLE',
+    feeSchedules: 'IDLE',
+    admissions: 'IDLE',
+    assessments: 'IDLE',
+    bursaries: 'IDLE',
+    lessonNotes: 'IDLE',
+  });
 
   // Map server DB student row to UI Student interface
   const mapDbStudent = useCallback((s: any, classLevelMap: Record<string, ClassLevel>): Student => {
@@ -284,12 +305,53 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  // Authoritative fetch function
+  // Map server DB fee structures to FeeSchedule interface
+  const mapDbFeeStructureToSchedules = useCallback((structures: any[], classLevelMap: Record<string, ClassLevel>): FeeSchedule[] => {
+    const scheduleMap = new Map<string, FeeSchedule>();
+    for (const s of structures) {
+      const classLevel = classLevelMap[s.class_id] || (s.class_level as ClassLevel) || 'SSS 2 Science';
+      const arm = getSchoolArm(classLevel);
+      if (!scheduleMap.has(classLevel)) {
+        scheduleMap.set(classLevel, {
+          classLevel,
+          arm,
+          term: (s.term_name || '2nd Term') as any,
+          academicYear: (s.session_name || '2025/2026') as any,
+          items: [],
+          totalAmount: 0,
+        });
+      }
+      const sched = scheduleMap.get(classLevel)!;
+      sched.items.push({
+        id: s.id,
+        name: s.name,
+        amount: Number(s.amount || 0),
+        isCompulsory: !!s.is_mandatory,
+        category: s.category_name || 'Tuition',
+      });
+      sched.totalAmount += Number(s.amount || 0);
+    }
+    return Array.from(scheduleMap.values());
+  }, []);
+
+  // Authoritative fetch function - Zero Mock Fallback
   const refreshAll = useCallback(async () => {
     if (!isAuthenticated) return;
 
     setIsSyncing(true);
     setError(null);
+    setResourceStatus({
+      students: 'LOADING',
+      staff: 'LOADING',
+      schools: 'LOADING',
+      classes: 'LOADING',
+      payments: 'LOADING',
+      feeSchedules: 'LOADING',
+      admissions: 'LOADING',
+      assessments: 'LOADING',
+      bursaries: 'LOADING',
+      lessonNotes: 'LOADING',
+    });
 
     const headers = getAuthHeaders();
     const fetchOptions: RequestInit = {
@@ -305,10 +367,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const data = await schoolsRes.json();
         fetchedSchools = data.data || [];
         setSchools(fetchedSchools);
+        setResourceStatus(prev => ({ ...prev, schools: fetchedSchools.length > 0 ? 'SUCCESS' : 'EMPTY' }));
+      } else {
+        setSchools([]);
+        setResourceStatus(prev => ({ ...prev, schools: 'ERROR' }));
       }
 
       // 2. Fetch Classes
-      // Determine school query parameter if needed (super_admin / state_officer need school_id)
       const primarySchoolId = currentUser?.schoolId || fetchedSchools[0]?.id || '';
       const classesUrl = primarySchoolId ? `/api/v1/classes?school_id=${primarySchoolId}` : '/api/v1/classes';
       const classesRes = await fetch(classesUrl, fetchOptions);
@@ -322,9 +387,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         fetchedClasses.forEach(c => {
           classLevelMap[c.id] = c.level;
         });
+        setResourceStatus(prev => ({ ...prev, classes: fetchedClasses.length > 0 ? 'SUCCESS' : 'EMPTY' }));
+      } else {
+        setClasses([]);
+        setResourceStatus(prev => ({ ...prev, classes: 'ERROR' }));
       }
 
-      // 3. Fetch Students in parallel with Staff, Payments, Admissions, Assessments, Bursary
+      // 3. Fetch Students, Staff, Payments, Admissions, Fees, Bursary, Assessments in parallel
       const [studentsRes, staffRes, paymentsRes, admissionsRes, feeRes, bursaryRes, assessRes] = await Promise.all([
         fetch('/api/v1/students?limit=200', fetchOptions).catch(() => null),
         fetch('/api/v1/staff?limit=100', fetchOptions).catch(() => null),
@@ -339,76 +408,83 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (studentsRes && studentsRes.ok) {
         const data = await studentsRes.json();
         const rawList = data.data || data.students || [];
-        if (rawList.length > 0) {
-          const mapped = rawList.map((s: any) => mapDbStudent(s, classLevelMap));
-          setStudents(mapped);
-        } else {
-          setStudents(INITIAL_STUDENTS);
-        }
+        const mapped = rawList.map((s: any) => mapDbStudent(s, classLevelMap));
+        setStudents(mapped);
+        setResourceStatus(prev => ({ ...prev, students: mapped.length > 0 ? 'SUCCESS' : 'EMPTY' }));
       } else {
-        setStudents(INITIAL_STUDENTS);
+        setStudents([]);
+        setResourceStatus(prev => ({ ...prev, students: 'ERROR' }));
       }
 
       // Parse Staff
       if (staffRes && staffRes.ok) {
         const data = await staffRes.json();
         const rawList = data.data || [];
-        if (rawList.length > 0) {
-          const mapped = rawList.map((st: any) => mapDbStaff(st, classLevelMap));
-          setStaff(mapped);
-        } else {
-          setStaff(INITIAL_STAFF);
-        }
+        const mapped = rawList.map((st: any) => mapDbStaff(st, classLevelMap));
+        setStaff(mapped);
+        setResourceStatus(prev => ({ ...prev, staff: mapped.length > 0 ? 'SUCCESS' : 'EMPTY' }));
       } else {
-        setStaff(INITIAL_STAFF);
+        setStaff([]);
+        setResourceStatus(prev => ({ ...prev, staff: 'ERROR' }));
       }
 
       // Parse Payments
       if (paymentsRes && paymentsRes.ok) {
         const data = await paymentsRes.json();
         const rawList = data.data || [];
-        if (rawList.length > 0) {
-          const mapped = rawList.map((p: any) => mapDbPayment(p, classLevelMap));
-          setPayments(mapped);
-        } else {
-          setPayments(INITIAL_PAYMENTS);
-        }
+        const mapped = rawList.map((p: any) => mapDbPayment(p, classLevelMap));
+        setPayments(mapped);
+        setResourceStatus(prev => ({ ...prev, payments: mapped.length > 0 ? 'SUCCESS' : 'EMPTY' }));
       } else {
-        setPayments(INITIAL_PAYMENTS);
+        setPayments([]);
+        setResourceStatus(prev => ({ ...prev, payments: 'ERROR' }));
       }
 
       // Parse Admissions
       if (admissionsRes && admissionsRes.ok) {
         const data = await admissionsRes.json();
         const rawList = data.data || [];
-        if (rawList.length > 0) {
-          const mapped = rawList.map((a: any) => mapDbAdmission(a, classLevelMap));
-          setAdmissions(mapped);
-        } else {
-          setAdmissions(INITIAL_ADMISSIONS);
-        }
+        const mapped = rawList.map((a: any) => mapDbAdmission(a, classLevelMap));
+        setAdmissions(mapped);
+        setResourceStatus(prev => ({ ...prev, admissions: mapped.length > 0 ? 'SUCCESS' : 'EMPTY' }));
       } else {
-        setAdmissions(INITIAL_ADMISSIONS);
+        setAdmissions([]);
+        setResourceStatus(prev => ({ ...prev, admissions: 'ERROR' }));
+      }
+
+      // Parse Fee Schedules
+      if (feeRes && feeRes.ok) {
+        const data = await feeRes.json();
+        const rawList = data.data || [];
+        const mapped = mapDbFeeStructureToSchedules(rawList, classLevelMap);
+        setFeeSchedules(mapped);
+        setResourceStatus(prev => ({ ...prev, feeSchedules: mapped.length > 0 ? 'SUCCESS' : 'EMPTY' }));
+      } else {
+        setFeeSchedules([]);
+        setResourceStatus(prev => ({ ...prev, feeSchedules: 'ERROR' }));
       }
 
       // Parse Bursary
       if (bursaryRes && bursaryRes.ok) {
         const data = await bursaryRes.json();
-        setBursaries(data.data || []);
+        const rawList = data.data || [];
+        setBursaries(rawList);
+        setResourceStatus(prev => ({ ...prev, bursaries: rawList.length > 0 ? 'SUCCESS' : 'EMPTY' }));
+      } else {
+        setBursaries([]);
+        setResourceStatus(prev => ({ ...prev, bursaries: 'ERROR' }));
       }
 
       // Parse Assessments
       if (assessRes && assessRes.ok) {
         const data = await assessRes.json();
         const rawList = data.data || [];
-        if (rawList.length > 0) {
-          const mapped = rawList.map((ass: any) => mapDbAssessment(ass, classLevelMap));
-          setAssessments(mapped);
-        } else {
-          setAssessments(INITIAL_ASSESSMENTS);
-        }
+        const mapped = rawList.map((ass: any) => mapDbAssessment(ass, classLevelMap));
+        setAssessments(mapped);
+        setResourceStatus(prev => ({ ...prev, assessments: mapped.length > 0 ? 'SUCCESS' : 'EMPTY' }));
       } else {
-        setAssessments(INITIAL_ASSESSMENTS);
+        setAssessments([]);
+        setResourceStatus(prev => ({ ...prev, assessments: 'ERROR' }));
       }
 
       // Fetch Lesson Notes
@@ -418,27 +494,41 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const notesData = await notesRes.json();
           if (notesData.success && Array.isArray(notesData.data)) {
             setLessonNotes(notesData.data);
+            setResourceStatus(prev => ({ ...prev, lessonNotes: notesData.data.length > 0 ? 'SUCCESS' : 'EMPTY' }));
+          } else {
+            setLessonNotes([]);
+            setResourceStatus(prev => ({ ...prev, lessonNotes: 'EMPTY' }));
           }
+        } else {
+          setLessonNotes([]);
+          setResourceStatus(prev => ({ ...prev, lessonNotes: 'ERROR' }));
         }
       } catch (err: any) {
-        console.warn('[DataContext] Notice fetching lesson notes in refreshAll:', err?.message);
+        setLessonNotes([]);
+        setResourceStatus(prev => ({ ...prev, lessonNotes: 'ERROR' }));
       }
 
       setLastSyncedAt(new Date());
     } catch (err: any) {
-      console.warn('[DataContext] Notice during server sync:', err?.message);
-      setError(err?.message || 'Notice: Running with fallback cache.');
-      // Safe fallback to mock data on network/preview mode exceptions
-      setStudents(prev => prev.length > 0 ? prev : INITIAL_STUDENTS);
-      setStaff(prev => prev.length > 0 ? prev : INITIAL_STAFF);
-      setPayments(prev => prev.length > 0 ? prev : INITIAL_PAYMENTS);
-      setAdmissions(prev => prev.length > 0 ? prev : INITIAL_ADMISSIONS);
-      setAssessments(prev => prev.length > 0 ? prev : INITIAL_ASSESSMENTS);
+      console.error('[DataContext] Server sync error:', err?.message);
+      setError(err?.message || 'Server synchronization failed.');
+      setResourceStatus({
+        students: 'ERROR',
+        staff: 'ERROR',
+        schools: 'ERROR',
+        classes: 'ERROR',
+        payments: 'ERROR',
+        feeSchedules: 'ERROR',
+        admissions: 'ERROR',
+        assessments: 'ERROR',
+        bursaries: 'ERROR',
+        lessonNotes: 'ERROR',
+      });
     } finally {
       setIsLoading(false);
       setIsSyncing(false);
     }
-  }, [isAuthenticated, currentUser, mapDbStudent, mapDbStaff, mapDbPayment, mapDbAdmission, mapDbAssessment]);
+  }, [isAuthenticated, currentUser, mapDbStudent, mapDbStaff, mapDbPayment, mapDbAdmission, mapDbAssessment, mapDbFeeStructureToSchedules]);
 
   // Initial fetch on authentication
   useEffect(() => {
@@ -781,6 +871,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isSyncing,
         error,
         lastSyncedAt,
+        resourceStatus,
         refreshAll,
         createStudent,
         createStaff,

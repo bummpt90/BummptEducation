@@ -28,7 +28,7 @@ import {
   Landmark,
   MapPin
 } from 'lucide-react';
-import { INITIAL_ANNOUNCEMENTS } from '../data/mockData';
+import { INITIAL_ANNOUNCEMENTS } from '../data/reference/announcements';
 
 interface HomePageProps {
   setActivePage?: (page: NavigationPage) => void;

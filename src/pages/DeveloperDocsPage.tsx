@@ -398,8 +398,8 @@ export const DeveloperDocsPage: React.FC<DeveloperDocsPageProps> = ({ onNavigate
     ├── types/                   # 100% Strict TypeScript Types & Interfaces
     │   └── index.ts             # Domain models (Student, Staff, WAEC, BenueLGA, etc.)
     │
-    ├── data/                    # In-Memory Schemas, Seeding & Constants
-    │   ├── mockData.ts          # Core students, subjects, assessments, fee payments
+    ├── data/                    # Reference Data & Static Constants
+    │   ├── reference/           # Static curriculum reference (subjects, organogram)
     │   ├── benueStateData.ts    # 23 Benue LGAs, schools, SUBEB basic education records
     │   └── lessonNotesData.ts   # Initial syllabus notes, parent inquiries & stats
     │

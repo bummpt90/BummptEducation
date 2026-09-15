@@ -7,7 +7,7 @@
 
 import type { PoolClient } from 'pg';
 import { BaseRepository } from './base.repository';
-import { query } from '../client';
+import { query, withTransaction } from '../client';
 import type { ContinuousAssessmentDbEntity, QueryOptions } from '../types';
 
 export class AssessmentRepository extends BaseRepository<ContinuousAssessmentDbEntity> {
@@ -36,6 +36,9 @@ export class AssessmentRepository extends BaseRepository<ContinuousAssessmentDbE
     },
     client?: PoolClient
   ): Promise<ContinuousAssessmentDbEntity> {
+    if (!client) {
+      return withTransaction((txClient) => this.recordContinuousAssessment(data, txClient));
+    }
     const maxScore = data.maxScore ?? 10.0;
     const score = Number(data.score);
 
@@ -171,38 +174,37 @@ export class AssessmentRepository extends BaseRepository<ContinuousAssessmentDbE
     },
     client?: PoolClient
   ): Promise<void> {
-    try {
-      const type = data.assessmentType;
-      let targetColumn: 'ca1' | 'ca2' | 'assignment' | 'attendance' | null = null;
+    const type = data.assessmentType;
+    let targetColumn: 'ca1' | 'ca2' | 'assignment' | 'attendance' | null = null;
 
-      if (type === 'CA1' || type === 'TEST1') targetColumn = 'ca1';
-      else if (type === 'CA2' || type === 'TEST2') targetColumn = 'ca2';
-      else if (type === 'ASSIGNMENT' || type === 'PROJECT') targetColumn = 'assignment';
-      else if (type === 'ATTENDANCE') targetColumn = 'attendance';
+    if (type === 'CA1' || type === 'TEST1') targetColumn = 'ca1';
+    else if (type === 'CA2' || type === 'TEST2') targetColumn = 'ca2';
+    else if (type === 'ASSIGNMENT' || type === 'PROJECT') targetColumn = 'assignment';
+    else if (type === 'ATTENDANCE') targetColumn = 'attendance';
 
-      if (!targetColumn) return;
+    if (!targetColumn) return;
 
-      const boundedScore = Math.min(Math.max(Number(data.score) || 0, 0), 10);
-
-      const sql = `
-        INSERT INTO assessment_scores (
-          school_id, student_id, class_id, subject_id, academic_session_id, term_id, ${targetColumn}
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (student_id, subject_id, term_id)
-        DO UPDATE SET
-          ${targetColumn} = EXCLUDED.${targetColumn},
-          academic_session_id = EXCLUDED.academic_session_id,
-          updated_at = NOW();
-      `;
-
-      await query(
-        sql,
-        [data.schoolId, data.studentId, data.classId, data.subjectId, data.academicSessionId, data.termId, boundedScore],
-        client
-      );
-    } catch (err) {
-      console.warn('[AssessmentRepository] Note on syncCompositeScore:', err);
+    const rawScore = Number(data.score);
+    if (isNaN(rawScore) || rawScore < 0 || rawScore > 10) {
+      throw new Error(`INVALID_COMPOSITE_SCORE: Score ${rawScore} out of bounds [0, 10] for composite column ${targetColumn}.`);
     }
+
+    const sql = `
+      INSERT INTO assessment_scores (
+        school_id, student_id, class_id, subject_id, academic_session_id, term_id, ${targetColumn}
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (student_id, subject_id, term_id)
+      DO UPDATE SET
+        ${targetColumn} = EXCLUDED.${targetColumn},
+        academic_session_id = EXCLUDED.academic_session_id,
+        updated_at = NOW();
+    `;
+
+    await query(
+      sql,
+      [data.schoolId, data.studentId, data.classId, data.subjectId, data.academicSessionId, data.termId, rawScore],
+      client
+    );
   }
 
   /**

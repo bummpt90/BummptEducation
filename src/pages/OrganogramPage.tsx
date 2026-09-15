@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ORGANOGRAM_DATA } from '../data/mockData';
+import { ORGANOGRAM_DATA } from '../data/reference/organogram';
 import { OrganogramNode, NavigationPage } from '../types';
 import { 
   GitFork, 
