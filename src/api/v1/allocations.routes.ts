@@ -127,8 +127,6 @@ allocationsRouter.post(
         data: allocation,
       });
     } catch (error: any) {
-      console.error('[AllocationsAPI] Failed to allocate subject:', error);
-
       if (error.message?.includes('DUPLICATE_ALLOCATION')) {
         res.status(409).json({
           success: false,
@@ -152,6 +150,7 @@ allocationsRouter.post(
         return;
       }
 
+      console.error('[AllocationsAPI] Failed to allocate subject:', error);
       res.status(500).json({
         success: false,
         error: 'INTERNAL_ERROR',

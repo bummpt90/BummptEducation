@@ -173,14 +173,16 @@ export class AssessmentRepository extends BaseRepository<ContinuousAssessmentDbE
   ): Promise<void> {
     try {
       const type = data.assessmentType;
-      let targetColumn: 'ca1_score' | 'ca2_score' | 'assignment_score' | 'attendance_score' | null = null;
+      let targetColumn: 'ca1' | 'ca2' | 'assignment' | 'attendance' | null = null;
 
-      if (type === 'CA1' || type === 'TEST1') targetColumn = 'ca1_score';
-      else if (type === 'CA2' || type === 'TEST2') targetColumn = 'ca2_score';
-      else if (type === 'ASSIGNMENT' || type === 'PROJECT') targetColumn = 'assignment_score';
-      else if (type === 'ATTENDANCE') targetColumn = 'attendance_score';
+      if (type === 'CA1' || type === 'TEST1') targetColumn = 'ca1';
+      else if (type === 'CA2' || type === 'TEST2') targetColumn = 'ca2';
+      else if (type === 'ASSIGNMENT' || type === 'PROJECT') targetColumn = 'assignment';
+      else if (type === 'ATTENDANCE') targetColumn = 'attendance';
 
       if (!targetColumn) return;
+
+      const boundedScore = Math.min(Math.max(Number(data.score) || 0, 0), 10);
 
       const sql = `
         INSERT INTO assessment_scores (
@@ -189,12 +191,13 @@ export class AssessmentRepository extends BaseRepository<ContinuousAssessmentDbE
         ON CONFLICT (student_id, subject_id, term_id)
         DO UPDATE SET
           ${targetColumn} = EXCLUDED.${targetColumn},
-          academic_session_id = EXCLUDED.academic_session_id;
+          academic_session_id = EXCLUDED.academic_session_id,
+          updated_at = NOW();
       `;
 
       await query(
         sql,
-        [data.schoolId, data.studentId, data.classId, data.subjectId, data.academicSessionId, data.termId, data.score],
+        [data.schoolId, data.studentId, data.classId, data.subjectId, data.academicSessionId, data.termId, boundedScore],
         client
       );
     } catch (err) {

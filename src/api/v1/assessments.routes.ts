@@ -167,8 +167,6 @@ assessmentsRouter.post(
         data: record,
       });
     } catch (error: any) {
-      console.error('[AssessmentsAPI] Failed to record assessment:', error);
-
       if (
         error.message?.includes('CROSS_SCHOOL') ||
         error.message?.includes('INVALID_SCORE') ||
@@ -184,6 +182,7 @@ assessmentsRouter.post(
         return;
       }
 
+      console.error('[AssessmentsAPI] Failed to record assessment:', error);
       res.status(500).json({
         success: false,
         error: 'INTERNAL_ERROR',

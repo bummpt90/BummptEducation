@@ -579,8 +579,6 @@ attendanceRouter.post(
         data: record,
       });
     } catch (error: any) {
-      console.error('[AttendanceAPI] Failed to record attendance:', error);
-
       if (error.message?.includes('DUPLICATE_ATTENDANCE')) {
         res.status(409).json({
           success: false,
@@ -604,6 +602,7 @@ attendanceRouter.post(
         return;
       }
 
+      console.error('[AttendanceAPI] Failed to record attendance:', error);
       res.status(500).json({
         success: false,
         error: 'INTERNAL_ERROR',
