@@ -70,7 +70,7 @@ export class PaymentRepository extends BaseRepository<FeePaymentDbEntity> {
       throw new DatabaseQueryError('Payment amount must be strictly greater than 0.');
     }
 
-    return withTransaction(async (client: PoolClient) => {
+    const runInClient = async (client: PoolClient) => {
       // 1. Fetch invoice with row lock
       const invRes = await client.query(`
         SELECT * 
@@ -189,7 +189,12 @@ export class PaymentRepository extends BaseRepository<FeePaymentDbEntity> {
       await this.invoiceRepo.recomputeBalance(payload.invoiceId, client);
 
       return payment;
-    });
+    };
+
+    if (options?.client) {
+      return runInClient(options.client);
+    }
+    return withTransaction(runInClient);
   }
 
   /**

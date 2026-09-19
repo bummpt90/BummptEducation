@@ -216,6 +216,7 @@ export function App() {
             initialTab={activeSubTab as any}
             onNavigate={handleNavigate}
             onOpenReceiptModal={handleOpenReceipt}
+            onOpenAuthModal={() => setIsGlobalAuthModalOpen(true)}
           />
         )}
 

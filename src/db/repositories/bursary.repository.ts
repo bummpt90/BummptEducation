@@ -67,7 +67,7 @@ export class BursaryRepository extends BaseRepository<BursaryAwardDbEntity> {
       throw new DatabaseQueryError('A clear justification reason is mandatory for any bursary award.');
     }
 
-    return withTransaction(async (client: PoolClient) => {
+    const runInClient = async (client: PoolClient) => {
       // 1. Verify student exists in this school
       const stRes = await client.query(
         `SELECT id, school_id FROM students WHERE id = $1 LIMIT 1;`,
@@ -131,7 +131,12 @@ export class BursaryRepository extends BaseRepository<BursaryAwardDbEntity> {
 
       const res = await client.query(sql, params);
       return res.rows[0];
-    });
+    };
+
+    if (options?.client) {
+      return runInClient(options.client);
+    }
+    return withTransaction(runInClient);
   }
 
   /**

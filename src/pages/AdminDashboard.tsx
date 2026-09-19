@@ -58,6 +58,7 @@ interface AdminDashboardProps {
   initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests';
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
   onOpenReceiptModal: (payment: FeePayment, student?: Student) => void;
+  onOpenAuthModal?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -65,6 +66,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialTab,
   onNavigate,
   onOpenReceiptModal,
+  onOpenAuthModal,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests'>(initialTab || 'fees');
   
@@ -91,6 +93,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Security Clearance & Access State (Server RBAC)
   const isAuthorizedBySession = isUserAuthorizedForWingDisplay(currentUser, 'admin') || isUserAuthorizedForWingDisplay(currentUser, 'bursary');
   const [isBursaryUnlocked, setIsBursaryUnlocked] = useState<boolean>(() => isAuthorizedBySession);
+
+  React.useEffect(() => {
+    if (isAuthorizedBySession) {
+      setIsBursaryUnlocked(true);
+    }
+  }, [isAuthorizedBySession]);
+
   const isUnlocked = isBursaryUnlocked || isAuthorizedBySession;
   const [isParentPublished, setIsParentPublished] = useState<boolean>(true);
 
@@ -106,6 +115,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const payments = serverPayments;
   const feeSchedules = serverFeeSchedules;
   const [selectedFeeClass, setSelectedFeeClass] = useState<ClassLevel>('SSS 2 Science');
+
+  React.useEffect(() => {
+    if (feeSchedules.length > 0 && !feeSchedules.some(s => s.classLevel === selectedFeeClass)) {
+      setSelectedFeeClass(feeSchedules[0].classLevel);
+    }
+  }, [feeSchedules, selectedFeeClass]);
   
   // Admissions State from Server Data Context
   const [admissions, setAdmissions] = useState<AdmissionApplication[]>(() => serverAdmissions);
@@ -274,6 +289,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           subtitle="Official tuition billing schedules, payment receipts, student finance ledgers, and staff authorization controls are restricted to authorized Bursar and Administrative personnel."
           onUnlockSuccess={() => setIsBursaryUnlocked(true)}
           onReturnHome={() => onNavigate?.('home')}
+          onOpenAuthModal={onOpenAuthModal}
         />
       </div>
     );
@@ -520,39 +536,60 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onChange={(e) => setSelectedFeeClass(e.target.value as ClassLevel)}
                   className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none"
                 >
-                  <option value="KG 2">KG 2 (Montessori Discovery)</option>
-                  <option value="Basic 1">Basic 1 (Foundation Primary)</option>
-                  <option value="Basic 6">Basic 6 (Primary NCEE Lead)</option>
-                  <option value="JSS 1">JSS 1</option>
-                  <option value="SSS 2 Science">SSS 2 Science</option>
-                  <option value="SSS 3 Science">SSS 3 Science (WAEC/NECO/IGCSE/SAT)</option>
+                  {feeSchedules.length > 0 ? (
+                    feeSchedules.map((fs) => (
+                      <option key={fs.classLevel} value={fs.classLevel}>
+                        {fs.classLevel}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="KG 2">KG 2 (Montessori Discovery)</option>
+                      <option value="Basic 1">Basic 1 (Foundation Primary)</option>
+                      <option value="Basic 6">Basic 6 (Primary NCEE Lead)</option>
+                      <option value="JSS 1">JSS 1</option>
+                      <option value="SSS 2 Science">SSS 2 Science</option>
+                      <option value="SSS 3 Science">SSS 3 Science (WAEC/NECO/IGCSE/SAT)</option>
+                    </>
+                  )}
                 </select>
               </div>
 
               {(() => {
                 const schedule = feeSchedules.find((s) => s.classLevel === selectedFeeClass) || feeSchedules[0];
+                if (!schedule) {
+                  return (
+                    <div className="py-10 text-center text-slate-500 space-y-2 border border-dashed border-slate-200 rounded-xl">
+                      <CreditCard className="h-8 w-8 text-slate-400 mx-auto" />
+                      <p className="font-semibold text-xs text-slate-700">No Approved Fee Schedule Found</p>
+                      <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                        Fee structures are loaded authoritatively from PostgreSQL.
+                      </p>
+                    </div>
+                  );
+                }
                 return (
                   <div className="space-y-3 text-xs">
                     <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg text-slate-700 font-medium">
-                      <span>Arm Wing: <strong className="capitalize text-slate-900">{schedule.arm}</strong></span>
-                      <span className="font-mono font-bold text-blue-700">{schedule.academicYear} • {schedule.term}</span>
+                      <span>Arm Wing: <strong className="capitalize text-slate-900">{schedule.arm || getSchoolArm(schedule.classLevel)}</strong></span>
+                      <span className="font-mono font-bold text-blue-700">{schedule.academicYear || ''} • {schedule.term || ''}</span>
                     </div>
 
                     <div className="divide-y divide-slate-100">
-                      {schedule.items.map((item) => (
+                      {(schedule.items || []).map((item) => (
                         <div key={item.id} className="py-2 flex justify-between items-center">
                           <div>
                             <span className="font-semibold text-slate-800">{item.name}</span>
                             <span className="text-[10px] text-slate-400 block">{item.category}</span>
                           </div>
-                          <span className="font-mono font-bold text-slate-900">{formatNaira(item.amount)}</span>
+                          <span className="font-mono font-bold text-slate-900">{formatNaira(item.amount || 0)}</span>
                         </div>
                       ))}
                     </div>
 
                     <div className="pt-3 border-t-2 border-slate-900 flex justify-between items-center text-sm font-extrabold text-slate-900">
                       <span>Total Term Package:</span>
-                      <span className="text-emerald-700 font-mono">{formatNaira(schedule.totalAmount)}</span>
+                      <span className="text-emerald-700 font-mono">{formatNaira(schedule.totalAmount || 0)}</span>
                     </div>
                   </div>
                 );
@@ -569,43 +606,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div className="space-y-3">
-                {filteredPayments.map((p) => {
-                  const student = students.find((s) => s.id === p.studentId);
-                  const arm = getSchoolArm(p.classLevel);
+                {filteredPayments.length === 0 ? (
+                  <div className="py-10 text-center text-slate-500 space-y-2 border border-dashed border-slate-200 rounded-xl">
+                    <Receipt className="h-8 w-8 text-slate-400 mx-auto" />
+                    <p className="font-semibold text-xs text-slate-700">No Payment Records Found</p>
+                    <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                      Student payments and official receipts are recorded authoritatively in PostgreSQL ledgers.
+                    </p>
+                  </div>
+                ) : (
+                  filteredPayments.map((p) => {
+                    const student = students.find((s) => s.id === p.studentId);
+                    const arm = getSchoolArm(p.classLevel);
 
-                  return (
-                    <div key={p.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between hover:bg-slate-100/70 transition">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-slate-800">{p.receiptNumber}</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            p.status === 'Fully Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                          }`}>
-                            {p.status}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase text-slate-500 bg-slate-200 px-1.5 py-0.2 rounded">
-                            {arm}
-                          </span>
+                    return (
+                      <div key={p.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between hover:bg-slate-100/70 transition">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-slate-800">{p.receiptNumber}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              p.status === 'Fully Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {p.status}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase text-slate-500 bg-slate-200 px-1.5 py-0.2 rounded">
+                              {arm}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-bold text-slate-900 mt-1">{student?.fullName || p.studentId}</h4>
+                          <p className="text-[11px] text-slate-500">{p.classLevel} • Paid via {p.paymentMethod} on {p.paymentDate}</p>
                         </div>
-                        <h4 className="text-xs font-bold text-slate-900 mt-1">{student?.fullName || p.studentId}</h4>
-                        <p className="text-[11px] text-slate-500">{p.classLevel} • Paid via {p.paymentMethod} on {p.paymentDate}</p>
-                      </div>
 
-                      <div className="text-right">
-                        <span className="font-mono text-sm font-extrabold text-emerald-700 block">
-                          {formatNaira(p.amountPaid)}
-                        </span>
-                        <button
-                          onClick={() => onOpenReceiptModal(p, student)}
-                          className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
-                        >
-                          <Printer className="h-3 w-3" />
-                          <span>Print Receipt</span>
-                        </button>
+                        <div className="text-right">
+                          <span className="font-mono text-sm font-extrabold text-emerald-700 block">
+                            {formatNaira(p.amountPaid)}
+                          </span>
+                          <button
+                            onClick={() => onOpenReceiptModal(p, student)}
+                            className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                          >
+                            <Printer className="h-3 w-3" />
+                            <span>Print Receipt</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -787,7 +834,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {filteredAdmissions.map((adm, idx) => (
+                {filteredAdmissions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-slate-500 font-medium">
+                      No candidate admission records found. Admissions are synchronized authoritatively with PostgreSQL.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAdmissions.map((adm, idx) => (
                   <tr key={adm.id} className={`border-b border-slate-200 hover:bg-slate-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
                     <td className="p-3 font-mono font-bold text-slate-700">{adm.applicationNumber}</td>
                     <td className="p-3">
@@ -848,7 +902,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -892,7 +947,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {filteredStudents.map((student, idx) => {
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-500 font-medium">
+                      No student records found matching arm selection.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((student, idx) => {
                   const currentStatus = attendanceRecords[student.id] || 'Present';
                   const arm = student.arm || getSchoolArm(student.currentClass);
 
@@ -931,7 +993,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </td>
                     </tr>
                   );
-                })}
+                })
+              )}
               </tbody>
             </table>
           </div>
@@ -972,35 +1035,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div className="space-y-3">
-                {filteredStaff.map((stf) => (
-                  <div key={stf.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:shadow-xs transition">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                            {stf.staffId}
-                          </span>
-                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${
-                            stf.arm === 'kindergarten' ? 'bg-purple-100 text-purple-800' :
-                            stf.arm === 'primary' ? 'bg-emerald-100 text-emerald-800' :
-                            stf.arm === 'secondary' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'
-                          }`}>
-                            {stf.arm === 'all' ? 'Central Leadership' : `${stf.arm} arm`}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-900 mt-1">{stf.fullName}</h4>
-                        <p className="text-xs font-semibold text-blue-700">{stf.designation}</p>
-                      </div>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                        {stf.type}
-                      </span>
-                    </div>
-                    <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] text-slate-500 space-y-0.5">
-                      <p><strong>Qualifications:</strong> {stf.qualifications}</p>
-                      <p><strong>Contact:</strong> {stf.email} | {stf.phone}</p>
-                    </div>
+                {filteredStaff.length === 0 ? (
+                  <div className="py-8 text-center text-slate-500 space-y-1 border border-dashed border-slate-200 rounded-xl">
+                    <p className="font-semibold text-xs text-slate-700">No Staff Records Found</p>
+                    <p className="text-[11px] text-slate-400">Staff records are loaded authoritatively from PostgreSQL.</p>
                   </div>
-                ))}
+                ) : (
+                  filteredStaff.map((stf) => (
+                    <div key={stf.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:shadow-xs transition">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              {stf.staffId}
+                            </span>
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${
+                              stf.arm === 'kindergarten' ? 'bg-purple-100 text-purple-800' :
+                              stf.arm === 'primary' ? 'bg-emerald-100 text-emerald-800' :
+                              stf.arm === 'secondary' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'
+                            }`}>
+                              {stf.arm === 'all' ? 'Central Leadership' : `${stf.arm} arm`}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900 mt-1">{stf.fullName}</h4>
+                          <p className="text-xs font-semibold text-blue-700">{stf.designation}</p>
+                        </div>
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                          {stf.type}
+                        </span>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] text-slate-500 space-y-0.5">
+                        <p><strong>Qualifications:</strong> {stf.qualifications}</p>
+                        <p><strong>Contact:</strong> {stf.email} | {stf.phone}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

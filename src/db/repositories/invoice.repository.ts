@@ -66,7 +66,7 @@ export class InvoiceRepository extends BaseRepository<FeeInvoiceDbEntity> {
       throw new DatabaseQueryError('An invoice must contain at least one line item.');
     }
 
-    return withTransaction(async (client: PoolClient) => {
+    const runInClient = async (client: PoolClient) => {
       // 1. Verify student exists and belongs to school
       const studentRes = await client.query(
         `SELECT id, school_id, current_class_id FROM students WHERE id = $1 LIMIT 1;`,
@@ -155,7 +155,12 @@ export class InvoiceRepository extends BaseRepository<FeeInvoiceDbEntity> {
 
       invoice.items = items;
       return invoice;
-    });
+    };
+
+    if (options?.client) {
+      return runInClient(options.client);
+    }
+    return withTransaction(runInClient);
   }
 
   /**
