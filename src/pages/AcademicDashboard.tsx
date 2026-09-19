@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Student, 
   Subject, 
@@ -11,7 +11,9 @@ import {
   getSchoolArm,
   AffectiveDomain,
   PsychomotorDomain,
-  EarlyYearsMilestone
+  EarlyYearsMilestone,
+  DomainAssessmentStatus,
+  ClassDomainProgress
 } from '../types';
 import { 
   calculateGrade, 
@@ -71,7 +73,10 @@ import {
   Unlock,
   KeyRound,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Loader2,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -89,6 +94,7 @@ import { NavigationPage } from '../types';
 import { AttendancePage } from './AttendancePage';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 
 interface AcademicDashboardProps {
@@ -187,22 +193,284 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
     onAcademicYearChange?.(newSession);
   };
 
+  const { currentUser, isAuthenticated, hasRole, hasPermission } = useAuth();
+  const { classes, fetchClassDomainAssessments, saveStudentDomainAssessment } = useData();
+
+  const canEnterDomains = hasPermission('assessments.enter') || hasRole('teacher', 'principal', 'vice_principal', 'headmistress', 'head_kindergarten', 'super_admin', 'state_officer', 'exam_officer');
+  const canEditPrincipalRemark = hasRole('principal', 'headmistress', 'head_kindergarten', 'super_admin', 'state_officer');
+  const canEditCounselorRemark = hasRole('principal', 'teacher', 'super_admin', 'state_officer');
+  const canEditSportsRemark = hasRole('teacher', 'principal', 'super_admin', 'state_officer');
+
   // Editable scoresheet state for active subject and class
   const [localAssessments, setLocalAssessments] = useState<AssessmentScore[]>(assessments);
   const [saveMessage, setSaveMessage] = useState('');
 
   // Non-academic educational domains & remarks state mapped by student ID
-  const [localDomains, setLocalDomains] = useState<Record<string, {
-    affective: AffectiveDomain;
-    psychomotor: PsychomotorDomain;
+  interface LocalStudentDomainState {
+    affective: Partial<AffectiveDomain>;
+    psychomotor: Partial<PsychomotorDomain>;
     sportsMasterRemark?: string;
     sportsMasterName?: string;
     guidanceCounselorRemark?: string;
     guidanceCounselorName?: string;
     formTutorRemark?: string;
+    formTutorName?: string;
     principalRemark?: string;
-  }>>({});
+    principalName?: string;
+    principalTitle?: string;
+    status: DomainAssessmentStatus;
+    isAssessed: boolean;
+    isDirty?: boolean;
+  }
+
+  const [localDomains, setLocalDomains] = useState<Record<string, LocalStudentDomainState>>({});
+  const [classDomainProgress, setClassDomainProgress] = useState<ClassDomainProgress | null>(null);
+  const [isDomainsLoading, setIsDomainsLoading] = useState<boolean>(false);
+  const [domainFetchError, setDomainFetchError] = useState<string | null>(null);
   const [domainSaveMessage, setDomainSaveMessage] = useState('');
+  const [savingStudentIds, setSavingStudentIds] = useState<Record<string, boolean>>({});
+  const [savedStudentSuccess, setSavedStudentSuccess] = useState<Record<string, string>>({});
+  const [isSavingAllDomains, setIsSavingAllDomains] = useState<boolean>(false);
+
+  // Fetch authoritative class domain assessments from PostgreSQL
+  const loadDomainAssessments = useCallback(async () => {
+    const classObj = classes.find(c => c.level === selectedClass || c.name === selectedClass);
+    const targetClassIdentifier = classObj?.id || selectedClass;
+
+    setIsDomainsLoading(true);
+    setDomainFetchError(null);
+    try {
+      const res = await fetchClassDomainAssessments(targetClassIdentifier, selectedTerm);
+      if (res.success && res.data) {
+        setClassDomainProgress(res.data);
+        const mapped: Record<string, LocalStudentDomainState> = {};
+        res.data.students.forEach((stu) => {
+          mapped[stu.studentId] = {
+            affective: stu.affective || {},
+            psychomotor: stu.psychomotor || {},
+            sportsMasterRemark: stu.sportsMasterRemark || '',
+            sportsMasterName: stu.sportsMasterName || '',
+            guidanceCounselorRemark: stu.guidanceCounselorRemark || '',
+            guidanceCounselorName: stu.guidanceCounselorName || '',
+            formTutorRemark: stu.formTutorRemark || '',
+            formTutorName: stu.formTutorName || '',
+            principalRemark: stu.principalRemark || '',
+            principalName: stu.principalName || '',
+            principalTitle: stu.principalTitle || '',
+            status: stu.status || 'Not started',
+            isAssessed: stu.isAssessed || false,
+            isDirty: false,
+          };
+        });
+        setLocalDomains(mapped);
+      } else {
+        setDomainFetchError(res.error || 'Failed to load domain assessments from server.');
+      }
+    } catch (err: any) {
+      setDomainFetchError(err.message || 'Error communicating with domains service.');
+    } finally {
+      setIsDomainsLoading(false);
+    }
+  }, [classes, selectedClass, selectedTerm, fetchClassDomainAssessments]);
+
+  useEffect(() => {
+    if (activeTab === 'domains') {
+      loadDomainAssessments();
+    }
+  }, [activeTab, selectedClass, selectedTerm, loadDomainAssessments]);
+
+  const updateAffective = (studentId: string, trait: keyof AffectiveDomain, val: number) => {
+    setLocalDomains(prev => {
+      const current = prev[studentId] || {
+        affective: {},
+        psychomotor: {},
+        status: 'Not started' as DomainAssessmentStatus,
+        isAssessed: false,
+      };
+      const updatedAffective = {
+        ...current.affective,
+        [trait]: val,
+      };
+      return {
+        ...prev,
+        [studentId]: {
+          ...current,
+          affective: updatedAffective,
+          status: 'In progress' as DomainAssessmentStatus,
+          isDirty: true,
+        },
+      };
+    });
+  };
+
+  const updatePsychomotor = (studentId: string, trait: keyof PsychomotorDomain, val: number) => {
+    setLocalDomains(prev => {
+      const current = prev[studentId] || {
+        affective: {},
+        psychomotor: {},
+        status: 'Not started' as DomainAssessmentStatus,
+        isAssessed: false,
+      };
+      const updatedPsychomotor = {
+        ...current.psychomotor,
+        [trait]: val,
+      };
+      return {
+        ...prev,
+        [studentId]: {
+          ...current,
+          psychomotor: updatedPsychomotor,
+          status: 'In progress' as DomainAssessmentStatus,
+          isDirty: true,
+        },
+      };
+    });
+  };
+
+  const updateRemark = (
+    studentId: string,
+    field: 'formTutorRemark' | 'sportsMasterRemark' | 'guidanceCounselorRemark' | 'principalRemark',
+    text: string
+  ) => {
+    setLocalDomains(prev => {
+      const current = prev[studentId] || {
+        affective: {},
+        psychomotor: {},
+        status: 'Not started' as DomainAssessmentStatus,
+        isAssessed: false,
+      };
+      return {
+        ...prev,
+        [studentId]: {
+          ...current,
+          [field]: text,
+          isDirty: true,
+        },
+      };
+    });
+  };
+
+  const handleSaveStudentDomain = async (student: Student) => {
+    const state = localDomains[student.id];
+    const classObj = classes.find(c => c.level === selectedClass || c.name === selectedClass);
+    const targetClassId = classObj?.id || student.currentClass || selectedClass;
+
+    setSavingStudentIds(prev => ({ ...prev, [student.id]: true }));
+    try {
+      const res = await saveStudentDomainAssessment({
+        studentId: student.id,
+        classId: targetClassId,
+        termId: selectedTerm,
+        affective: state?.affective || null,
+        psychomotor: state?.psychomotor || null,
+        formTutorRemark: state?.formTutorRemark || null,
+        sportsMasterRemark: state?.sportsMasterRemark || null,
+        guidanceCounselorRemark: state?.guidanceCounselorRemark || null,
+        principalRemark: state?.principalRemark || null,
+        formTutorName: state?.formTutorName || currentUser?.fullName || null,
+        sportsMasterName: state?.sportsMasterName || null,
+        guidanceCounselorName: state?.guidanceCounselorName || null,
+        principalName: state?.principalName || null,
+        principalTitle: state?.principalTitle || null,
+      });
+
+      if (res.success && res.data) {
+        setLocalDomains(prev => ({
+          ...prev,
+          [student.id]: {
+            ...prev[student.id],
+            status: res.data!.status,
+            isAssessed: res.data!.isAssessed,
+            isDirty: false,
+          },
+        }));
+        setSavedStudentSuccess(prev => ({ ...prev, [student.id]: 'Saved to server database' }));
+        setTimeout(() => {
+          setSavedStudentSuccess(prev => {
+            const next = { ...prev };
+            delete next[student.id];
+            return next;
+          });
+        }, 3000);
+        // Refresh class progress summary from server
+        loadDomainAssessments();
+      } else {
+        alert(`Failed to save domain assessment: ${res.error || 'Server error'}`);
+      }
+    } catch (err: any) {
+      alert(`Error communicating with domains service: ${err.message}`);
+    } finally {
+      setSavingStudentIds(prev => ({ ...prev, [student.id]: false }));
+    }
+  };
+
+  const handleSaveAllDomains = async () => {
+    setIsSavingAllDomains(true);
+    setDomainSaveMessage('');
+    const classObj = classes.find(c => c.level === selectedClass || c.name === selectedClass);
+    const targetClassId = classObj?.id || selectedClass;
+
+    let savedCount = 0;
+    let errorCount = 0;
+
+    for (const student of classStudents) {
+      const state = localDomains[student.id];
+      if (!state) continue;
+      const hasAffective = state.affective && Object.values(state.affective).some(v => typeof v === 'number' && v > 0);
+      const hasPsychomotor = state.psychomotor && Object.values(state.psychomotor).some(v => typeof v === 'number' && v > 0);
+      const hasRemarks = Boolean(state.formTutorRemark || state.sportsMasterRemark || state.guidanceCounselorRemark || state.principalRemark);
+
+      if (state.isDirty || hasAffective || hasPsychomotor || hasRemarks) {
+        try {
+          const res = await saveStudentDomainAssessment({
+            studentId: student.id,
+            classId: targetClassId,
+            termId: selectedTerm,
+            affective: state.affective || null,
+            psychomotor: state.psychomotor || null,
+            formTutorRemark: state.formTutorRemark || null,
+            sportsMasterRemark: state.sportsMasterRemark || null,
+            guidanceCounselorRemark: state.guidanceCounselorRemark || null,
+            principalRemark: state.principalRemark || null,
+            formTutorName: state.formTutorName || currentUser?.fullName || null,
+            sportsMasterName: state.sportsMasterName || null,
+            guidanceCounselorName: state.guidanceCounselorName || null,
+            principalName: state.principalName || null,
+            principalTitle: state.principalTitle || null,
+          });
+          if (res.success) {
+            savedCount++;
+            setLocalDomains(prev => ({
+              ...prev,
+              [student.id]: {
+                ...prev[student.id],
+                status: res.data?.status || 'Saved',
+                isAssessed: res.data?.isAssessed || true,
+                isDirty: false,
+              },
+            }));
+          } else {
+            errorCount++;
+          }
+        } catch {
+          errorCount++;
+        }
+      }
+    }
+
+    setIsSavingAllDomains(false);
+    if (savedCount > 0 && errorCount === 0) {
+      setDomainSaveMessage(`Successfully saved ${savedCount} student domain evaluation(s) to PostgreSQL!`);
+    } else if (savedCount > 0 && errorCount > 0) {
+      setDomainSaveMessage(`Partially saved: ${savedCount} succeeded, ${errorCount} failed.`);
+    } else if (savedCount === 0 && errorCount === 0) {
+      setDomainSaveMessage('No domain modifications pending save.');
+    } else {
+      setDomainSaveMessage('Failed to save domain assessments. Please check network connection.');
+    }
+    setTimeout(() => setDomainSaveMessage(''), 4000);
+    loadDomainAssessments();
+  };
 
   // Class list definition across all 3 arms
   const allClassLevels: { level: ClassLevel; arm: SchoolArm; label: string }[] = [
@@ -352,27 +620,27 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
         ? 'Outstanding scholarly achievement. Keep up the high standard.'
         : 'Commendable academic progress. Promoted with praise.';
 
-      const affective: AffectiveDomain = studentDomain?.affective || {
-        punctuality: 5,
-        neatness: 5,
-        politeness: 5,
-        honesty: 5,
-        peerRelationship: 4,
-        leadership: student.isPrefect ? 5 : 4,
-        emotionalStability: 4,
-        obedience: 5,
-        attentiveness: 5,
-        perseverance: 4,
+      const affective: AffectiveDomain = {
+        punctuality: studentDomain?.affective?.punctuality || 0,
+        neatness: studentDomain?.affective?.neatness || 0,
+        politeness: studentDomain?.affective?.politeness || 0,
+        honesty: studentDomain?.affective?.honesty || 0,
+        peerRelationship: studentDomain?.affective?.peerRelationship || 0,
+        leadership: studentDomain?.affective?.leadership || 0,
+        emotionalStability: studentDomain?.affective?.emotionalStability || 0,
+        obedience: studentDomain?.affective?.obedience || 0,
+        attentiveness: studentDomain?.affective?.attentiveness || 0,
+        perseverance: studentDomain?.affective?.perseverance || 0,
       };
 
-      const psychomotor: PsychomotorDomain = studentDomain?.psychomotor || {
-        handwriting: 4,
-        sportsAndGames: 4,
-        craftsAndPractical: 4,
-        verbalFluency: 5,
-        musicalDramatic: 4,
-        handlingOfTools: 4,
-        physicalAgility: 4,
+      const psychomotor: PsychomotorDomain = {
+        handwriting: studentDomain?.psychomotor?.handwriting || 0,
+        sportsAndGames: studentDomain?.psychomotor?.sportsAndGames || 0,
+        craftsAndPractical: studentDomain?.psychomotor?.craftsAndPractical || 0,
+        verbalFluency: studentDomain?.psychomotor?.verbalFluency || 0,
+        musicalDramatic: studentDomain?.psychomotor?.musicalDramatic || 0,
+        handlingOfTools: studentDomain?.psychomotor?.handlingOfTools || 0,
+        physicalAgility: studentDomain?.psychomotor?.physicalAgility || 0,
       };
 
       const attendanceRecord = {
@@ -441,13 +709,25 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
       positionInClass: 1,
       totalStudentsInClass: classStudents.length,
       affective: {
-        punctuality: 5, neatness: 5, politeness: 5, honesty: 5,
-        peerRelationship: 4, leadership: 4, emotionalStability: 4,
-        obedience: 5, attentiveness: 5, perseverance: 4,
+        punctuality: localDomains[student.id]?.affective?.punctuality || 0,
+        neatness: localDomains[student.id]?.affective?.neatness || 0,
+        politeness: localDomains[student.id]?.affective?.politeness || 0,
+        honesty: localDomains[student.id]?.affective?.honesty || 0,
+        peerRelationship: localDomains[student.id]?.affective?.peerRelationship || 0,
+        leadership: localDomains[student.id]?.affective?.leadership || 0,
+        emotionalStability: localDomains[student.id]?.affective?.emotionalStability || 0,
+        obedience: localDomains[student.id]?.affective?.obedience || 0,
+        attentiveness: localDomains[student.id]?.affective?.attentiveness || 0,
+        perseverance: localDomains[student.id]?.affective?.perseverance || 0,
       },
       psychomotor: {
-        handwriting: 4, sportsAndGames: 4, craftsAndPractical: 4,
-        verbalFluency: 5, musicalDramatic: 4, handlingOfTools: 4, physicalAgility: 4,
+        handwriting: localDomains[student.id]?.psychomotor?.handwriting || 0,
+        sportsAndGames: localDomains[student.id]?.psychomotor?.sportsAndGames || 0,
+        craftsAndPractical: localDomains[student.id]?.psychomotor?.craftsAndPractical || 0,
+        verbalFluency: localDomains[student.id]?.psychomotor?.verbalFluency || 0,
+        musicalDramatic: localDomains[student.id]?.psychomotor?.musicalDramatic || 0,
+        handlingOfTools: localDomains[student.id]?.psychomotor?.handlingOfTools || 0,
+        physicalAgility: localDomains[student.id]?.psychomotor?.physicalAgility || 0,
       },
       attendance: {
         timesSchoolOpened: 60,
@@ -457,14 +737,14 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
       },
       attendancePresent: 58,
       attendanceTotalDays: 60,
-      formTutorRemark: 'Satisfactory performance.',
-      formTutorName: 'Mrs. Blessing Aondoaver',
-      sportsMasterRemark: 'Good athletic participation.',
-      sportsMasterName: 'Coach Terkula Tyav',
-      guidanceCounselorRemark: 'Exhibits good character and moral focus.',
-      guidanceCounselorName: 'Mrs. Comfort Agbo',
-      principalRemark: 'Commendable result.',
-      principalName: 'Dr. (Mrs.) Grace Nkechi Okafor',
+      formTutorRemark: localDomains[student.id]?.formTutorRemark || 'Satisfactory performance.',
+      formTutorName: localDomains[student.id]?.formTutorName || 'Mrs. Blessing Aondoaver',
+      sportsMasterRemark: localDomains[student.id]?.sportsMasterRemark || 'Good athletic participation.',
+      sportsMasterName: localDomains[student.id]?.sportsMasterName || 'Coach Terkula Tyav',
+      guidanceCounselorRemark: localDomains[student.id]?.guidanceCounselorRemark || 'Exhibits good character and moral focus.',
+      guidanceCounselorName: localDomains[student.id]?.guidanceCounselorName || 'Mrs. Comfort Agbo',
+      principalRemark: localDomains[student.id]?.principalRemark || 'Commendable result.',
+      principalName: localDomains[student.id]?.principalName || 'Dr. (Mrs.) Grace Nkechi Okafor',
       promotionalStatus: 'Promoted to Next Class',
       nextTermBegins: 'Monday 4th May, 2026',
       approvalStatus: 'Approved & Published',
@@ -612,8 +892,6 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
     { subject: 'Economics', average: 72.0 },
     { subject: 'Civic Ed', average: 83.5 },
   ];
-
-  const { currentUser, isAuthenticated } = useAuth();
 
   // Access Control & Wing Restriction State (Server RBAC)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -1223,47 +1501,141 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
       {/* ==================== TAB 2: DOMAIN ASSESSMENT & NON-ACADEMIC EVALUATION ==================== */}
       {activeTab === 'domains' && (
         <div className="space-y-6 animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200">
+          {/* Header & Controls */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-emerald-50/80 p-5 rounded-2xl border border-emerald-200">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <HeartHandshake className="h-4 w-4 text-emerald-700" />
-                Domains of Education Evaluation Matrix • {selectedClass} ({selectedTerm})
-              </h3>
-              <p className="text-xs text-slate-600 mt-0.5">
-                Assess affective behaviors (character/discipline), psychomotor practical skills, sports participation, and statutory remarks.
+              <div className="flex items-center gap-2">
+                <HeartHandshake className="h-5 w-5 text-emerald-700" />
+                <h3 className="font-bold text-slate-900 text-base">
+                  Domains of Education Evaluation Matrix • {selectedClass} ({selectedTerm})
+                </h3>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 border border-emerald-300">
+                  PostgreSQL Authoritative
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-1">
+                Evaluate affective character traits, psychomotor physical & craft competencies, and statutory institutional remarks directly saved to database records.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <button
-                onClick={() => {
-                  setDomainSaveMessage('All Educational Domains and Statutory Remarks synchronized successfully!');
-                  setTimeout(() => setDomainSaveMessage(''), 2500);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 text-xs font-bold transition cursor-pointer shadow-md"
+                type="button"
+                onClick={loadDomainAssessments}
+                disabled={isDomainsLoading}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 text-xs font-bold transition cursor-pointer shadow-2xs disabled:opacity-50"
               >
-                <Save className="h-3.5 w-3.5" />
-                <span>Save All Domains</span>
+                <RefreshCw className={`h-3.5 w-3.5 text-slate-600 ${isDomainsLoading ? 'animate-spin' : ''}`} />
+                <span>{isDomainsLoading ? 'Refreshing...' : 'Refresh Server Data'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveAllDomains}
+                disabled={isSavingAllDomains || !canEnterDomains}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 text-xs font-bold transition cursor-pointer shadow-md disabled:opacity-50"
+              >
+                {isSavingAllDomains ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Saving All Assessments...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-3.5 w-3.5" />
+                    <span>Save All Domains</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
 
+          {/* Feedback & Error Alerts */}
           {domainSaveMessage && (
-            <div className="p-3 bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold rounded-xl flex items-center gap-2 animate-in fade-in">
-              <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-              <span>{domainSaveMessage}</span>
+            <div className="p-3.5 bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold rounded-xl flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
+                <span>{domainSaveMessage}</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setDomainSaveMessage('')} 
+                className="text-emerald-700 hover:text-emerald-900 text-xs font-bold"
+              >
+                Dismiss
+              </button>
             </div>
           )}
+
+          {domainFetchError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-900 text-xs font-bold rounded-xl flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{domainFetchError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={loadDomainAssessments}
+                className="underline hover:text-rose-950 text-xs font-bold"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Class Assessment Progress Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Class Enrolled</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-xl font-black text-slate-900">{classStudents.length}</span>
+                <span className="text-xs text-slate-500">Students</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">Assessed & Saved</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-xl font-black text-emerald-700">
+                  {classDomainProgress?.assessedCount ?? (Object.values(localDomains) as LocalStudentDomainState[]).filter(d => d.isAssessed).length}
+                </span>
+                <span className="text-xs text-emerald-600 font-semibold">
+                  ({Math.round(((classDomainProgress?.assessedCount ?? (Object.values(localDomains) as LocalStudentDomainState[]).filter(d => d.isAssessed).length) / Math.max(classStudents.length, 1)) * 100)}%)
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-semibold text-blue-700 uppercase tracking-wider block">In Progress</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-xl font-black text-blue-700">
+                  {classDomainProgress?.inProgressCount ?? (Object.values(localDomains) as LocalStudentDomainState[]).filter(d => d.status === 'In progress').length}
+                </span>
+                <span className="text-xs text-slate-500">Drafting</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider block">Not Started</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-xl font-black text-amber-700">
+                  {classDomainProgress?.unassessedCount ?? (classStudents.length - (Object.values(localDomains) as LocalStudentDomainState[]).filter(d => d.isAssessed || d.status === 'In progress').length)}
+                </span>
+                <span className="text-xs text-slate-500">Pending</span>
+              </div>
+            </div>
+          </div>
 
           {/* Rating Scale Legend */}
           <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
             <span className="font-bold text-slate-800">5-Point Domain Rating Key:</span>
-            <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold">
+            <div className="flex items-center gap-2.5 flex-wrap text-[11px] font-semibold">
               <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">5 - Exceptional (A)</span>
               <span className="px-2.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">4 - Commendable (B)</span>
               <span className="px-2.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-300">3 - Satisfactory (C)</span>
               <span className="px-2.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">2 - Developing (D)</span>
               <span className="px-2.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300">1 - Weak (E)</span>
+              <span className="px-2 py-0.5 rounded bg-slate-50 text-slate-500 border border-dashed border-slate-300">Unrated (0)</span>
             </div>
           </div>
 
@@ -1271,93 +1643,100 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
           <div className="space-y-6">
             {classStudents.map((student) => {
               const studentDomain = localDomains[student.id] || {
-                affective: {
-                  punctuality: 5,
-                  neatness: 5,
-                  politeness: 5,
-                  honesty: 5,
-                  peerRelationship: 4,
-                  leadership: student.isPrefect ? 5 : 4,
-                  emotionalStability: 4,
-                  obedience: 5,
-                  attentiveness: 5,
-                  perseverance: 4,
-                },
-                psychomotor: {
-                  handwriting: 4,
-                  sportsAndGames: 4,
-                  craftsAndPractical: 4,
-                  verbalFluency: 5,
-                  musicalDramatic: 4,
-                  handlingOfTools: 4,
-                  physicalAgility: 4,
-                },
-                sportsMasterRemark: `Active sporting participation in ${student.house}. Displays high athletic stamina and teamwork.`,
-                guidanceCounselorRemark: `${student.fullName} exhibits admirable emotional maturity, moral rectitude, and commendable focus on academic and personal aspirations.`,
-                formTutorRemark: `${student.fullName} is an attentive, well-behaved and conscientious learner who participates actively in class activities.`,
+                affective: {},
+                psychomotor: {},
+                status: 'Not started' as DomainAssessmentStatus,
+                isAssessed: false,
+                isDirty: false,
               };
 
-              const updateAffective = (trait: keyof AffectiveDomain, val: number) => {
-                setLocalDomains(prev => ({
-                  ...prev,
-                  [student.id]: {
-                    ...studentDomain,
-                    affective: {
-                      ...studentDomain.affective,
-                      [trait]: val,
-                    }
-                  }
-                }));
-              };
-
-              const updatePsychomotor = (trait: keyof PsychomotorDomain, val: number) => {
-                setLocalDomains(prev => ({
-                  ...prev,
-                  [student.id]: {
-                    ...studentDomain,
-                    psychomotor: {
-                      ...studentDomain.psychomotor,
-                      [trait]: val,
-                    }
-                  }
-                }));
-              };
-
-              const updateRemark = (field: 'sportsMasterRemark' | 'guidanceCounselorRemark' | 'formTutorRemark', text: string) => {
-                setLocalDomains(prev => ({
-                  ...prev,
-                  [student.id]: {
-                    ...studentDomain,
-                    [field]: text,
-                  }
-                }));
-              };
+              const isSavingThis = savingStudentIds[student.id];
+              const justSavedNotice = savedStudentSuccess[student.id];
 
               return (
                 <div key={student.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                  {/* Student Card Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-xl bg-blue-50 border border-blue-200">
                         <UserCheck className="h-5 w-5 text-blue-700" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="font-bold text-slate-900 text-sm">{student.fullName}</h4>
                           <span className="text-[10px] font-mono font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                             {student.admissionNumber}
                           </span>
+
+                          {/* Server Authoritative Status Badge */}
+                          {studentDomain.status === 'Saved' ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-300">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                              Assessed & Saved
+                            </span>
+                          ) : studentDomain.status === 'In progress' ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-300">
+                              <Clock className="h-3 w-3 text-blue-600" />
+                              In Progress
+                            </span>
+                          ) : studentDomain.status === 'Returned for correction' ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-300">
+                              <AlertTriangle className="h-3 w-3 text-rose-600" />
+                              Returned for Correction
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-300">
+                              <AlertCircle className="h-3 w-3 text-slate-500" />
+                              Not Started
+                            </span>
+                          )}
+
+                          {studentDomain.isDirty && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
+                              Unsaved Changes
+                            </span>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-500">{student.currentClass} • Sporting House: <strong className="text-slate-800">{student.house}</strong></p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {student.currentClass} • House: <strong className="text-slate-800">{student.house || 'Yellow'}</strong>
+                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {justSavedNotice && (
+                        <span className="text-xs text-emerald-700 font-bold flex items-center gap-1 animate-in fade-in">
+                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          {justSavedNotice}
+                        </span>
+                      )}
+
                       <button
+                        type="button"
+                        onClick={() => handleSaveStudentDomain(student)}
+                        disabled={isSavingThis || !canEnterDomains}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white px-3.5 py-1.5 text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {isSavingThis ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-3.5 w-3.5" />
+                            <span>Save Assessment</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => {
                           const rc = getStudentReportCard(student);
                           onOpenReportCardModal(student, rc);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold transition cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold transition cursor-pointer shadow-xs"
                       >
                         <Eye className="h-3.5 w-3.5" />
                         <span>Preview Report Card</span>
@@ -1367,10 +1746,12 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
 
                   {/* 1. Affective Traits Matrix */}
                   <div className="space-y-2">
-                    <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                      <UserCheck className="h-3.5 w-3.5 text-blue-600" />
-                      Affective Domain Traits (Character, Discipline & Conduct)
-                    </h5>
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                        <UserCheck className="h-3.5 w-3.5 text-blue-600" />
+                        Affective Domain Traits (Character, Discipline & Conduct)
+                      </h5>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 text-xs">
                       {[
                         { key: 'punctuality', label: 'Punctuality' },
@@ -1384,19 +1765,24 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
                         { key: 'attentiveness', label: 'Attentiveness' },
                         { key: 'perseverance', label: 'Perseverance' },
                       ].map(({ key, label }) => {
-                        const val = studentDomain.affective[key as keyof AffectiveDomain] || 5;
+                        const val = studentDomain.affective?.[key as keyof AffectiveDomain] || 0;
                         return (
                           <div key={key} className="p-2 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between gap-1.5">
-                            <span className="text-[11px] font-medium text-slate-700">{label}:</span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-semibold text-slate-700">{label}:</span>
+                              <span className="text-[10px] font-bold text-slate-500">
+                                {val > 0 ? getDomainRatingDescription(val) : 'Unrated'}
+                              </span>
+                            </div>
                             <div className="flex items-center justify-between gap-1">
                               {[1, 2, 3, 4, 5].map((rating) => (
                                 <button
                                   key={rating}
                                   type="button"
-                                  onClick={() => updateAffective(key as keyof AffectiveDomain, rating)}
+                                  onClick={() => updateAffective(student.id, key as keyof AffectiveDomain, rating)}
                                   className={`h-5 w-5 rounded text-[10px] font-bold transition cursor-pointer ${
                                     val === rating
-                                      ? 'bg-blue-600 text-white'
+                                      ? 'bg-blue-600 text-white shadow-2xs scale-105'
                                       : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                                   }`}
                                 >
@@ -1426,19 +1812,24 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
                         { key: 'handlingOfTools', label: 'Tool Handling' },
                         { key: 'physicalAgility', label: 'Physical Agility' },
                       ].map(({ key, label }) => {
-                        const val = studentDomain.psychomotor[key as keyof PsychomotorDomain] || 4;
+                        const val = studentDomain.psychomotor?.[key as keyof PsychomotorDomain] || 0;
                         return (
                           <div key={key} className="p-2 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between gap-1.5">
-                            <span className="text-[11px] font-medium text-slate-700">{label}:</span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-semibold text-slate-700">{label}:</span>
+                              <span className="text-[10px] font-bold text-slate-500">
+                                {val > 0 ? getDomainRatingDescription(val) : 'Unrated'}
+                              </span>
+                            </div>
                             <div className="flex items-center justify-between gap-1">
                               {[1, 2, 3, 4, 5].map((rating) => (
                                 <button
                                   key={rating}
                                   type="button"
-                                  onClick={() => updatePsychomotor(key as keyof PsychomotorDomain, rating)}
+                                  onClick={() => updatePsychomotor(student.id, key as keyof PsychomotorDomain, rating)}
                                   className={`h-5 w-5 rounded text-[10px] font-bold transition cursor-pointer ${
                                     val === rating
-                                      ? 'bg-emerald-600 text-white'
+                                      ? 'bg-emerald-600 text-white shadow-2xs scale-105'
                                       : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
                                   }`}
                                 >
@@ -1453,43 +1844,76 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
                   </div>
 
                   {/* 3. Statutory & Extracurricular Remarks */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+                    {/* Form Tutor */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        Form Tutor / Class Teacher Remark:
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700">
+                          Form Tutor Remark:
+                        </label>
+                      </div>
                       <textarea
                         rows={2}
-                        value={studentDomain.formTutorRemark}
-                        onChange={(e) => updateRemark('formTutorRemark', e.target.value)}
+                        value={studentDomain.formTutorRemark || ''}
+                        onChange={(e) => updateRemark(student.id, 'formTutorRemark', e.target.value)}
                         className="w-full rounded-xl border border-slate-300 p-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500"
-                        placeholder="Class teacher comments..."
+                        placeholder="Class teacher pedagogical observations..."
                       />
                     </div>
 
+                    {/* Sports Master */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        Sports Master / Athletic Coach Remark:
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700">
+                          Sports Master Remark:
+                        </label>
+                      </div>
                       <textarea
                         rows={2}
-                        value={studentDomain.sportsMasterRemark}
-                        onChange={(e) => updateRemark('sportsMasterRemark', e.target.value)}
+                        value={studentDomain.sportsMasterRemark || ''}
+                        onChange={(e) => updateRemark(student.id, 'sportsMasterRemark', e.target.value)}
                         className="w-full rounded-xl border border-slate-300 p-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500"
-                        placeholder="Sports and athletics remark..."
+                        placeholder="Athletic stamina & sports house performance..."
                       />
                     </div>
 
+                    {/* Guidance Counselor */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        Guidance Counselor Remark:
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700">
+                          Guidance Counselor Remark:
+                        </label>
+                      </div>
                       <textarea
                         rows={2}
-                        value={studentDomain.guidanceCounselorRemark}
-                        onChange={(e) => updateRemark('guidanceCounselorRemark', e.target.value)}
+                        value={studentDomain.guidanceCounselorRemark || ''}
+                        onChange={(e) => updateRemark(student.id, 'guidanceCounselorRemark', e.target.value)}
                         className="w-full rounded-xl border border-slate-300 p-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500"
-                        placeholder="Guidance and moral conduct remark..."
+                        placeholder="Moral conduct & personal aspirations..."
+                      />
+                    </div>
+
+                    {/* Principal / Head of School */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                          Principal Remark:
+                          {!canEditPrincipalRemark && (
+                            <Lock className="h-3 w-3 text-slate-400" title="Authorized for Principal & Admin" />
+                          )}
+                        </label>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={studentDomain.principalRemark || ''}
+                        readOnly={!canEditPrincipalRemark}
+                        onChange={(e) => updateRemark(student.id, 'principalRemark', e.target.value)}
+                        className={`w-full rounded-xl border p-2 text-xs text-slate-900 focus:outline-none ${
+                          canEditPrincipalRemark 
+                            ? 'border-slate-300 focus:border-blue-500 bg-white' 
+                            : 'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'
+                        }`}
+                        placeholder={canEditPrincipalRemark ? 'Official institutional remarks...' : '(Authorized for Principal & Admin)'}
                       />
                     </div>
                   </div>

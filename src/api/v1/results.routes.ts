@@ -406,3 +406,376 @@ resultsRouter.post(
   }
 );
 
+/**
+ * GET /api/v1/results/domains/class/:classId
+ * Retrieves class-wide domain assessment records and progress stats from PostgreSQL.
+ */
+resultsRouter.get(
+  '/domains/class/:classId',
+  authenticateUser,
+  requirePermission('assessments.view'),
+  requireSchoolScope(),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const classId = req.params.classId;
+      let targetSchoolId = (req.query.school_id as string) || (req.query.schoolId as string);
+
+      if (!req.user?.isSuperAdmin && !req.user?.isStateOfficer) {
+        targetSchoolId = req.user?.schoolId || '';
+      }
+
+      let termId = (req.query.term_id as string) || (req.query.termId as string);
+      if (!termId) {
+        const currentTermRes = await query<{ id: string }>(
+          'SELECT id FROM academic_terms WHERE is_current = TRUE LIMIT 1;'
+        );
+        termId = currentTermRes.rows[0]?.id;
+      }
+
+      if (!termId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_TERM',
+          message: 'Active academic term could not be determined.',
+        });
+        return;
+      }
+
+      const progress = await reportCardRepository.getClassDomainAssessments(
+        targetSchoolId,
+        classId,
+        termId
+      );
+
+      res.json({
+        success: true,
+        data: progress,
+      });
+    } catch (error: any) {
+      console.error('[ResultsAPI] Failed to retrieve class domain assessments:', error);
+      const isNotFound = error.message?.includes('NOT_FOUND');
+      const isViolation = error.message?.includes('VIOLATION') || error.message?.includes('UNAUTHORIZED');
+      res.status(isNotFound ? 404 : (isViolation ? 403 : 500)).json({
+        success: false,
+        error: isNotFound ? 'NOT_FOUND' : (isViolation ? 'ACCESS_DENIED' : 'INTERNAL_ERROR'),
+        message: error.message || 'Failed to retrieve class domain assessments.',
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/results/domains/student/:studentId
+ * Retrieves authoritative domain assessment for a specific student from PostgreSQL.
+ */
+resultsRouter.get(
+  '/domains/student/:studentId',
+  authenticateUser,
+  requirePermission('results.view'),
+  requireSchoolScope(),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const studentId = req.params.studentId;
+      let targetSchoolId = (req.query.school_id as string) || (req.query.schoolId as string);
+
+      if (!req.user?.isSuperAdmin && !req.user?.isStateOfficer) {
+        targetSchoolId = req.user?.schoolId || '';
+      }
+
+      // If user is a student, only allow own records
+      if (req.user?.role === 'student') {
+        const studentUserRes = await query<{ id: string }>(
+          'SELECT id FROM students WHERE user_id = $1 OR id = $2 LIMIT 1;',
+          [req.user.id, studentId]
+        );
+        if (!studentUserRes.rows[0] || studentUserRes.rows[0].id !== studentId) {
+          res.status(403).json({
+            success: false,
+            error: 'ACCESS_DENIED',
+            message: 'Students may only access their own domain assessment records.',
+          });
+          return;
+        }
+      }
+
+      // If user is a parent, verify parent-student relationship
+      if (req.user?.role === 'parent') {
+        const { isLinked } = await parentRepository.verifyParentStudentRelationshipByUserId(
+          req.user.id,
+          studentId
+        );
+        if (!isLinked) {
+          res.status(403).json({
+            success: false,
+            error: 'FORBIDDEN_RELATIONSHIP',
+            message: 'You are not authorized to view domain assessments for this student.',
+          });
+          return;
+        }
+      }
+
+      let termId = (req.query.term_id as string) || (req.query.termId as string);
+      if (!termId) {
+        const currentTermRes = await query<{ id: string }>(
+          'SELECT id FROM academic_terms WHERE is_current = TRUE LIMIT 1;'
+        );
+        termId = currentTermRes.rows[0]?.id;
+      }
+
+      if (!termId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_TERM',
+          message: 'Active academic term could not be determined.',
+        });
+        return;
+      }
+
+      const domainData = await reportCardRepository.getStudentDomainAssessment(
+        targetSchoolId,
+        studentId,
+        termId
+      );
+
+      res.json({
+        success: true,
+        data: domainData,
+      });
+    } catch (error: any) {
+      console.error('[ResultsAPI] Failed to retrieve student domain assessment:', error);
+      const isNotFound = error.message?.includes('NOT_FOUND');
+      const isViolation = error.message?.includes('VIOLATION') || error.message?.includes('UNAUTHORIZED');
+      res.status(isNotFound ? 404 : (isViolation ? 403 : 500)).json({
+        success: false,
+        error: isNotFound ? 'NOT_FOUND' : (isViolation ? 'ACCESS_DENIED' : 'INTERNAL_ERROR'),
+        message: error.message || 'Failed to retrieve student domain assessment.',
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/results/domains/save
+ * Server-authoritative domain assessment entry endpoint.
+ */
+resultsRouter.post(
+  '/domains/save',
+  authenticateUser,
+  requirePermission('assessments.enter'),
+  requireSchoolScope(),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const {
+        studentId,
+        classId,
+        termId,
+        affective,
+        psychomotor,
+        formTutorRemark,
+        sportsMasterRemark,
+        guidanceCounselorRemark,
+        principalRemark,
+        formTutorName,
+        sportsMasterName,
+        guidanceCounselorName,
+        principalName,
+        principalTitle,
+        approvalStatus,
+      } = req.body;
+
+      if (!studentId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_STUDENT_ID',
+          message: 'studentId is required.',
+        });
+        return;
+      }
+
+      let schoolId = req.body.schoolId || req.body.school_id;
+      if (!req.user?.isSuperAdmin && !req.user?.isStateOfficer) {
+        schoolId = req.user?.schoolId || '';
+      }
+
+      if (!schoolId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_SCHOOL_ID',
+          message: 'schoolId is required.',
+        });
+        return;
+      }
+
+      let targetTermId = termId || (req.query.term_id as string);
+      if (!targetTermId) {
+        const currentTermRes = await query<{ id: string }>(
+          'SELECT id FROM academic_terms WHERE is_current = TRUE LIMIT 1;'
+        );
+        targetTermId = currentTermRes.rows[0]?.id;
+      }
+
+      if (!targetTermId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_TERM',
+          message: 'Active academic term could not be determined.',
+        });
+        return;
+      }
+
+      const savedAssessment = await reportCardRepository.saveStudentDomainAssessment({
+        schoolId,
+        studentId,
+        classId,
+        termId: targetTermId,
+        affective,
+        psychomotor,
+        formTutorRemark,
+        sportsMasterRemark,
+        guidanceCounselorRemark,
+        principalRemark,
+        formTutorName,
+        sportsMasterName,
+        guidanceCounselorName,
+        principalName,
+        principalTitle,
+        approvalStatus,
+        authenticatedUser: {
+          id: req.user!.id,
+          role: req.user!.role,
+          schoolId: req.user!.schoolId || undefined,
+          fullName: req.user!.fullName || 'Staff Member',
+          isSuperAdmin: req.user!.isSuperAdmin,
+          isStateOfficer: req.user!.isStateOfficer,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Domain assessment saved successfully.',
+        data: savedAssessment,
+      });
+    } catch (error: any) {
+      console.error('[ResultsAPI] Failed to save domain assessment:', error);
+      const isRatingError = error.message?.includes('INVALID_RATING') || error.message?.includes('INVALID_TRAIT');
+      const isForbidden = error.message?.includes('FORBIDDEN') || error.message?.includes('UNAUTHORIZED') || error.message?.includes('VIOLATION');
+      const isNotFound = error.message?.includes('NOT_FOUND');
+
+      const statusCode = isRatingError ? 400 : (isForbidden ? 403 : (isNotFound ? 404 : 500));
+      res.status(statusCode).json({
+        success: false,
+        error: isRatingError ? 'INVALID_RATING' : (isForbidden ? 'ACCESS_DENIED' : (isNotFound ? 'NOT_FOUND' : 'INTERNAL_ERROR')),
+        message: error.message || 'Failed to save domain assessment.',
+      });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/results/domains/student/:studentId
+ * Alternate RESTful endpoint to save domain assessment for a student.
+ */
+resultsRouter.put(
+  '/domains/student/:studentId',
+  authenticateUser,
+  requirePermission('assessments.enter'),
+  requireSchoolScope(),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const studentId = req.params.studentId;
+      const {
+        classId,
+        termId,
+        affective,
+        psychomotor,
+        formTutorRemark,
+        sportsMasterRemark,
+        guidanceCounselorRemark,
+        principalRemark,
+        formTutorName,
+        sportsMasterName,
+        guidanceCounselorName,
+        principalName,
+        principalTitle,
+        approvalStatus,
+      } = req.body;
+
+      let schoolId = req.body.schoolId || req.body.school_id;
+      if (!req.user?.isSuperAdmin && !req.user?.isStateOfficer) {
+        schoolId = req.user?.schoolId || '';
+      }
+
+      if (!schoolId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_SCHOOL_ID',
+          message: 'schoolId is required.',
+        });
+        return;
+      }
+
+      let targetTermId = termId || (req.query.term_id as string);
+      if (!targetTermId) {
+        const currentTermRes = await query<{ id: string }>(
+          'SELECT id FROM academic_terms WHERE is_current = TRUE LIMIT 1;'
+        );
+        targetTermId = currentTermRes.rows[0]?.id;
+      }
+
+      if (!targetTermId) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_TERM',
+          message: 'Active academic term could not be determined.',
+        });
+        return;
+      }
+
+      const savedAssessment = await reportCardRepository.saveStudentDomainAssessment({
+        schoolId,
+        studentId,
+        classId,
+        termId: targetTermId,
+        affective,
+        psychomotor,
+        formTutorRemark,
+        sportsMasterRemark,
+        guidanceCounselorRemark,
+        principalRemark,
+        formTutorName,
+        sportsMasterName,
+        guidanceCounselorName,
+        principalName,
+        principalTitle,
+        approvalStatus,
+        authenticatedUser: {
+          id: req.user!.id,
+          role: req.user!.role,
+          schoolId: req.user!.schoolId || undefined,
+          fullName: req.user!.fullName || 'Staff Member',
+          isSuperAdmin: req.user!.isSuperAdmin,
+          isStateOfficer: req.user!.isStateOfficer,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Domain assessment saved successfully.',
+        data: savedAssessment,
+      });
+    } catch (error: any) {
+      console.error('[ResultsAPI] Failed to update domain assessment:', error);
+      const isRatingError = error.message?.includes('INVALID_RATING') || error.message?.includes('INVALID_TRAIT');
+      const isForbidden = error.message?.includes('FORBIDDEN') || error.message?.includes('UNAUTHORIZED') || error.message?.includes('VIOLATION');
+      const isNotFound = error.message?.includes('NOT_FOUND');
+
+      const statusCode = isRatingError ? 400 : (isForbidden ? 403 : (isNotFound ? 404 : 500));
+      res.status(statusCode).json({
+        success: false,
+        error: isRatingError ? 'INVALID_RATING' : (isForbidden ? 'ACCESS_DENIED' : (isNotFound ? 'NOT_FOUND' : 'INTERNAL_ERROR')),
+        message: error.message || 'Failed to update domain assessment.',
+      });
+    }
+  }
+);
+

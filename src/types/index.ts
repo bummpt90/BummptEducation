@@ -121,6 +121,50 @@ export interface PsychomotorDomain {
   physicalAgility: number; // 1-5
 }
 
+export type DomainAssessmentStatus = 'Not started' | 'In progress' | 'Saved' | 'Returned for correction';
+
+export interface StudentDomainAssessment {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classId: string;
+  className: string;
+  classLevel: string;
+  termId: string;
+  termName: string;
+  affective: AffectiveDomain | null;
+  psychomotor: PsychomotorDomain | null;
+  formTutorRemark?: string | null;
+  formTutorName?: string | null;
+  formTutorSignatureDate?: string | null;
+  sportsMasterRemark?: string | null;
+  sportsMasterName?: string | null;
+  guidanceCounselorRemark?: string | null;
+  guidanceCounselorName?: string | null;
+  principalRemark?: string | null;
+  principalName?: string | null;
+  principalTitle?: string | null;
+  approvalStatus: string;
+  isAssessed: boolean;
+  status: DomainAssessmentStatus;
+  updatedAt?: string;
+}
+
+export interface ClassDomainProgress {
+  classId: string;
+  className: string;
+  classLevel: string;
+  classArm: string;
+  termId: string;
+  termName: string;
+  totalStudents: number;
+  assessedCount: number;
+  inProgressCount: number;
+  unassessedCount: number;
+  returnedCount: number;
+  students: StudentDomainAssessment[];
+}
+
 // Backward compatible alias
 export interface PsychomotorAssessment extends AffectiveDomain, PsychomotorDomain {
   sports?: number;

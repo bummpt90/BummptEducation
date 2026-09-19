@@ -27,7 +27,11 @@ import {
   SchoolArm,
   getSchoolArm,
   LessonNote,
-  LessonFeedback
+  LessonFeedback,
+  AffectiveDomain,
+  PsychomotorDomain,
+  ClassDomainProgress,
+  StudentDomainAssessment
 } from '../types';
 import { useAuth } from './AuthContext';
 
@@ -118,6 +122,25 @@ interface DataContextType {
   incrementLessonNoteDownload: (id: string) => Promise<number>;
   submitLessonInquiry: (noteId: string, payload: { parentName: string; studentName?: string; question: string; guardianPhone?: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
   replyLessonInquiry: (inquiryId: string, reply: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  fetchClassDomainAssessments: (classId: string, termId?: string) => Promise<{ success: boolean; data?: ClassDomainProgress; error?: string }>;
+  fetchStudentDomainAssessment: (studentId: string, termId?: string) => Promise<{ success: boolean; data?: StudentDomainAssessment; error?: string }>;
+  saveStudentDomainAssessment: (payload: {
+    studentId: string;
+    classId?: string;
+    termId?: string;
+    affective?: Partial<AffectiveDomain> | null;
+    psychomotor?: Partial<PsychomotorDomain> | null;
+    formTutorRemark?: string | null;
+    sportsMasterRemark?: string | null;
+    guidanceCounselorRemark?: string | null;
+    principalRemark?: string | null;
+    formTutorName?: string | null;
+    sportsMasterName?: string | null;
+    guidanceCounselorName?: string | null;
+    principalName?: string | null;
+    principalTitle?: string | null;
+    approvalStatus?: 'Draft' | 'Approved & Published' | 'Requires Correction';
+  }) => Promise<{ success: boolean; data?: StudentDomainAssessment; error?: string }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -864,6 +887,86 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const fetchClassDomainAssessments = async (
+    classId: string,
+    termId?: string
+  ): Promise<{ success: boolean; data?: ClassDomainProgress; error?: string }> => {
+    try {
+      const url = new URL(`/api/v1/results/domains/class/${encodeURIComponent(classId)}`, window.location.origin);
+      if (termId) url.searchParams.set('term_id', termId);
+
+      const res = await fetch(url.toString(), {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        return { success: true, data: json.data };
+      }
+      return { success: false, error: json.message || json.error || 'Failed to fetch class domain assessments.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const fetchStudentDomainAssessment = async (
+    studentId: string,
+    termId?: string
+  ): Promise<{ success: boolean; data?: StudentDomainAssessment; error?: string }> => {
+    try {
+      const url = new URL(`/api/v1/results/domains/student/${encodeURIComponent(studentId)}`, window.location.origin);
+      if (termId) url.searchParams.set('term_id', termId);
+
+      const res = await fetch(url.toString(), {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        return { success: true, data: json.data };
+      }
+      return { success: false, error: json.message || json.error || 'Failed to fetch student domain assessment.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const saveStudentDomainAssessment = async (
+    payload: {
+      studentId: string;
+      classId?: string;
+      termId?: string;
+      affective?: Partial<AffectiveDomain> | null;
+      psychomotor?: Partial<PsychomotorDomain> | null;
+      formTutorRemark?: string | null;
+      sportsMasterRemark?: string | null;
+      guidanceCounselorRemark?: string | null;
+      principalRemark?: string | null;
+      formTutorName?: string | null;
+      sportsMasterName?: string | null;
+      guidanceCounselorName?: string | null;
+      principalName?: string | null;
+      principalTitle?: string | null;
+      approvalStatus?: 'Draft' | 'Approved & Published' | 'Requires Correction';
+    }
+  ): Promise<{ success: boolean; data?: StudentDomainAssessment; error?: string }> => {
+    try {
+      const res = await fetch('/api/v1/results/domains/save', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        return { success: true, data: json.data };
+      }
+      return { success: false, error: json.message || json.error || 'Failed to save domain assessment.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -896,6 +999,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         incrementLessonNoteDownload,
         submitLessonInquiry,
         replyLessonInquiry,
+        fetchClassDomainAssessments,
+        fetchStudentDomainAssessment,
+        saveStudentDomainAssessment,
       }}
     >
       {children}
