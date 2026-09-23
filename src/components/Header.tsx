@@ -774,6 +774,16 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Bursary & Admin</span>
           </button>
 
+          {/* Admissions */}
+          <button
+            onClick={() => navigateTo('admin', 'admissions')}
+            id="nav-link-admissions"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
+            <span>Admissions</span>
+          </button>
+
           {/* Documentation & Developer Architecture Mega Dropdown */}
           <div className="relative" ref={docsDropdownRef}>
             <button
@@ -870,33 +880,15 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Right CTA Action Button (Desktop) */}
-        <div className="hidden lg:flex items-center gap-1.5 xl:gap-2 shrink-0">
+        <div className="hidden lg:flex items-center gap-2 shrink-0">
           <button
             onClick={onOpenParentPortalModal}
             id="header-desktop-parent-portal-btn"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200/90 px-2.5 py-1.5 text-xs font-bold hover:bg-indigo-100 transition cursor-pointer shadow-xs whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200/90 px-3 py-1.5 text-xs font-bold hover:bg-indigo-100 transition cursor-pointer shadow-xs whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none"
             title="Parent Report Card Verification & Download Portal"
           >
             <FileText className="h-3.5 w-3.5 text-indigo-600" />
             <span>Parent Portal</span>
-          </button>
-
-          <button
-            onClick={() => navigateTo('academic', 'reports')}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer whitespace-nowrap"
-            title="Generate Official Terminal Report Card"
-          >
-            <Award className="h-3.5 w-3.5 text-amber-400" />
-            <span>Report Cards</span>
-          </button>
-
-          <button
-            onClick={() => navigateTo('admin', 'admissions')}
-            className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/80 px-2.5 py-1.5 text-xs font-bold hover:bg-blue-100 transition cursor-pointer whitespace-nowrap"
-            title="Admissions Portal & Entrance Applications"
-          >
-            <span>Admissions</span>
-            <ArrowRight className="h-3 w-3" />
           </button>
         </div>
 
@@ -919,15 +911,15 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="lg:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 shadow-2xl animate-in slide-in-from-top duration-200 max-h-[85vh] overflow-y-auto space-y-4">
           
           {/* Quick Actions in Mobile Drawer */}
-          <div className="grid grid-cols-2 gap-2 pb-3 border-b border-slate-100">
+          <div className="grid grid-cols-3 gap-2 pb-3 border-b border-slate-100">
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
                 onOpenParentPortalModal?.();
               }}
-              className="p-2.5 rounded-xl bg-indigo-50 text-indigo-800 font-bold text-xs border border-indigo-200 flex items-center justify-center gap-1.5"
+              className="p-2.5 rounded-xl bg-indigo-50 text-indigo-800 font-bold text-xs border border-indigo-200 flex flex-col sm:flex-row items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none cursor-pointer"
             >
-              <FileText className="h-3.5 w-3.5 text-indigo-600" />
+              <FileText className="h-4 w-4 text-indigo-600" />
               <span>Parent Portal</span>
             </button>
             <button
@@ -935,9 +927,9 @@ export const Header: React.FC<HeaderProps> = ({
                 setMobileMenuOpen(false);
                 onOpenAuthModal?.();
               }}
-              className="p-2.5 rounded-xl bg-blue-50 text-blue-900 font-bold text-xs border border-blue-200 flex items-center justify-center gap-1.5"
+              className="p-2.5 rounded-xl bg-blue-50 text-blue-900 font-bold text-xs border border-blue-200 flex flex-col sm:flex-row items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none cursor-pointer"
             >
-              <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+              <ShieldCheck className="h-4 w-4 text-blue-600" />
               <span>{isAuthenticated && currentUser ? currentUser.fullName.split(' ')[0] : 'Sign In'}</span>
             </button>
             <button
@@ -945,24 +937,10 @@ export const Header: React.FC<HeaderProps> = ({
                 setMobileMenuOpen(false);
                 navigateTo('admin', 'security');
               }}
-              className="p-2.5 rounded-xl bg-slate-100 text-slate-900 font-bold text-xs border border-slate-200 flex items-center justify-center gap-1.5"
+              className="p-2.5 rounded-xl bg-slate-100 text-slate-900 font-bold text-xs border border-slate-200 flex flex-col sm:flex-row items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:outline-none cursor-pointer"
             >
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
               <span>Security</span>
-            </button>
-            <button
-              onClick={() => navigateTo('academic', 'reports')}
-              className="p-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
-            >
-              <Award className="h-3.5 w-3.5 text-amber-400" />
-              <span>Report Cards</span>
-            </button>
-            <button
-              onClick={() => navigateTo('admin', 'admissions')}
-              className="p-2.5 rounded-xl bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200 flex items-center justify-center gap-1.5"
-            >
-              <span>Admissions</span>
-              <ArrowRight className="h-3 w-3" />
             </button>
           </div>
 

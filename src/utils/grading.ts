@@ -227,11 +227,29 @@ export function evaluatePromotionStatus(
   };
 }
 
-export function getDomainRatingDescription(rating: number): { label: string; short: string; stars: number; color: string; badgeColor: string } {
-  const r = Math.max(1, Math.min(5, Math.round(rating || 3)));
+export function getDomainRatingDescription(rating: number): { 
+  rating: number;
+  label: string; 
+  short: string; 
+  stars: number; 
+  color: string; 
+  badgeColor: string 
+} {
+  if (!rating || rating <= 0) {
+    return {
+      rating: 0,
+      label: 'Not Assessed',
+      short: 'Not assessed',
+      stars: 0,
+      color: 'text-slate-400 font-medium',
+      badgeColor: 'bg-slate-100 text-slate-500 border-slate-200',
+    };
+  }
+  const r = Math.max(1, Math.min(5, Math.round(rating)));
   switch (r) {
     case 5:
       return {
+        rating: 5,
         label: 'Exceptional / Model Standard (5/5)',
         short: 'Exceptional (5)',
         stars: 5,
@@ -240,6 +258,7 @@ export function getDomainRatingDescription(rating: number): { label: string; sho
       };
     case 4:
       return {
+        rating: 4,
         label: 'Commendable / Very Good (4/5)',
         short: 'Commendable (4)',
         stars: 4,
@@ -248,6 +267,7 @@ export function getDomainRatingDescription(rating: number): { label: string; sho
       };
     case 3:
       return {
+        rating: 3,
         label: 'Satisfactory / Fair (3/5)',
         short: 'Satisfactory (3)',
         stars: 3,
@@ -256,6 +276,7 @@ export function getDomainRatingDescription(rating: number): { label: string; sho
       };
     case 2:
       return {
+        rating: 2,
         label: 'Developing / Needs Encouragement (2/5)',
         short: 'Developing (2)',
         stars: 2,
@@ -265,6 +286,7 @@ export function getDomainRatingDescription(rating: number): { label: string; sho
     case 1:
     default:
       return {
+        rating: 1,
         label: 'Weak / Needs Urgent Remediation (1/5)',
         short: 'Weak (1)',
         stars: 1,

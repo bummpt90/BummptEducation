@@ -10,6 +10,9 @@ import { query, withTransaction } from '../client';
 import { academicResultRepository } from './academicResult.repository';
 import type { StudentReportCard, AffectiveDomain, PsychomotorDomain } from '../../types';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (val?: string | null): boolean => Boolean(val && UUID_REGEX.test(val.trim()));
+
 export type DomainAssessmentStatus = 'Not started' | 'In progress' | 'Saved' | 'Returned for correction';
 
 export const AFFECTIVE_TRAITS = [
@@ -207,46 +210,53 @@ export class ReportCardRepository {
     termId: string,
     client?: PoolClient
   ): Promise<ReportCardEntity | null> {
+    const studentUuidClause = isUuid(studentId)
+      ? 'rc.student_id = $1'
+      : 'rc.student_id IN (SELECT id FROM students WHERE admission_number = $1)';
+    const termUuidClause = isUuid(termId)
+      ? 'rc.term_id = $2'
+      : 'rc.term_id IN (SELECT id FROM academic_terms WHERE term_name ILIKE $2 OR is_current = TRUE)';
+
     const res = await query<any>(
       `SELECT 
-        id,
-        school_id AS "schoolId",
-        student_id AS "studentId",
-        class_id AS "classId",
-        term_id AS "termId",
-        total_score_obtained AS "totalScoreObtained",
-        total_possible_score AS "totalPossibleScore",
-        overall_percentage AS "overallPercentage",
-        position_in_class AS "positionInClass",
-        total_students_in_class AS "totalStudentsInClass",
-        class_average AS "classAverage",
-        class_highest AS "classHighest",
-        class_lowest AS "classLowest",
-        gpa,
-        affective_domain AS "affectiveDomain",
-        psychomotor_domain AS "psychomotorDomain",
-        early_years_milestones AS "earlyYearsMilestones",
-        attendance_summary AS "attendanceSummary",
-        form_tutor_remark AS "formTutorRemark",
-        form_tutor_name AS "formTutorName",
-        form_tutor_signature_date AS "formTutorSignatureDate",
-        sports_master_remark AS "sportsMasterRemark",
-        sports_master_name AS "sportsMasterName",
-        guidance_counselor_remark AS "guidanceCounselorRemark",
-        guidance_counselor_name AS "guidanceCounselorName",
-        principal_remark AS "principalRemark",
-        principal_name AS "principalName",
-        principal_title AS "principalTitle",
-        promotional_status AS "promotionalStatus",
-        next_term_begins AS "nextTermBegins",
-        next_term_fees_estimate AS "nextTermFeesEstimate",
-        approval_status AS "approvalStatus",
-        is_parent_viewable AS "isParentViewable",
-        published_at AS "publishedAt",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM report_cards
-      WHERE student_id = $1 AND term_id = $2
+        rc.id,
+        rc.school_id AS "schoolId",
+        rc.student_id AS "studentId",
+        rc.class_id AS "classId",
+        rc.term_id AS "termId",
+        rc.total_score_obtained AS "totalScoreObtained",
+        rc.total_possible_score AS "totalPossibleScore",
+        rc.overall_percentage AS "overallPercentage",
+        rc.position_in_class AS "positionInClass",
+        rc.total_students_in_class AS "totalStudentsInClass",
+        rc.class_average AS "classAverage",
+        rc.class_highest AS "classHighest",
+        rc.class_lowest AS "classLowest",
+        rc.gpa,
+        rc.affective_domain AS "affectiveDomain",
+        rc.psychomotor_domain AS "psychomotorDomain",
+        rc.early_years_milestones AS "earlyYearsMilestones",
+        rc.attendance_summary AS "attendanceSummary",
+        rc.form_tutor_remark AS "formTutorRemark",
+        rc.form_tutor_name AS "formTutorName",
+        rc.form_tutor_signature_date AS "formTutorSignatureDate",
+        rc.sports_master_remark AS "sportsMasterRemark",
+        rc.sports_master_name AS "sportsMasterName",
+        rc.guidance_counselor_remark AS "guidanceCounselorRemark",
+        rc.guidance_counselor_name AS "guidanceCounselorName",
+        rc.principal_remark AS "principalRemark",
+        rc.principal_name AS "principalName",
+        rc.principal_title AS "principalTitle",
+        rc.promotional_status AS "promotionalStatus",
+        rc.next_term_begins AS "nextTermBegins",
+        rc.next_term_fees_estimate AS "nextTermFeesEstimate",
+        rc.approval_status AS "approvalStatus",
+        rc.is_parent_viewable AS "isParentViewable",
+        rc.published_at AS "publishedAt",
+        rc.created_at AS "createdAt",
+        rc.updated_at AS "updatedAt"
+      FROM report_cards rc
+      WHERE ${studentUuidClause} AND ${termUuidClause}
       LIMIT 1;`,
       [studentId, termId],
       client
@@ -328,8 +338,11 @@ export class ReportCardRepository {
     // 4. Resolve School ID
     let resolvedSchoolId = schoolId || reportCardRow.schoolId;
     if (!resolvedSchoolId) {
+      const studentSchoolQuery = isUuid(studentId)
+        ? 'SELECT school_id FROM students WHERE id = $1 LIMIT 1;'
+        : 'SELECT school_id FROM students WHERE admission_number = $1 LIMIT 1;';
       const studentSchoolRes = await query<{ school_id: string }>(
-        'SELECT school_id FROM students WHERE id = $1 LIMIT 1;',
+        studentSchoolQuery,
         [studentId],
         client
       );
@@ -414,26 +427,35 @@ export class ReportCardRepository {
   async getStudentDomainAssessment(
     schoolId: string,
     studentId: string,
-    termId: string,
+    termId?: string,
     client?: PoolClient
   ): Promise<StudentDomainAssessment> {
     // 1. Verify student exists and belongs to school
+    const stuQuery = isUuid(studentId)
+      ? `SELECT s.id, s.school_id, s.current_class_id, s.first_name, s.surname, s.full_name, s.admission_number,
+               c.name as class_name, c.level as class_level, c.arm as class_arm
+         FROM students s
+         LEFT JOIN classes c ON s.current_class_id = c.id
+         WHERE s.id = $1 LIMIT 1;`
+      : `SELECT s.id, s.school_id, s.current_class_id, s.first_name, s.surname, s.full_name, s.admission_number,
+               c.name as class_name, c.level as class_level, c.arm as class_arm
+         FROM students s
+         LEFT JOIN classes c ON s.current_class_id = c.id
+         WHERE s.admission_number = $1 LIMIT 1;`;
+
     const stuRes = await query<{
       id: string;
       school_id: string;
       current_class_id: string;
-      first_name: string;
-      last_name: string;
+      first_name?: string;
+      surname?: string;
+      full_name?: string;
       admission_number: string;
       class_name: string;
       class_level: string;
       class_arm: string;
     }>(
-      `SELECT s.id, s.school_id, s.current_class_id, s.first_name, s.last_name, s.admission_number,
-              c.name as class_name, c.level as class_level, c.arm as class_arm
-       FROM students s
-       LEFT JOIN classes c ON s.current_class_id = c.id
-       WHERE s.id = $1 LIMIT 1;`,
+      stuQuery,
       [studentId],
       client
     );
@@ -447,20 +469,22 @@ export class ReportCardRepository {
     }
 
     // 2. Resolve term
-    let resolvedTermId = termId;
+    let resolvedTermId = termId || '';
     let termName = '';
-    const termRes = await query<{ id: string; term_name: string }>(
-      'SELECT id, term_name FROM academic_terms WHERE id = $1 LIMIT 1;',
-      [termId],
-      client
-    );
+    const termRes = isUuid(termId || '')
+      ? await query<{ id: string; term_name: string }>(
+          'SELECT id, term_name FROM academic_terms WHERE id = $1 LIMIT 1;',
+          [termId],
+          client
+        )
+      : { rows: [] };
     if (termRes.rows[0]) {
       resolvedTermId = termRes.rows[0].id;
       termName = termRes.rows[0].term_name;
     } else {
       const fallbackTerm = await query<{ id: string; term_name: string }>(
         'SELECT id, term_name FROM academic_terms WHERE term_name ILIKE $1 OR is_current = TRUE ORDER BY is_current DESC LIMIT 1;',
-        [termId],
+        [termId || '%'],
         client
       );
       if (!fallbackTerm.rows[0]) {
@@ -473,7 +497,7 @@ export class ReportCardRepository {
     // 3. Query report_cards
     const rcRes = await query<any>(
       `SELECT * FROM report_cards WHERE student_id = $1 AND term_id = $2 LIMIT 1;`,
-      [studentId, resolvedTermId],
+      [student.id, resolvedTermId],
       client
     );
 
@@ -491,7 +515,7 @@ export class ReportCardRepository {
 
     return {
       studentId: student.id,
-      studentName: `${student.first_name} ${student.last_name}`.trim(),
+      studentName: student.full_name || `${student.first_name || ''} ${student.surname || ''}`.trim() || student.admission_number,
       admissionNumber: student.admission_number,
       classId: student.current_class_id,
       className: student.class_name,
@@ -525,16 +549,18 @@ export class ReportCardRepository {
   async getClassDomainAssessments(
     schoolId: string,
     classId: string,
-    termId: string,
+    termId?: string,
     client?: PoolClient
   ): Promise<ClassDomainProgress> {
     // 1. Resolve class
     let targetClassId = classId;
-    let clsRes = await query<{ id: string; school_id: string; name: string; level: string; arm: string }>(
-      'SELECT id, school_id, name, level, arm FROM classes WHERE id = $1 LIMIT 1;',
-      [classId],
-      client
-    );
+    let clsRes = isUuid(classId)
+      ? await query<{ id: string; school_id: string; name: string; level: string; arm: string }>(
+          'SELECT id, school_id, name, level, arm FROM classes WHERE id = $1 LIMIT 1;',
+          [classId],
+          client
+        )
+      : { rows: [] };
 
     if (!clsRes.rows[0]) {
       // Try resolving by name or level in the school
@@ -555,20 +581,22 @@ export class ReportCardRepository {
     targetClassId = cls.id;
 
     // 2. Resolve term
-    let resolvedTermId = termId;
+    let resolvedTermId = termId || '';
     let termName = '';
-    const termRes = await query<{ id: string; term_name: string }>(
-      'SELECT id, term_name FROM academic_terms WHERE id = $1 LIMIT 1;',
-      [termId],
-      client
-    );
+    const termRes = isUuid(termId || '')
+      ? await query<{ id: string; term_name: string }>(
+          'SELECT id, term_name FROM academic_terms WHERE id = $1 LIMIT 1;',
+          [termId],
+          client
+        )
+      : { rows: [] };
     if (termRes.rows[0]) {
       resolvedTermId = termRes.rows[0].id;
       termName = termRes.rows[0].term_name;
     } else {
       const fallbackTerm = await query<{ id: string; term_name: string }>(
         'SELECT id, term_name FROM academic_terms WHERE term_name ILIKE $1 OR is_current = TRUE ORDER BY is_current DESC LIMIT 1;',
-        [termId],
+        [termId || '%'],
         client
       );
       if (!fallbackTerm.rows[0]) {
@@ -584,8 +612,9 @@ export class ReportCardRepository {
         s.id as student_id,
         s.admission_number,
         s.first_name,
-        s.last_name,
-        s.passport_photo_url,
+        s.surname,
+        s.full_name,
+        s.avatar_url,
         c.id as class_id,
         c.name as class_name,
         c.level as class_level,
@@ -609,7 +638,7 @@ export class ReportCardRepository {
       JOIN classes c ON s.current_class_id = c.id
       LEFT JOIN report_cards rc ON rc.student_id = s.id AND rc.term_id = $2
       WHERE s.current_class_id = $1 AND s.school_id = $3
-      ORDER BY s.last_name ASC, s.first_name ASC;`,
+      ORDER BY COALESCE(s.surname, s.full_name) ASC, s.first_name ASC;`,
       [targetClassId, resolvedTermId, schoolId],
       client
     );
@@ -638,7 +667,7 @@ export class ReportCardRepository {
 
       return {
         studentId: row.student_id,
-        studentName: `${row.first_name} ${row.last_name}`.trim(),
+        studentName: row.full_name || `${row.first_name || ''} ${row.surname || ''}`.trim() || row.admission_number,
         admissionNumber: row.admission_number,
         classId: row.class_id,
         className: row.class_name,
@@ -705,15 +734,20 @@ export class ReportCardRepository {
       }
 
       // 3. Verify student exists and belongs to school
+      const stuQuery = isUuid(studentId)
+        ? 'SELECT id, school_id, current_class_id, first_name, surname, full_name, admission_number FROM students WHERE id = $1 LIMIT 1;'
+        : 'SELECT id, school_id, current_class_id, first_name, surname, full_name, admission_number FROM students WHERE admission_number = $1 LIMIT 1;';
+
       const stuRes = await query<{
         id: string;
         school_id: string;
         current_class_id: string;
-        first_name: string;
-        last_name: string;
+        first_name?: string;
+        surname?: string;
+        full_name?: string;
         admission_number: string;
       }>(
-        'SELECT id, school_id, current_class_id, first_name, last_name, admission_number FROM students WHERE id = $1 LIMIT 1;',
+        stuQuery,
         [studentId],
         client
       );
@@ -728,18 +762,20 @@ export class ReportCardRepository {
 
       // 4. Resolve class
       let targetClassId = input.classId || student.current_class_id;
-      let clsRes = await query<{
-        id: string;
-        school_id: string;
-        name: string;
-        level: string;
-        arm: string;
-        form_master_id: string | null;
-      }>(
-        'SELECT id, school_id, name, level, arm, form_master_id FROM classes WHERE id = $1 AND school_id = $2 LIMIT 1;',
-        [targetClassId, schoolId],
-        client
-      );
+      let clsRes = isUuid(targetClassId)
+        ? await query<{
+            id: string;
+            school_id: string;
+            name: string;
+            level: string;
+            arm: string;
+            form_master_id: string | null;
+          }>(
+            'SELECT id, school_id, name, level, arm, form_master_id FROM classes WHERE id = $1 AND school_id = $2 LIMIT 1;',
+            [targetClassId, schoolId],
+            client
+          )
+        : { rows: [] };
 
       if (!clsRes.rows[0] && targetClassId) {
         // Fallback: match by name or level in the school tenant
@@ -758,18 +794,31 @@ export class ReportCardRepository {
       }
 
       if (!clsRes.rows[0] && student.current_class_id) {
-        clsRes = await query<{
-          id: string;
-          school_id: string;
-          name: string;
-          level: string;
-          arm: string;
-          form_master_id: string | null;
-        }>(
-          'SELECT id, school_id, name, level, arm, form_master_id FROM classes WHERE id = $1 AND school_id = $2 LIMIT 1;',
-          [student.current_class_id, schoolId],
-          client
-        );
+        clsRes = isUuid(student.current_class_id)
+          ? await query<{
+              id: string;
+              school_id: string;
+              name: string;
+              level: string;
+              arm: string;
+              form_master_id: string | null;
+            }>(
+              'SELECT id, school_id, name, level, arm, form_master_id FROM classes WHERE id = $1 AND school_id = $2 LIMIT 1;',
+              [student.current_class_id, schoolId],
+              client
+            )
+          : await query<{
+              id: string;
+              school_id: string;
+              name: string;
+              level: string;
+              arm: string;
+              form_master_id: string | null;
+            }>(
+              'SELECT id, school_id, name, level, arm, form_master_id FROM classes WHERE (name ILIKE $1 OR level ILIKE $1) AND school_id = $2 LIMIT 1;',
+              [student.current_class_id, schoolId],
+              client
+            );
       }
 
       if (!clsRes.rows[0]) {
@@ -806,11 +855,13 @@ export class ReportCardRepository {
       // 6. Resolve term
       let resolvedTermId = input.termId;
       let termName = '';
-      const termRes = await query<{ id: string; term_name: string }>(
-        'SELECT id, term_name FROM academic_terms WHERE id = $1 LIMIT 1;',
-        [input.termId],
-        client
-      );
+      const termRes = isUuid(input.termId)
+        ? await query<{ id: string; term_name: string }>(
+            'SELECT id, term_name FROM academic_terms WHERE id = $1 LIMIT 1;',
+            [input.termId],
+            client
+          )
+        : { rows: [] };
       if (termRes.rows[0]) {
         resolvedTermId = termRes.rows[0].id;
         termName = termRes.rows[0].term_name;
@@ -967,7 +1018,7 @@ export class ReportCardRepository {
 
       return {
         studentId: student.id,
-        studentName: `${student.first_name} ${student.last_name}`.trim(),
+        studentName: student.full_name || `${student.first_name || ''} ${student.surname || ''}`.trim() || student.admission_number,
         admissionNumber: student.admission_number,
         classId: cls.id,
         className: cls.name,
@@ -1012,8 +1063,11 @@ export class ReportCardRepository {
     publishedBy?: string;
   }, client?: PoolClient): Promise<ReportCardEntity> {
     // 1. Resolve student and class info
-    const stuRes = await query<{ school_id: string; current_class_id: string }>(
-      'SELECT school_id, current_class_id FROM students WHERE id = $1 LIMIT 1;',
+    const stuQuery = isUuid(data.studentId)
+      ? 'SELECT id, school_id, current_class_id FROM students WHERE id = $1 LIMIT 1;'
+      : 'SELECT id, school_id, current_class_id FROM students WHERE admission_number = $1 LIMIT 1;';
+    const stuRes = await query<{ id: string; school_id: string; current_class_id: string }>(
+      stuQuery,
       [data.studentId],
       client
     );
@@ -1024,14 +1078,27 @@ export class ReportCardRepository {
       throw new Error('CROSS_SCHOOL_VIOLATION: Student belongs to another school tenant.');
     }
 
+    const resolvedStudentId = stuRes.rows[0].id;
     const classId = stuRes.rows[0].current_class_id;
+
+    let resolvedTermId = data.termId;
+    const termRes = isUuid(data.termId)
+      ? await query<{ id: string }>('SELECT id FROM academic_terms WHERE id = $1 LIMIT 1;', [data.termId], client)
+      : { rows: [] };
+    if (termRes.rows[0]) {
+      resolvedTermId = termRes.rows[0].id;
+    } else {
+      const fb = await query<{ id: string }>('SELECT id FROM academic_terms WHERE term_name ILIKE $1 OR is_current = TRUE ORDER BY is_current DESC LIMIT 1;', [data.termId], client);
+      if (fb.rows[0]) resolvedTermId = fb.rows[0].id;
+    }
+
     const approvalStatus = data.approvalStatus || (data.isParentViewable ? 'Approved & Published' : 'Draft');
 
     // 2. Fetch or compute results
     const academicResult = await academicResultRepository.getStudentTermResult(
       data.schoolId,
-      data.studentId,
-      data.termId,
+      resolvedStudentId,
+      resolvedTermId,
       client
     );
 

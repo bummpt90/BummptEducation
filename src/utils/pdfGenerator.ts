@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { LessonNote, Student, StudentReportCard, Subject, getSchoolArm } from '../types';
+import { LessonNote, Student, StudentReportCard, Subject, getSchoolArm, AffectiveDomain, PsychomotorDomain } from '../types';
 import { calculateGrade, calculatePrimaryGrade, evaluatePromotionStatus, getDomainRatingDescription } from './grading';
 
 /**
@@ -266,20 +266,20 @@ export function generateReportCardPDF(
   let institutionSub = 'Approved WAEC, NECO, Cambridge IGCSE & JAMB Examination Center';
   let accreditation = 'Accreditation No: BN/MOE/SEC/2021/489 • Center No: 028491';
   let headTitle = 'Principal (Secondary College)';
-  let headName = reportCard.principalName || 'Dr. (Mrs.) Grace Nkechi Okafor (Ph.D)';
+  let headName = reportCard.principalName || 'Not designated';
 
   if (arm === 'kindergarten') {
     institutionTitle = 'BUMMPTECH INTERNATIONAL EARLY YEARS & MONTESSORI ACADEMY';
     institutionSub = 'Montessori & Early Childhood Care and Education (ECCE) Center • Ages 2–5';
     accreditation = 'ECCE Approval No: BN/ECCE/2024/091 • Govt. Reg: BN/ED/KG/041';
     headTitle = 'Head of Kindergarten';
-    headName = reportCard.principalName || 'Mrs. Abigail Folashade Balogun (M.Ed)';
+    headName = reportCard.principalName || 'Not designated';
   } else if (arm === 'primary') {
     institutionTitle = 'BUMMPTECH INTERNATIONAL PRIMARY & BASIC MODEL SCHOOL';
     institutionSub = 'Approved Universal Basic Education (UBE) & Cambridge Primary Model Center';
     accreditation = 'National UBE Center No: BN/UBE/PRI/1042 • Basic 1 – 6 Approved';
     headTitle = 'Headmistress (Primary Model School)';
-    headName = reportCard.principalName || 'Mrs. Grace Iveren Shima (M.Ed)';
+    headName = reportCard.principalName || 'Not designated';
   }
 
   let y = 10;
@@ -527,11 +527,7 @@ export function generateReportCardPDF(
   doc.setTextColor(30, 41, 59);
   doc.text('AFFECTIVE DOMAIN (BEHAVIOR & CHARACTER)', margin + 3, y + 4.5);
 
-  const aff = reportCard.affective || {
-    punctuality: 5, neatness: 5, politeness: 5, honesty: 5,
-    peerRelationship: 4, leadership: 4, emotionalStability: 4,
-    obedience: 5, attentiveness: 4, perseverance: 4,
-  };
+  const aff: Partial<AffectiveDomain> = reportCard.affective || {};
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
@@ -556,7 +552,8 @@ export function generateReportCardPDF(
     doc.text(`${item.label}:`, xPos, yPos);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(29, 78, 216);
-    doc.text(`${item.val}/5`, xPos + 32, yPos);
+    const displayVal = typeof item.val === 'number' && item.val > 0 ? `${item.val}/5` : 'N/A';
+    doc.text(displayVal, xPos + 32, yPos);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
   });
@@ -571,10 +568,7 @@ export function generateReportCardPDF(
   doc.setTextColor(30, 41, 59);
   doc.text('PSYCHOMOTOR & PRACTICAL SKILLS', margin + halfWidth + 7, y + 4.5);
 
-  const psy = reportCard.psychomotor || {
-    handwriting: 4, sportsAndGames: 4, craftsAndPractical: 4,
-    verbalFluency: 5, musicalDramatic: 4, handlingOfTools: 4, physicalAgility: 4
-  };
+  const psy: Partial<PsychomotorDomain> = reportCard.psychomotor || {};
 
   const psyList = [
     { label: 'Handwriting & Script', val: psy.handwriting },
@@ -584,7 +578,6 @@ export function generateReportCardPDF(
     { label: 'Musical & Dramatic', val: psy.musicalDramatic },
     { label: 'Handling Tools / STEM', val: psy.handlingOfTools },
     { label: 'Physical Agility', val: psy.physicalAgility },
-    { label: 'Laboratory Practical', val: 4 },
   ];
 
   psyList.forEach((item, i) => {
@@ -595,7 +588,8 @@ export function generateReportCardPDF(
     doc.text(`${item.label}:`, xPos, yPos);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(22, 101, 52);
-    doc.text(`${item.val}/5`, xPos + 32, yPos);
+    const displayVal = typeof item.val === 'number' && item.val > 0 ? `${item.val}/5` : 'N/A';
+    doc.text(displayVal, xPos + 32, yPos);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
   });
@@ -646,14 +640,14 @@ export function generateReportCardPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(6.5);
   doc.setTextColor(51, 65, 85);
-  const tutorRmk = reportCard.formTutorRemark || `${student.fullName} is a brilliant, highly disciplined pupil with consistent cognitive prowess.`;
-  const tutorLines = doc.splitTextToSize(`"${tutorRmk}"`, colWidth - 6);
+  const tutorRmk = reportCard.formTutorRemark ? `"${reportCard.formTutorRemark}"` : 'Not recorded yet.';
+  const tutorLines = doc.splitTextToSize(tutorRmk, colWidth - 6);
   doc.text(tutorLines, margin + 3, y + 8.5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
   doc.setTextColor(30, 41, 59);
-  doc.text(`Tutor: ${reportCard.formTutorName || 'Mrs. Blessing Aondoaver'}`, margin + 3, y + 15);
+  doc.text(`Tutor: ${reportCard.formTutorName || 'Not designated'}`, margin + 3, y + 15);
 
   // Sports Remark
   doc.setDrawColor(226, 232, 240);
@@ -665,11 +659,11 @@ export function generateReportCardPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(6.5);
   doc.setTextColor(51, 65, 85);
-  const sportsRmk = reportCard.sportsMasterRemark || `Active sporting participation in ${student.house}. Displays high athletic stamina and teamwork.`;
-  const sportsLines = doc.splitTextToSize(`"${sportsRmk}"`, colWidth - 6);
+  const sportsRmk = reportCard.sportsMasterRemark ? `"${reportCard.sportsMasterRemark}"` : 'Not recorded yet.';
+  const sportsLines = doc.splitTextToSize(sportsRmk, colWidth - 6);
   doc.text(sportsLines, margin + 3, y + 25);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Coach: ${reportCard.sportsMasterName || 'Coach Terkula Tyav'}`, margin + 3, y + 28.5);
+  doc.text(`Coach: ${reportCard.sportsMasterName || 'Not designated'}`, margin + 3, y + 28.5);
 
   // Principal / Sectional Head Box
   doc.setFillColor(248, 250, 252);
@@ -683,8 +677,8 @@ export function generateReportCardPDF(
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(6.5);
   doc.setTextColor(51, 65, 85);
-  const princRmk = reportCard.principalRemark || `An exemplary record of academic diligence, moral fortitude, and character. Promoted with distinction.`;
-  const princLines = doc.splitTextToSize(`"${princRmk}"`, colWidth - 8);
+  const princRmk = reportCard.principalRemark ? `"${reportCard.principalRemark}"` : 'Not recorded yet.';
+  const princLines = doc.splitTextToSize(princRmk, colWidth - 8);
   doc.text(princLines, margin + colWidth + 7, y + 8.5);
 
   doc.setFont('helvetica', 'bold');

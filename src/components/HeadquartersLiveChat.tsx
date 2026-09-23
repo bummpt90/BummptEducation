@@ -189,13 +189,18 @@ export const HeadquartersLiveChat: React.FC<HeadquartersLiveChatProps> = ({
         } else {
           setMessages([]);
         }
+      } else if (res.status === 401) {
+        setFetchError('HQ communications require an active administrative session. Please log in.');
+        setMessages([]);
       } else {
         setFetchError('Unable to load headquarters messages at this time.');
         setMessages([]);
       }
     } catch (e: any) {
-      console.error('Failed to load authoritative HQ chat messages', e);
-      setFetchError(e.message || 'Connection failure while contacting headquarters server.');
+      if (e?.name !== 'AbortError') {
+        console.warn('Authoritative HQ chat service currently unreachable:', e?.message || e);
+        setFetchError('HQ communications gateway is synchronizing. Please retry shortly.');
+      }
       setMessages([]);
     } finally {
       setIsLoadingMessages(false);

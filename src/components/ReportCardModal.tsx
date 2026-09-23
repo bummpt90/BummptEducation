@@ -60,10 +60,10 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
     };
 
     const defaultAttendance = initialReportCard.attendance || {
-      timesSchoolOpened: initialReportCard.attendanceTotalDays || 60,
-      timesPresent: initialReportCard.attendancePresent || 58,
-      timesAbsent: (initialReportCard.attendanceTotalDays || 60) - (initialReportCard.attendancePresent || 58),
-      timesPunctual: 56,
+      timesSchoolOpened: initialReportCard.attendanceTotalDays || 0,
+      timesPresent: initialReportCard.attendancePresent || 0,
+      timesAbsent: Math.max(0, (initialReportCard.attendanceTotalDays || 0) - (initialReportCard.attendancePresent || 0)),
+      timesPunctual: 0,
     };
 
     return {
@@ -71,10 +71,10 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
       affective: defaultAffective,
       psychomotor: defaultPsychomotor,
       attendance: defaultAttendance,
-      sportsMasterRemark: initialReportCard.sportsMasterRemark || `Active sporting participation in ${student.house}. Displays high athletic stamina and teamwork.`,
-      sportsMasterName: initialReportCard.sportsMasterName || 'Coach Terkula Tyav (P.E. & Sports Lead)',
-      guidanceCounselorRemark: initialReportCard.guidanceCounselorRemark || `${student.fullName} exhibits admirable emotional maturity, moral rectitude, and commendable focus on academic and personal aspirations.`,
-      guidanceCounselorName: initialReportCard.guidanceCounselorName || 'Mrs. Comfort Agbo (Guidance & Counseling Head)',
+      sportsMasterRemark: initialReportCard.sportsMasterRemark || '',
+      sportsMasterName: initialReportCard.sportsMasterName || '',
+      guidanceCounselorRemark: initialReportCard.guidanceCounselorRemark || '',
+      guidanceCounselorName: initialReportCard.guidanceCounselorName || '',
       approvalStatus: initialReportCard.approvalStatus || 'Approved & Published',
       nextTermFeesEstimate: initialReportCard.nextTermFeesEstimate || 'Tuition and statutory fees payable into official school bank accounts before term resumption.',
     };
@@ -218,9 +218,9 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
           subTitle: 'Montessori & Early Childhood Care and Education (ECCE) Center • Ages 2–5 Years',
           centerBadge: 'ECCE Approval No: BN/ECCE/2024/091 • Govt. Reg: BN/ED/KG/041',
           subHeadTitle: 'Head of Kindergarten & Early Learning',
-          subHeadName: reportCard.principalName || 'Mrs. Abigail Folashade Balogun (M.Ed)',
+          subHeadName: reportCard.principalName || 'Not designated',
           tutorTitle: 'Early Years Lead Educator / Facilitator',
-          tutorName: reportCard.formTutorName || 'Miss Rita Iorfa',
+          tutorName: reportCard.formTutorName || 'Not designated',
           ratingSystemName: 'Early Learning Mastery Scale (Exceeding • Proficient • Developing • Emerging)',
         };
       case 'primary':
@@ -229,9 +229,9 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
           subTitle: 'Approved Universal Basic Education (UBE) & Cambridge Primary Model Center • Basic 1 – 6',
           centerBadge: 'National UBE Center No: BN/UBE/PRI/1042 • Basic 1 – 6 Approved',
           subHeadTitle: 'Headmistress (Primary Model School)',
-          subHeadName: reportCard.principalName || 'Mrs. Grace Iveren Shima (M.Ed)',
+          subHeadName: reportCard.principalName || 'Not designated',
           tutorTitle: 'Primary Class Master / Tutor',
-          tutorName: reportCard.formTutorName || 'Mr. Moses Terfa Aondo',
+          tutorName: reportCard.formTutorName || 'Not designated',
           ratingSystemName: 'Primary Distinction Standard (A+ • A • B • C • D • E • F)',
         };
       case 'secondary':
@@ -241,9 +241,9 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
           subTitle: 'Approved WAEC, NECO, Cambridge IGCSE, SAT & JAMB Examination Center',
           centerBadge: 'WAEC / NECO Center No: 028491 • JAMB CBT Code: 49021 • BN/MOE/SEC/2021/489',
           subHeadTitle: 'Principal (Secondary College)',
-          subHeadName: reportCard.principalName || 'Dr. (Mrs.) Grace Nkechi Okafor (Ph.D)',
+          subHeadName: reportCard.principalName || 'Not designated',
           tutorTitle: 'Senior Form Tutor',
-          tutorName: reportCard.formTutorName || 'Mrs. Blessing Aondoaver (M.Sc)',
+          tutorName: reportCard.formTutorName || 'Not designated',
           ratingSystemName: 'West African Standard 9-Point Scale (A1 to F9)',
         };
     }
@@ -499,7 +499,9 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                     className="w-16 rounded border border-slate-300 px-1 py-0.5 font-bold text-slate-900"
                   />
                 ) : (
-                  <span className="font-semibold text-slate-800">{reportCard.attendance.timesSchoolOpened} days</span>
+                  <span className="font-semibold text-slate-800">
+                    {reportCard.attendance.timesSchoolOpened > 0 ? `${reportCard.attendance.timesSchoolOpened} days` : 'Not recorded'}
+                  </span>
                 )}
               </div>
 
@@ -514,7 +516,9 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <span className="font-semibold text-emerald-700">
-                    {reportCard.attendance.timesPresent} days ({reportCard.attendance.timesAbsent} absent)
+                    {reportCard.attendance.timesPresent > 0 || reportCard.attendance.timesAbsent > 0
+                      ? `${reportCard.attendance.timesPresent} days (${reportCard.attendance.timesAbsent} absent)`
+                      : 'Not recorded'}
                   </span>
                 )}
               </div>
@@ -522,13 +526,17 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
               <div>
                 <span className="text-slate-500 block font-medium">Class Rank & Position:</span>
                 <span className="font-bold text-blue-700">
-                  {reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : `${reportCard.positionInClass}th`} out of {reportCard.totalStudentsInClass} Pupils
+                  {reportCard.positionInClass && reportCard.positionInClass > 0
+                    ? `${reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : reportCard.positionInClass === 3 ? '3rd' : `${reportCard.positionInClass}th`} out of ${reportCard.totalStudentsInClass || 0} Pupils`
+                    : 'Not yet calculated'}
                 </span>
               </div>
 
               <div>
                 <span className="text-slate-500 block font-medium">Class Average:</span>
-                <span className="font-bold text-slate-800">{reportCard.classAverage}%</span>
+                <span className="font-bold text-slate-800">
+                  {reportCard.classAverage && reportCard.classAverage > 0 ? `${reportCard.classAverage}%` : 'Not yet calculated'}
+                </span>
               </div>
 
               <div>
@@ -544,43 +552,6 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   {reportCard.gpa || calculateGpa(reportCard.scores)} / 5.0
                 </span>
               </div>
-            </div>
-
-            <div>
-              <span className="text-slate-500 block font-medium">Times School Opened:</span>
-              {isEditMode ? (
-                <input
-                  type="number"
-                  value={reportCard.attendance.timesSchoolOpened}
-                  onChange={(e) => handleAttendanceChange('timesSchoolOpened', Number(e.target.value))}
-                  className="w-16 rounded border border-slate-300 px-1 py-0.5 font-bold text-slate-900"
-                />
-              ) : (
-                <span className="font-semibold text-slate-800">{reportCard.attendance.timesSchoolOpened} days</span>
-              )}
-            </div>
-
-            <div>
-              <span className="text-slate-500 block font-medium">Times Present:</span>
-              {isEditMode ? (
-                <input
-                  type="number"
-                  value={reportCard.attendance.timesPresent}
-                  onChange={(e) => handleAttendanceChange('timesPresent', Number(e.target.value))}
-                  className="w-16 rounded border border-slate-300 px-1 py-0.5 font-bold text-emerald-700"
-                />
-              ) : (
-                <span className="font-semibold text-emerald-700">
-                  {reportCard.attendance.timesPresent} days ({reportCard.attendance.timesAbsent} absent)
-                </span>
-              )}
-            </div>
-
-            <div>
-              <span className="text-slate-500 block font-medium">Class Rank & Cohort:</span>
-              <span className="font-bold text-blue-700">
-                {reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : `${reportCard.positionInClass}th`} out of {reportCard.totalStudentsInClass} Pupils
-              </span>
             </div>
           </div>
 
@@ -795,9 +766,26 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                     <UserCheck className="h-3.5 w-3.5 text-blue-700" />
                     Affective Domain (Character & Conduct)
                   </h4>
-                  <span className="text-[10px] text-blue-800 font-bold bg-blue-100 px-2 py-0.5 rounded">
-                    Avg: 4.8 / 5
-                  </span>
+                  {(() => {
+                    const assessed = [
+                      reportCard.affective?.punctuality,
+                      reportCard.affective?.neatness,
+                      reportCard.affective?.politeness,
+                      reportCard.affective?.honesty,
+                      reportCard.affective?.peerRelationship,
+                      reportCard.affective?.leadership,
+                      reportCard.affective?.emotionalStability,
+                      reportCard.affective?.obedience,
+                      reportCard.affective?.attentiveness,
+                      reportCard.affective?.perseverance,
+                    ].filter((v): v is number => typeof v === 'number' && v > 0);
+                    const avg = assessed.length > 0 ? (assessed.reduce((a, b) => a + b, 0) / assessed.length).toFixed(1) : null;
+                    return (
+                      <span className="text-[10px] text-blue-800 font-bold bg-blue-100 px-2 py-0.5 rounded">
+                        {avg ? `Avg: ${avg} / 5` : 'Not assessed'}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -813,7 +801,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                     { key: 'attentiveness', label: 'Classroom Attentiveness' },
                     { key: 'perseverance', label: 'Perseverance & Tenacity' },
                   ].map(({ key, label }) => {
-                    const rating = reportCard.affective[key as keyof AffectiveDomain] || 5;
+                    const rating = reportCard.affective?.[key as keyof AffectiveDomain] || 0;
                     const ratingDesc = getDomainRatingDescription(rating);
 
                     return (
@@ -836,9 +824,13 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                               </button>
                             ))}
                           </div>
-                        ) : (
+                        ) : rating > 0 ? (
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ratingDesc.badgeColor}`}>
                             {rating}/5
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium text-slate-400 bg-slate-100 border border-slate-200">
+                            Not assessed
                           </span>
                         )}
                       </div>
@@ -854,9 +846,23 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                     <Activity className="h-3.5 w-3.5 text-emerald-700" />
                     Psychomotor & Practical Skills
                   </h4>
-                  <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded">
-                    Avg: 4.6 / 5
-                  </span>
+                  {(() => {
+                    const assessed = [
+                      reportCard.psychomotor?.handwriting,
+                      reportCard.psychomotor?.sportsAndGames,
+                      reportCard.psychomotor?.craftsAndPractical,
+                      reportCard.psychomotor?.verbalFluency,
+                      reportCard.psychomotor?.musicalDramatic,
+                      reportCard.psychomotor?.handlingOfTools,
+                      reportCard.psychomotor?.physicalAgility,
+                    ].filter((v): v is number => typeof v === 'number' && v > 0);
+                    const avg = assessed.length > 0 ? (assessed.reduce((a, b) => a + b, 0) / assessed.length).toFixed(1) : null;
+                    return (
+                      <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded">
+                        {avg ? `Avg: ${avg} / 5` : 'Not assessed'}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -869,7 +875,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                     { key: 'handlingOfTools', label: 'STEM & Tool Handling' },
                     { key: 'physicalAgility', label: 'Physical Agility & Fitness' },
                   ].map(({ key, label }) => {
-                    const rating = reportCard.psychomotor[key as keyof PsychomotorDomain] || 4;
+                    const rating = reportCard.psychomotor?.[key as keyof PsychomotorDomain] || 0;
                     const ratingDesc = getDomainRatingDescription(rating);
 
                     return (
@@ -892,9 +898,13 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                               </button>
                             ))}
                           </div>
-                        ) : (
+                        ) : rating > 0 ? (
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ratingDesc.badgeColor}`}>
                             {rating}/5
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium text-slate-400 bg-slate-100 border border-slate-200">
+                            Not assessed
                           </span>
                         )}
                       </div>
@@ -997,7 +1007,11 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <p className="text-xs text-slate-900 font-medium italic bg-white p-3 rounded-lg border border-slate-200 leading-relaxed">
-                    "{reportCard.formTutorRemark || `${student.fullName} has made remarkable progress throughout the term, demonstrating high discipline, sharp cognitive synthesis, and model conduct.`}"
+                    {reportCard.formTutorRemark ? (
+                      `"${reportCard.formTutorRemark}"`
+                    ) : (
+                      <span className="text-slate-400 font-normal">Not recorded yet</span>
+                    )}
                   </p>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs text-slate-600">
@@ -1023,11 +1037,15 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <p className="text-xs text-slate-900 font-medium italic bg-white p-3 rounded-lg border border-slate-200 leading-relaxed">
-                    "{reportCard.sportsMasterRemark || `Active sporting participation in ${student.house}. Displays high athletic stamina, teamwork, and fair play.`}"
+                    {reportCard.sportsMasterRemark ? (
+                      `"${reportCard.sportsMasterRemark}"`
+                    ) : (
+                      <span className="text-slate-400 font-normal">Not recorded yet</span>
+                    )}
                   </p>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs text-slate-600">
-                  <span>Coach: <strong className="text-slate-800">{reportCard.sportsMasterName || 'Coach Terkula Tyav'}</strong></span>
+                  <span>Coach: <strong className="text-slate-800">{reportCard.sportsMasterName || 'Not designated'}</strong></span>
                   <span className="text-emerald-700 font-bold">House: {student.house}</span>
                 </div>
               </div>
@@ -1049,12 +1067,16 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <p className="text-xs text-slate-900 font-medium italic bg-white p-3 rounded-lg border border-slate-200 leading-relaxed">
-                    "{reportCard.guidanceCounselorRemark || `${student.fullName} demonstrates deep emotional poise, polite character, and great leadership qualities.`}"
+                    {reportCard.guidanceCounselorRemark ? (
+                      `"${reportCard.guidanceCounselorRemark}"`
+                    ) : (
+                      <span className="text-slate-400 font-normal">Not recorded yet</span>
+                    )}
                   </p>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs text-slate-600">
-                  <span>Counselor: <strong className="text-slate-800">{reportCard.guidanceCounselorName || 'Mrs. Comfort Agbo'}</strong></span>
-                  <span className="text-blue-700 font-semibold">Moral Conduct: Distinction</span>
+                  <span>Counselor: <strong className="text-slate-800">{reportCard.guidanceCounselorName || 'Not designated'}</strong></span>
+                  <span className="text-blue-700 font-semibold">{reportCard.guidanceCounselorRemark ? 'Moral Conduct: Recorded' : 'Pending'}</span>
                 </div>
               </div>
 
@@ -1075,7 +1097,11 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <p className="text-xs text-slate-900 font-medium italic bg-white p-3 rounded-lg border border-slate-200 leading-relaxed">
-                    "{reportCard.principalRemark || `A truly commendable performance. ${student.fullName} exemplifies the high standards of character and scholarship championed by Bummptech International.`}"
+                    {reportCard.principalRemark ? (
+                      `"${reportCard.principalRemark}"`
+                    ) : (
+                      <span className="text-slate-400 font-normal">Not recorded yet</span>
+                    )}
                   </p>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs text-slate-600">
