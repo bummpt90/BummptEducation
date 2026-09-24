@@ -5,6 +5,7 @@
  * balance tracking, and transaction-safe lifecycle management.
  */
 
+import crypto from 'crypto';
 import type { PoolClient } from 'pg';
 import { BaseRepository } from './base.repository';
 import type { 
@@ -51,7 +52,7 @@ export class InvoiceRepository extends BaseRepository<FeeInvoiceDbEntity> {
    * Generates a collision-resistant institutional invoice reference
    */
   public generateInvoiceNumber(schoolCode = 'SCH', year = new Date().getFullYear()): string {
-    const randomHex = Math.floor(Math.random() * 900000 + 100000);
+    const randomHex = crypto.randomInt(100000, 999999);
     return `INV-${schoolCode.toUpperCase().slice(0, 4)}-${year}-${randomHex}`;
   }
 

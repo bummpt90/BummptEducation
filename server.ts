@@ -101,27 +101,44 @@ async function startServer() {
   app.get('/api/health/db', async (req, res) => {
     try {
       const dbHealth = await checkDatabaseHealth();
-      const isOk = dbHealth.status === 'connected' || dbHealth.status === 'unconfigured';
-      res.status(isOk ? 200 : 503).json({
+      const isProd = process.env.NODE_ENV === 'production';
+
+      let migrationReady = false;
+      if (dbHealth.status === 'connected') {
+        try {
+          const migRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM migrations;');
+          migrationReady = parseInt(migRes.rows[0]?.count || '0', 10) > 0;
+        } catch {
+          migrationReady = false;
+        }
+      }
+
+      const isOk = dbHealth.status === 'connected' && (!isProd || migrationReady);
+      const httpStatus = isOk ? 200 : (isProd ? 503 : (dbHealth.status === 'unconfigured' ? 200 : 503));
+
+      res.status(httpStatus).json({
         status: dbHealth.status === 'connected' 
-          ? 'ok' 
-          : (dbHealth.status === 'unconfigured' ? 'preview_mode' : 'degraded'),
+          ? (migrationReady ? 'ok' : 'pending_migrations') 
+          : (dbHealth.status === 'unconfigured' ? 'unconfigured' : 'degraded'),
         database: dbHealth.status,
         engine: 'PostgreSQL',
         configured: dbHealth.configured,
+        migrationReady,
         latencyMs: dbHealth.latencyMs,
         timestamp: new Date().toISOString(),
         message: dbHealth.status === 'connected'
-          ? 'PostgreSQL database connected and operational'
+          ? (migrationReady ? 'PostgreSQL database connected and operational' : 'Database connected, schema migration pending')
           : (dbHealth.status === 'unconfigured'
-              ? 'Database unconfigured. Running in safe development/preview mode.'
-              : 'Database connection degraded. Safe preview active.'),
+              ? 'Database unconfigured. Running in development/preview mode.'
+              : 'Database connection degraded.'),
       });
     } catch (error: any) {
-      res.status(500).json({
+      res.status(503).json({
         status: 'error',
         database: 'error',
         engine: 'PostgreSQL',
+        configured: false,
+        migrationReady: false,
         timestamp: new Date().toISOString(),
         message: 'Database diagnostic check encountered an error.',
       });
@@ -173,39 +190,46 @@ async function startServer() {
           if (migrationResult.success) {
             console.log(`[Migrations] Ready: ${migrationResult.appliedCount} applied, ${migrationResult.skippedCount} up to date.`);
 
-            // Verify development auth test users exist
-            try {
-              const userCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM users;');
-              if (parseInt(userCountRes.rows[0]?.count || '0', 10) === 0) {
-                console.log('[AuthSeed] No users found. Seeding initial development authentication identities...');
-                await seedDevelopmentAuthIdentities();
+            // Production Safety & Development Seeding Boundary
+            if (process.env.NODE_ENV === 'production') {
+              console.log('[Production Safety] Production environment active. Demo and development seeders are strictly disabled.');
+              try {
+                const schoolCheck = await query<{ count: string }>('SELECT COUNT(*) as count FROM schools;');
+                if (parseInt(schoolCheck.rows[0]?.count || '0', 10) === 0) {
+                  console.error('[Deployment Error] CRITICAL: Production database is missing essential reference school configuration.');
+                }
+              } catch (refErr: any) {
+                console.error('[Deployment Error] Failed to verify production reference data:', refErr?.message);
               }
+            } else {
+              // Development / Preview environment: Controlled seeding
+              try {
+                const userCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM users;');
+                if (parseInt(userCountRes.rows[0]?.count || '0', 10) === 0) {
+                  console.log('[AuthSeed] [DEV ONLY] No users found. Seeding initial development authentication identities...');
+                  await seedDevelopmentAuthIdentities();
+                }
 
-              const staffCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM staff;');
-              if (parseInt(staffCountRes.rows[0]?.count || '0', 10) === 0) {
-                console.log('[OperationalSeed] No staff records found. Seeding operational foundation...');
-                await seedOperationalFoundation();
-              }
+                const staffCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM staff;');
+                if (parseInt(staffCountRes.rows[0]?.count || '0', 10) === 0) {
+                  console.log('[OperationalSeed] [DEV ONLY] No staff records found. Seeding operational foundation...');
+                  await seedOperationalFoundation();
+                }
 
-              const feeCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM fee_structures;');
-              if (parseInt(feeCountRes.rows[0]?.count || '0', 10) === 0) {
-                console.log('[FinancialSeed] No fee structures found. Seeding financial & admissions foundation...');
-                await seedFinancialFoundation();
-              }
+                const feeCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM fee_structures;');
+                if (parseInt(feeCountRes.rows[0]?.count || '0', 10) === 0) {
+                  console.log('[FinancialSeed] [DEV ONLY] No fee structures found. Seeding financial & admissions foundation...');
+                  await seedFinancialFoundation();
+                }
 
-              // Phase 8D: Lesson notes seeder is development/reference ONLY.
-              // In production, the database remains strictly empty until published by educators.
-              if (process.env.NODE_ENV !== 'production') {
                 const lessonNotesCountRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM lesson_notes;');
                 if (parseInt(lessonNotesCountRes.rows[0]?.count || '0', 10) === 0) {
                   console.log('[LessonNotesSeed] [DEV ONLY] No lesson notes found. Seeding initial reference lesson notes & inquiries...');
                   await seedLessonNotesFoundation();
                 }
-              } else {
-                console.log('[LessonNotesSeed] Production environment detected. Skipping mock lesson notes seeding.');
+              } catch (seedErr: any) {
+                console.warn('[DevelopmentSeed] Notice:', seedErr?.message);
               }
-            } catch (seedErr: any) {
-              console.warn('[OperationalSeed] Seeding notice:', seedErr?.message);
             }
           } else {
             console.warn(`[Migrations] Notice: ${migrationResult.error}`);

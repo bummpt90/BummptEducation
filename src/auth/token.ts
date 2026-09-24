@@ -23,15 +23,19 @@ const DEFAULT_EXPIRY = '8h';
  * In production, strictly requires a high-entropy secret from the environment.
  */
 export function getAuthSecret(): string {
-  const secret = process.env.AUTH_SECRET || process.env.JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
-    if (!secret || secret.length < 32) {
-      throw new Error('FATAL: AUTH_SECRET must be configured and at least 32 characters in production.');
+    const secret = process.env.AUTH_SECRET;
+    if (!secret || secret.trim() === '') {
+      throw new Error('FATAL SECURITY ERROR: AUTH_SECRET must be set in production mode. JWT_SECRET cannot substitute.');
+    }
+    if (secret.trim().length < 32) {
+      throw new Error('FATAL SECURITY ERROR: AUTH_SECRET must be at least 32 characters long in production.');
     }
     return secret;
   }
   // Development-only fallback with strong length
-  return secret || 'bummpt_dev_jwt_auth_secret_do_not_use_in_production_key_32_chars';
+  const devSecret = process.env.AUTH_SECRET || process.env.JWT_SECRET || 'bummpt_dev_jwt_auth_secret_do_not_use_in_production_key_32_chars';
+  return devSecret;
 }
 
 /**

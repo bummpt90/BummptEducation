@@ -63,8 +63,8 @@ export const HomePage: React.FC<HomePageProps> = ({
         if (res.ok) {
           const body = await res.json();
           if (body.success && Array.isArray(body.data) && isMounted) {
-            const mapped: Announcement[] = body.data.map((d: any) => ({
-              id: d.id || d.reference_number || `ANN-${Math.random()}`,
+            const mapped: Announcement[] = body.data.map((d: any, idx: number) => ({
+              id: d.id || d.reference_number || `ANN-${idx + 1}-${Date.now()}`,
               title: d.title || 'Official Bulletin',
               date: d.issued_date ? new Date(d.issued_date).toISOString().split('T')[0] : '',
               arm: 'All',

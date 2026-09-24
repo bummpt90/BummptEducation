@@ -23,8 +23,7 @@ export interface LessonNotesSeedReport {
 
 export async function seedLessonNotesFoundation(externalClient?: PoolClient): Promise<LessonNotesSeedReport> {
   if (process.env.NODE_ENV === 'production') {
-    console.warn('[LessonNotesSeed] Refusing to seed mock lesson notes in production environment.');
-    return { notesInserted: 0, feedbacksInserted: 0, schoolId: '' };
+    throw new Error('[Security Exception] Development/demo lesson notes seeders cannot run in production.');
   }
   const runner = async (client: PoolClient): Promise<LessonNotesSeedReport> => {
     // 1. Resolve Primary School & Org

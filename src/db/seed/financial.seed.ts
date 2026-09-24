@@ -29,6 +29,10 @@ export interface FinancialSeedReport {
 }
 
 export async function seedFinancialFoundation(externalClient?: PoolClient): Promise<FinancialSeedReport> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[Security Exception] Development/demo financial seeders cannot run in production.');
+  }
+
   console.log('[FinancialSeed] Seeding development admissions, fees, and financial operations...');
 
   const feeRepo = new FeeRepository();

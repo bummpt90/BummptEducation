@@ -212,6 +212,7 @@ export interface Student {
   isPrefect?: boolean;
   prefectRole?: string;
   avatarUrl?: string;
+  isDemo?: boolean;
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
@@ -338,6 +339,7 @@ export interface StudentReportCard {
   nextTermFeesEstimate?: string;
   approvalStatus?: 'Draft' | 'Approved & Published' | 'Requires Correction';
   isParentViewable?: boolean;
+  isDemo?: boolean;
 }
 
 export interface Staff {
@@ -573,11 +575,11 @@ export interface LGAMetadata {
   zone: SenatorialZone;
   headquarters: string;
   educationSecretary: string;
-  totalGovernmentSchools: number;
-  totalStudentPopulation: number;
-  totalTeacherCount: number;
-  averagePassRate: number;
-  subventionDisbursedNaira: number;
+  totalGovernmentSchools?: number;
+  totalStudentPopulation?: number;
+  totalTeacherCount?: number;
+  averagePassRate?: number;
+  subventionDisbursedNaira?: number;
   priorityFlag: 'Normal' | 'Needs Attention' | 'Intervention Required' | 'Excellence Zone';
 }
 

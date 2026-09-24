@@ -5,6 +5,7 @@
  * status workflows, and atomic transition from accepted applicant to enrolled student.
  */
 
+import crypto from 'crypto';
 import type { PoolClient } from 'pg';
 import { BaseRepository } from './base.repository';
 import type { AdmissionApplicationDbEntity, QueryOptions, PaginatedResult } from '../types';
@@ -53,7 +54,7 @@ export class AdmissionsRepository extends BaseRepository<AdmissionApplicationDbE
    * Generates a collision-resistant institutional application reference
    */
   public generateApplicationNumber(schoolCode = 'SCH', year = new Date().getFullYear()): string {
-    const randomHex = Math.floor(Math.random() * 90000 + 10000);
+    const randomHex = crypto.randomInt(10000, 99999);
     return `APP-${schoolCode.toUpperCase().slice(0, 4)}-${year}-${randomHex}`;
   }
 
@@ -321,9 +322,10 @@ export class AdmissionsRepository extends BaseRepository<AdmissionApplicationDbE
       }
 
       // 2. Generate or format official student admission number
+      const randomAdmSuffix = crypto.randomInt(1000, 9999);
       const admNumber = (
         payload.admissionNumber ||
-        `BE/${new Date().getFullYear()}/${Math.floor(Math.random() * 9000 + 1000)}`
+        `BE/${new Date().getFullYear()}/${randomAdmSuffix}`
       ).trim().toUpperCase();
 
       // Check non-duplication of admission number in school

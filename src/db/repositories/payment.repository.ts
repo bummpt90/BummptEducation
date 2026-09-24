@@ -5,6 +5,7 @@
  * updating invoice balances atomically, and computing real-time student financial balances.
  */
 
+import crypto from 'crypto';
 import type { PoolClient } from 'pg';
 import { BaseRepository } from './base.repository';
 import type { 
@@ -52,7 +53,7 @@ export class PaymentRepository extends BaseRepository<FeePaymentDbEntity> {
    * Generates a collision-resistant institutional digital receipt number
    */
   public generateReceiptNumber(schoolCode = 'SCH', year = new Date().getFullYear()): string {
-    const randomHex = Math.floor(Math.random() * 900000 + 100000);
+    const randomHex = crypto.randomInt(100000, 999999);
     return `REC-${schoolCode.toUpperCase().slice(0, 4)}-${year}-${randomHex}`;
   }
 

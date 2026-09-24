@@ -48,8 +48,7 @@ import {
   BENUE_GOVERNMENT_SCHOOLS, 
   getStatewideAggregateKPIs, 
   getSchoolsByLGA, 
-  getLgaMetadata,
-  simulateTermWeekProgress
+  getLgaMetadata
 } from '../data/benueStateData';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { MinistryUpdatesCommand } from '../components/MinistryUpdatesCommand';
@@ -359,10 +358,10 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
     };
   }, [lgaSchools, selectedSchoolId, schoolOverrides]);
 
-  // Simulated school dynamically responding to term progress week
+  // Authoritative school without synthetic simulation
   const activeSchool = useMemo(() => {
-    return simulateTermWeekProgress(baseSelectedSchool, currentWeek);
-  }, [baseSelectedSchool, currentWeek]);
+    return baseSelectedSchool;
+  }, [baseSelectedSchool]);
 
   // Statewide aggregate KPIs
   const stateSummary = useMemo(() => getStatewideAggregateKPIs(), []);

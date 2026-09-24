@@ -25,6 +25,10 @@ import {
   Info
 } from 'lucide-react';
 import { NavigationPage, Student, StudentReportCard } from '../types';
+import { 
+  SAMPLE_EARLY_YEARS_STUDENT, 
+  SAMPLE_EARLY_YEARS_REPORT_CARD 
+} from '../data/demo/sampleReportCards';
 
 interface EarlyChildhoodPageProps {
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
@@ -46,151 +50,8 @@ export const EarlyChildhoodPage: React.FC<EarlyChildhoodPageProps> = ({
   };
 
   const handleLaunchSampleReportCard = () => {
-    const sampleKgStudent: Student = {
-      id: 'STU-KG-001',
-      admissionNumber: 'BEDU/KG/2024/001',
-      fullName: 'Tersoo Daniel Beeun',
-      gender: 'Male',
-      dateOfBirth: '2021-04-12',
-      currentClass: 'KG 3',
-      arm: 'kindergarten',
-      house: 'Eagle House (Blue)',
-      guardianName: 'Dr. Matthew Ternenge Beeun',
-      guardianPhone: '+234 811 523 1834',
-      guardianEmail: 'matthewbeeun@gmail.com',
-      address: 'Akperan Orshi Avenue, Makurdi, Benue State',
-      stateOfOrigin: 'Benue',
-      dateEnrolled: '2024-09-08',
-      status: 'Active',
-    };
-
-    const sampleKgReportCard: StudentReportCard = {
-      id: 'RC-STU-KG-001-2nd Term',
-      studentId: 'STU-KG-001',
-      arm: 'kindergarten',
-      classLevel: 'KG 3',
-      term: '2nd Term',
-      academicYear: '2025/2026',
-      scores: [
-        {
-          studentId: 'STU-KG-001',
-          subjectId: 'SUB-KG-PHO',
-          classLevel: 'KG 3',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 10,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 40,
-          examScore: 56,
-          totalScore: 96,
-          grade: 'Exceeding',
-          remark: 'Mastered letter sounds, 3-letter word blending & recitation',
-        },
-        {
-          studentId: 'STU-KG-001',
-          subjectId: 'SUB-KG-NUM',
-          classLevel: 'KG 3',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 10,
-          assignment: 9,
-          attendance: 10,
-          totalCa: 38,
-          examScore: 54,
-          totalScore: 92,
-          grade: 'Exceeding',
-          remark: 'Counts 1-100 effortlessly, identifies 2D/3D geometric shapes',
-        },
-        {
-          studentId: 'STU-KG-001',
-          subjectId: 'SUB-KG-DIS',
-          classLevel: 'KG 3',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 9,
-          assignment: 9,
-          attendance: 9,
-          totalCa: 36,
-          examScore: 52,
-          totalScore: 88,
-          grade: 'Exceeding',
-          remark: 'Curious explorer of nature, senses and plant life cycles',
-        }
-      ],
-      earlyYearsMilestones: [
-        {
-          domain: 'Communication & Phonics',
-          skill: 'Phonic Blending & Story Re-telling',
-          mastery: 'Exceeding',
-          ratingScore: 4,
-          teacherComment: 'Reads short phonetic decodable texts with clear enunciation.',
-        },
-        {
-          domain: 'Early Numeracy & Shapes',
-          skill: 'Quantity Association & Pattern Sequences',
-          mastery: 'Exceeding',
-          ratingScore: 4,
-          teacherComment: 'Demonstrates strong spatial reasoning and number sense.',
-        },
-        {
-          domain: 'Physical & Fine Motor Skills',
-          skill: 'Pencil Grip, Scissor Cutting & Lacing',
-          mastery: 'Proficient',
-          ratingScore: 3,
-          teacherComment: 'Tripod grip well established; neat coloring within boundaries.',
-        },
-        {
-          domain: 'Personal & Social Development',
-          skill: 'Sharing, Empathy & Potty Independence',
-          mastery: 'Exceeding',
-          ratingScore: 4,
-          teacherComment: 'Polite, considerate, and helps peers during circle cleanup.',
-        }
-      ],
-      totalScoreObtained: 276,
-      totalPossibleScore: 300,
-      overallPercentage: 92.0,
-      classAverage: 74.2,
-      positionInClass: undefined,
-      totalStudentsInClass: undefined,
-      affective: {
-        punctuality: 0,
-        neatness: 0,
-        politeness: 0,
-        honesty: 0,
-        peerRelationship: 0,
-        leadership: 0,
-        emotionalStability: 0,
-        obedience: 0,
-        attentiveness: 0,
-        perseverance: 0,
-      },
-      psychomotor: {
-        handwriting: 0,
-        sportsAndGames: 0,
-        craftsAndPractical: 0,
-        verbalFluency: 0,
-        musicalDramatic: 0,
-        handlingOfTools: 0,
-        physicalAgility: 0,
-      },
-      formTutorRemark: '',
-      formTutorName: 'Not designated',
-      principalRemark: '',
-      principalName: 'Not designated',
-      principalTitle: 'Head of Early Childhood & Kindergarten',
-      promotionalStatus: 'Ready for Primary Transition (Basic 1)',
-      attendanceTotalDays: undefined,
-      attendancePresent: undefined,
-      nextTermBegins: 'Not published',
-    };
-
     if (onOpenReportCardModal) {
-      onOpenReportCardModal(sampleKgStudent, sampleKgReportCard);
+      onOpenReportCardModal(SAMPLE_EARLY_YEARS_STUDENT, SAMPLE_EARLY_YEARS_REPORT_CARD);
     } else {
       navigateTo('academic', 'reports');
     }

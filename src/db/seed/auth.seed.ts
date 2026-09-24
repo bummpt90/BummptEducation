@@ -25,6 +25,10 @@ export interface AuthSeedReport {
 export const DEV_DEFAULT_PASSWORD = 'BummptDev2026!';
 
 export async function seedDevelopmentAuthIdentities(externalClient?: PoolClient): Promise<AuthSeedReport> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[Security Exception] Development/demo authentication seeders cannot run in production.');
+  }
+
   console.log('[AuthSeed] Seeding development authentication test identities with Argon2id...');
 
   const executeSeed = async (client: PoolClient) => {

@@ -23,6 +23,10 @@ import {
   Brain
 } from 'lucide-react';
 import { NavigationPage, Student, StudentReportCard } from '../types';
+import {
+  SAMPLE_PRIMARY_STUDENT,
+  SAMPLE_PRIMARY_REPORT_CARD
+} from '../data/demo/sampleReportCards';
 
 interface PrimarySchoolPageProps {
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
@@ -42,153 +46,8 @@ export const PrimarySchoolPage: React.FC<PrimarySchoolPageProps> = ({
   };
 
   const handleLaunchSampleReportCard = () => {
-    const samplePrimaryStudent: Student = {
-      id: 'STU-PRI-001',
-      admissionNumber: 'BEDU/PRI/2020/088',
-      fullName: 'Emmanuella Chidera Okafor',
-      gender: 'Female',
-      dateOfBirth: '2014-06-18',
-      currentClass: 'Basic 6',
-      arm: 'primary',
-      house: 'Falcon House (Red)',
-      guardianName: 'Dr. (Mrs.) Grace Nkechi Okafor',
-      guardianPhone: '+234 803 234 5678',
-      guardianEmail: 'graceokafor@gmail.com',
-      address: 'Owner Occupier Housing Estate, Makurdi',
-      stateOfOrigin: 'Anambra',
-      dateEnrolled: '2020-09-10',
-      status: 'Active',
-    };
-
-    const samplePrimaryReportCard: StudentReportCard = {
-      id: 'RC-STU-PRI-001-2nd Term',
-      studentId: 'STU-PRI-001',
-      arm: 'primary',
-      classLevel: 'Basic 6',
-      term: '2nd Term',
-      academicYear: '2025/2026',
-      scores: [
-        {
-          studentId: 'STU-PRI-001',
-          subjectId: 'SUB-PRI-MAT',
-          classLevel: 'Basic 6',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 10,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 40,
-          examScore: 57,
-          totalScore: 97,
-          grade: 'A+',
-          remark: 'Distinction in arithmetic, fractions & word problem logic',
-        },
-        {
-          studentId: 'STU-PRI-001',
-          subjectId: 'SUB-PRI-ENG',
-          classLevel: 'Basic 6',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 10,
-          assignment: 9,
-          attendance: 10,
-          totalCa: 38,
-          examScore: 54,
-          totalScore: 92,
-          grade: 'A+',
-          remark: 'Fluent reading, accurate grammar & creative essay expression',
-        },
-        {
-          studentId: 'STU-PRI-001',
-          subjectId: 'SUB-PRI-QRE',
-          classLevel: 'Basic 6',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 10,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 40,
-          examScore: 58,
-          totalScore: 98,
-          grade: 'A+',
-          remark: 'Exceptional quantitative logic, speed and accuracy in NCEE drills',
-        },
-        {
-          studentId: 'STU-PRI-001',
-          subjectId: 'SUB-PRI-BSC',
-          classLevel: 'Basic 6',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 9,
-          assignment: 9,
-          attendance: 10,
-          totalCa: 37,
-          examScore: 52,
-          totalScore: 89,
-          grade: 'A',
-          remark: 'Strong scientific inquiry and understanding of living systems',
-        },
-        {
-          studentId: 'STU-PRI-001',
-          subjectId: 'SUB-PRI-ICT',
-          classLevel: 'Basic 6',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 9,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 39,
-          examScore: 55,
-          totalScore: 94,
-          grade: 'A+',
-          remark: 'Mastery of basic Scratch coding logic, keyboarding and algorithms',
-        }
-      ],
-      totalScoreObtained: 470,
-      totalPossibleScore: 500,
-      overallPercentage: 94.0,
-      classAverage: 76.5,
-      positionInClass: undefined,
-      totalStudentsInClass: undefined,
-      affective: {
-        punctuality: 0,
-        neatness: 0,
-        politeness: 0,
-        honesty: 0,
-        peerRelationship: 0,
-        leadership: 0,
-        emotionalStability: 0,
-        obedience: 0,
-        attentiveness: 0,
-        perseverance: 0,
-      },
-      psychomotor: {
-        handwriting: 0,
-        sportsAndGames: 0,
-        craftsAndPractical: 0,
-        verbalFluency: 0,
-        musicalDramatic: 0,
-        handlingOfTools: 0,
-        physicalAgility: 0,
-      },
-      formTutorRemark: '',
-      formTutorName: 'Not designated',
-      principalRemark: '',
-      principalName: 'Not designated',
-      principalTitle: 'Headmistress (Basic Education Wing)',
-      promotionalStatus: 'Eligible for NCEE & Common Entrance',
-      attendanceTotalDays: undefined,
-      attendancePresent: undefined,
-      nextTermBegins: 'Not published',
-    };
-
     if (onOpenReportCardModal) {
-      onOpenReportCardModal(samplePrimaryStudent, samplePrimaryReportCard);
+      onOpenReportCardModal(SAMPLE_PRIMARY_STUDENT, SAMPLE_PRIMARY_REPORT_CARD);
     } else {
       navigateTo('academic', 'reports');
     }

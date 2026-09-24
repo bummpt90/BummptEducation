@@ -20,6 +20,10 @@ export function getDatabaseConfig(): DatabaseConfig {
   const connectionString = process.env.DATABASE_URL?.trim() || null;
   const isConfigured = Boolean(connectionString && connectionString.length > 0);
 
+  if (process.env.NODE_ENV === 'production' && !isConfigured) {
+    throw new Error('FATAL: DATABASE_URL environment variable is required in production. Safe preview mode is prohibited in production.');
+  }
+
   // Pool size settings
   const maxPoolSize = process.env.DATABASE_POOL_SIZE 
     ? parseInt(process.env.DATABASE_POOL_SIZE, 10) 

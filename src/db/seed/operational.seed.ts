@@ -26,6 +26,10 @@ export interface OperationalSeedReport {
 }
 
 export async function seedOperationalFoundation(externalClient?: PoolClient): Promise<OperationalSeedReport> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[Security Exception] Development/demo operational seeders cannot run in production.');
+  }
+
   console.log('[OperationalSeed] Seeding development staff and demo students foundation...');
 
   const staffRepo = new StaffRepository();

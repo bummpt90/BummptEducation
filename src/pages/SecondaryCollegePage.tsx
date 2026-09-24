@@ -25,6 +25,10 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { NavigationPage, Student, StudentReportCard } from '../types';
+import {
+  SAMPLE_SECONDARY_STUDENT,
+  SAMPLE_SECONDARY_REPORT_CARD
+} from '../data/demo/sampleReportCards';
 
 interface SecondaryCollegePageProps {
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
@@ -44,153 +48,8 @@ export const SecondaryCollegePage: React.FC<SecondaryCollegePageProps> = ({
   };
 
   const handleLaunchSampleReportCard = () => {
-    const sampleSeniorStudent: Student = {
-      id: 'STU-001',
-      admissionNumber: 'BEDU/2022/001',
-      fullName: 'Dooshima Matthew Beeun',
-      gender: 'Female',
-      dateOfBirth: '2008-05-14',
-      currentClass: 'SSS 2 Science',
-      arm: 'secondary',
-      house: 'Eagle House (Blue)',
-      guardianName: 'Dr. Matthew Ternenge Beeun',
-      guardianPhone: '+234 811 523 1834',
-      guardianEmail: 'matthewbeeun@gmail.com',
-      address: 'Akperan Orshi Avenue, Makurdi, Benue State',
-      stateOfOrigin: 'Benue',
-      dateEnrolled: '2022-09-12',
-      status: 'Active',
-    };
-
-    const sampleSeniorReportCard: StudentReportCard = {
-      id: 'RC-STU-001-2nd Term',
-      studentId: 'STU-001',
-      arm: 'secondary',
-      classLevel: 'SSS 2 Science',
-      term: '2nd Term',
-      academicYear: '2025/2026',
-      scores: [
-        {
-          studentId: 'STU-001',
-          subjectId: 'SUB-ENG',
-          classLevel: 'SSS 2 Science',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 10,
-          assignment: 9,
-          attendance: 10,
-          totalCa: 38,
-          examScore: 54,
-          totalScore: 92,
-          grade: 'A1',
-          remark: 'Exceptional mastery of English grammar, phonetics and argumentative essay',
-        },
-        {
-          studentId: 'STU-001',
-          subjectId: 'SUB-MAT',
-          classLevel: 'SSS 2 Science',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 10,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 40,
-          examScore: 58,
-          totalScore: 98,
-          grade: 'A1',
-          remark: 'Outstanding mathematical reasoning, calculus & trigonometry accuracy',
-        },
-        {
-          studentId: 'STU-001',
-          subjectId: 'SUB-PHY',
-          classLevel: 'SSS 2 Science',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 9,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 39,
-          examScore: 55,
-          totalScore: 94,
-          grade: 'A1',
-          remark: 'Flawless physics practical deductions and mechanics problem solving',
-        },
-        {
-          studentId: 'STU-001',
-          subjectId: 'SUB-CHM',
-          classLevel: 'SSS 2 Science',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 9,
-          ca2: 10,
-          assignment: 9,
-          attendance: 10,
-          totalCa: 38,
-          examScore: 53,
-          totalScore: 91,
-          grade: 'A1',
-          remark: 'Thorough grasp of stoichiometry, organic structures and volumetric titrations',
-        },
-        {
-          studentId: 'STU-001',
-          subjectId: 'SUB-BIO',
-          classLevel: 'SSS 2 Science',
-          term: '2nd Term',
-          academicYear: '2025/2026',
-          ca1: 10,
-          ca2: 9,
-          assignment: 10,
-          attendance: 10,
-          totalCa: 39,
-          examScore: 52,
-          totalScore: 91,
-          grade: 'A1',
-          remark: 'Impeccable biological drawings and ecological systems analysis',
-        }
-      ],
-      totalScoreObtained: 466,
-      totalPossibleScore: 500,
-      overallPercentage: 93.2,
-      classAverage: 68.4,
-      positionInClass: undefined,
-      totalStudentsInClass: undefined,
-      affective: {
-        punctuality: 0,
-        neatness: 0,
-        politeness: 0,
-        honesty: 0,
-        peerRelationship: 0,
-        leadership: 0,
-        emotionalStability: 0,
-        obedience: 0,
-        attentiveness: 0,
-        perseverance: 0,
-      },
-      psychomotor: {
-        handwriting: 0,
-        sportsAndGames: 0,
-        craftsAndPractical: 0,
-        verbalFluency: 0,
-        musicalDramatic: 0,
-        handlingOfTools: 0,
-        physicalAgility: 0,
-      },
-      formTutorRemark: '',
-      formTutorName: 'Not designated',
-      principalRemark: '',
-      principalName: 'Not designated',
-      principalTitle: 'Principal & Sub-Head (Secondary College)',
-      promotionalStatus: 'Eligible for Finals (WAEC / NECO / IGCSE / SAT / JAMB)',
-      attendanceTotalDays: undefined,
-      attendancePresent: undefined,
-      nextTermBegins: 'Not published',
-    };
-
     if (onOpenReportCardModal) {
-      onOpenReportCardModal(sampleSeniorStudent, sampleSeniorReportCard);
+      onOpenReportCardModal(SAMPLE_SECONDARY_STUDENT, SAMPLE_SECONDARY_REPORT_CARD);
     } else {
       navigateTo('academic', 'reports');
     }

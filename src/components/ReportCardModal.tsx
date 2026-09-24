@@ -264,6 +264,15 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
 
   const headerInfo = getHeaderInfo();
 
+  const isDemoReport = Boolean(
+    student.id?.includes('DEMO') || 
+    student.admissionNumber?.includes('DEMO') || 
+    student.fullName?.includes('DEMO') ||
+    student.fullName?.includes('SAMPLE') ||
+    reportCard.id?.includes('DEMO') ||
+    reportCard.id?.includes('SAMPLE')
+  );
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-sm print:p-0 print:bg-white print:overflow-visible">
       <div className="min-h-screen w-full flex flex-col items-center justify-start p-2 sm:p-4 md:p-6 print:p-0">
@@ -271,6 +280,14 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
           id="official-report-card-modal-sheet"
           className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-2 sm:my-4 print:shadow-none print:border-none print:my-0 print:w-full print:max-w-none animate-in fade-in zoom-in-95 duration-150"
         >
+          {isDemoReport && (
+            <div 
+              id="demo-sample-report-card-banner"
+              className="bg-amber-400 text-slate-950 font-black px-4 py-2 text-center text-xs tracking-wider uppercase border-b border-amber-500 flex items-center justify-center gap-2"
+            >
+              <span>⚠️ DEMO / SAMPLE DATA — NOT A REAL STUDENT RECORD</span>
+            </div>
+          )}
           {/* ==================== STICKY TOP CONTROLS & RETURN ACTION BAR ==================== */}
           <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 sm:px-6 py-3.5 text-white shadow-md print:hidden">
             <div className="flex items-center gap-2 flex-wrap">

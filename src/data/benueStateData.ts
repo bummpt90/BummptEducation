@@ -2080,7 +2080,7 @@ function generateCompleteGovSchool(lga: BenueLGA, template: { name: string; cate
     principalName,
     vicePrincipalAcademic: isPrimary ? 'Mr. Jude Tersoo Aondo (NCE)' : 'Mrs. Judith Mwuese Akor (B.Ed)',
     bursarName: isPrimary ? 'Mrs. Grace Iorfa (LGEA Bursary Unit)' : 'Mr. Gabriel Iorpuu (CNA)',
-    phone: `+234 80${index + 2} ${Math.floor(100 + Math.random() * 899)} ${Math.floor(1000 + Math.random() * 8999)}`,
+    phone: `+234 80${index + 2} ${String(100 + ((index * 37) % 899)).padStart(3, '0')} ${String(1000 + ((index * 137) % 8999)).padStart(4, '0')}`,
     email: `${template.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@subeb.benue.gov.ng`,
     address: `${template.address}, Benue State`,
     establishedYear: template.established,
@@ -2265,32 +2265,5 @@ export function getGovSchoolById(id: string): GovSchool | undefined {
 
 export function getLgaMetadata(lga: BenueLGA): LGAMetadata | undefined {
   return BENUE_LGAS_METADATA.find(l => l.lga === lga);
-}
-
-// Dynamically simulate term progression impact on school KPIs
-export function simulateTermWeekProgress(school: GovSchool, targetWeek: number): GovSchool {
-  const weekRatio = targetWeek / 13;
-  const simulatedCoverage = Math.min(100, Math.round(weekRatio * 100));
-  const simulatedAttendance = Math.min(99, Math.round(90 + (Math.sin(targetWeek) * 4)));
-  const simulatedPassRate = Math.min(98, Math.round(school.studentKPIs.overallPassRate + ((targetWeek - 8) * 0.4)));
-
-  return {
-    ...school,
-    currentTermProgress: {
-      ...school.currentTermProgress,
-      week: targetWeek,
-      lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
-    },
-    teacherKPIs: {
-      ...school.teacherKPIs,
-      curriculumCoverageRate: simulatedCoverage,
-      attendanceRate: simulatedAttendance
-    },
-    studentKPIs: {
-      ...school.studentKPIs,
-      overallPassRate: simulatedPassRate,
-      attendanceRate: simulatedAttendance
-    }
-  };
 }
 

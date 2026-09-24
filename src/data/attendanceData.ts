@@ -1,3 +1,16 @@
+/**
+ * BummptEducation — Class Structure, Term Calendar & Attendance Utility Engine
+ * 
+ * REFERENCE DATA & UTILITIES ONLY:
+ * - ALL_CLASSES_DEFINITIONS: Official class structure reference (KG 1 to SSS 3).
+ * - TERM_CALENDAR_DAYS: Statutory 13-week term calendar reference.
+ * - computeStudentAttendanceSummary & computeClassSessionSummary: Pure calculation utilities.
+ * 
+ * ARCHITECTURAL INVARIANT:
+ * Zero operational student attendance records may be manufactured or stored here.
+ * Live operational attendance is strictly fetched from and persisted to PostgreSQL.
+ */
+
 import { 
   ClassLevel, 
   SchoolArm, 
@@ -619,12 +632,13 @@ export function generateDefaultAttendanceRecordsForClass(
  * LocalStorage storage of attendance records is prohibited (Zero-Mock mandate).
  */
 export function getStoredAttendanceRecords(
-  classLevel: ClassLevel,
+  _classLevel: ClassLevel,
   _term: Term = '2nd Term',
   _academicYear: AcademicYear = '2025/2026',
-  students: Student[]
+  _students: Student[]
 ): Record<string, Record<string, DailyAttendanceEntry>> {
-  return generateDefaultAttendanceRecordsForClass(classLevel, students);
+  // Operational attendance is strictly fetched from PostgreSQL via useData() -> fetchClassAttendance()
+  return {};
 }
 
 export function saveStoredAttendanceRecords(
