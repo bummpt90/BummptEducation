@@ -384,8 +384,16 @@ export class ReportCardRepository {
       totalScoreObtained: reportCardRow.totalScoreObtained || academicResult.summary.totalScoreObtained,
       totalPossibleScore: reportCardRow.totalPossibleScore || academicResult.summary.totalPossibleScore,
       overallPercentage: reportCardRow.overallPercentage || academicResult.summary.averageScore,
-      positionInClass: reportCardRow.positionInClass || academicResult.summary.classPosition || 1,
-      totalStudentsInClass: reportCardRow.totalStudentsInClass || academicResult.summary.totalStudentsInClass || 1,
+      positionInClass: (typeof reportCardRow.positionInClass === 'number' && reportCardRow.positionInClass > 0)
+        ? reportCardRow.positionInClass
+        : (typeof academicResult.summary.classPosition === 'number' && academicResult.summary.classPosition > 0)
+          ? academicResult.summary.classPosition
+          : undefined,
+      totalStudentsInClass: (typeof reportCardRow.totalStudentsInClass === 'number' && reportCardRow.totalStudentsInClass > 0)
+        ? reportCardRow.totalStudentsInClass
+        : (typeof academicResult.summary.totalStudentsInClass === 'number' && academicResult.summary.totalStudentsInClass > 0)
+          ? academicResult.summary.totalStudentsInClass
+          : undefined,
       classAverage: reportCardRow.classAverage || academicResult.summary.averageScore,
       classHighest: reportCardRow.classHighest,
       classLowest: reportCardRow.classLowest,
@@ -1136,8 +1144,8 @@ export class ReportCardRepository {
         academicResult.summary.totalScoreObtained,
         academicResult.summary.totalPossibleScore,
         academicResult.summary.averageScore,
-        academicResult.summary.classPosition || 1,
-        academicResult.summary.totalStudentsInClass || 1,
+        (academicResult.summary.classPosition && academicResult.summary.classPosition > 0) ? academicResult.summary.classPosition : null,
+        (academicResult.summary.totalStudentsInClass && academicResult.summary.totalStudentsInClass > 0) ? academicResult.summary.totalStudentsInClass : null,
         academicResult.summary.averageScore,
         approvalStatus,
         data.isParentViewable,

@@ -371,28 +371,40 @@ export function generateReportCardPDF(
   doc.text('DATE OF BIRTH:', margin + 78, y + 9.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(student.dateOfBirth || '2010-05-14', margin + 102, y + 9.5);
+  doc.text(student.dateOfBirth || 'Not recorded', margin + 102, y + 9.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
   doc.text('CLASS RANK:', margin + 132, y + 9.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(22, 101, 52); // emerald-800
-  const posStr = reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : `${reportCard.positionInClass}th`;
-  doc.text(`${posStr} of ${reportCard.totalStudentsInClass} Students`, margin + 155, y + 9.5);
+  let rankStr = 'Not ranked';
+  if (typeof reportCard.positionInClass === 'number' && reportCard.positionInClass > 0) {
+    const posStr = reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : reportCard.positionInClass === 3 ? '3rd' : `${reportCard.positionInClass}th`;
+    rankStr = reportCard.totalStudentsInClass ? `${posStr} of ${reportCard.totalStudentsInClass} Students` : `${posStr}`;
+  }
+  doc.text(rankStr, margin + 155, y + 9.5);
 
   // Row 3 (Attendance & Stats)
-  const opened = reportCard.attendance?.timesSchoolOpened || reportCard.attendanceTotalDays || 60;
-  const present = reportCard.attendance?.timesPresent || reportCard.attendancePresent || 58;
-  const absent = reportCard.attendance?.timesAbsent || (opened - present);
-  const punctual = reportCard.attendance?.timesPunctual || Math.max(0, present - 2);
+  const hasRecordedAttendance = Boolean(
+    (reportCard.attendance && typeof reportCard.attendance.timesSchoolOpened === 'number' && reportCard.attendance.timesSchoolOpened > 0) ||
+    (typeof reportCard.attendanceTotalDays === 'number' && reportCard.attendanceTotalDays > 0)
+  );
+
+  const opened = reportCard.attendance?.timesSchoolOpened ?? reportCard.attendanceTotalDays ?? null;
+  const present = reportCard.attendance?.timesPresent ?? reportCard.attendancePresent ?? null;
+  const absent = reportCard.attendance?.timesAbsent ?? (opened !== null && present !== null ? Math.max(0, opened - present) : null);
+  const punctual = reportCard.attendance?.timesPunctual ?? null;
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
   doc.text('ATTENDANCE:', margin + 3, y + 14.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`Opened: ${opened} | Present: ${present} | Absent: ${absent} | Punctual: ${punctual}`, margin + 27, y + 14.5);
+  const attendanceStr = hasRecordedAttendance && opened !== null && present !== null
+    ? `Opened: ${opened} | Present: ${present} | Absent: ${absent ?? (opened - present)}${punctual !== null ? ` | Punctual: ${punctual}` : ''}`
+    : 'Not recorded';
+  doc.text(attendanceStr, margin + 27, y + 14.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
@@ -704,7 +716,7 @@ export function generateReportCardPDF(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(`NEXT TERM RESUMPTION: ${reportCard.nextTermBegins || 'Monday 4th May, 2026'}`, margin + 3, y + 4.5);
+  doc.text(`NEXT TERM RESUMPTION: ${reportCard.nextTermBegins || 'Not published'}`, margin + 3, y + 4.5);
 
   const feeNote = reportCard.nextTermFeesEstimate || 'All tuition and statutory levies are payable on or before resumption via official bank channels.';
   doc.setFont('helvetica', 'normal');

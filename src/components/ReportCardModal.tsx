@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Student, StudentReportCard, Subject, getSchoolArm, AssessmentScore, AffectiveDomain, PsychomotorDomain } from '../types';
 import { calculateGrade, calculatePrimaryGrade, evaluatePromotionStatus, getDomainRatingDescription, calculateGpa } from '../utils/grading';
 import { downloadReportCardAsPDF } from '../utils/pdfGenerator';
@@ -33,52 +33,65 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Local editable copy for live preview and correction mode
-  const [reportCard, setReportCard] = useState<StudentReportCard>(() => {
-    // Ensure default domains exist
+  // Helper to extract authoritative or unassessed domain ratings
+  const buildInitialReportCardState = (rc: StudentReportCard): StudentReportCard => {
     const defaultAffective: AffectiveDomain = {
-      punctuality: initialReportCard.affective?.punctuality || (initialReportCard.psychomotor as any)?.punctuality || 5,
-      neatness: initialReportCard.affective?.neatness || (initialReportCard.psychomotor as any)?.neatness || 5,
-      politeness: initialReportCard.affective?.politeness || (initialReportCard.psychomotor as any)?.politeness || 5,
-      honesty: initialReportCard.affective?.honesty || (initialReportCard.psychomotor as any)?.honesty || 5,
-      peerRelationship: initialReportCard.affective?.peerRelationship || (initialReportCard.psychomotor as any)?.peerRelationship || 4,
-      leadership: initialReportCard.affective?.leadership || (initialReportCard.psychomotor as any)?.leadership || (student.isPrefect ? 5 : 4),
-      emotionalStability: initialReportCard.affective?.emotionalStability || 4,
-      obedience: initialReportCard.affective?.obedience || 5,
-      attentiveness: initialReportCard.affective?.attentiveness || (initialReportCard.psychomotor as any)?.attentiveness || 5,
-      perseverance: initialReportCard.affective?.perseverance || 4,
+      punctuality: typeof rc.affective?.punctuality === 'number' ? rc.affective.punctuality : 0,
+      neatness: typeof rc.affective?.neatness === 'number' ? rc.affective.neatness : 0,
+      politeness: typeof rc.affective?.politeness === 'number' ? rc.affective.politeness : 0,
+      honesty: typeof rc.affective?.honesty === 'number' ? rc.affective.honesty : 0,
+      peerRelationship: typeof rc.affective?.peerRelationship === 'number' ? rc.affective.peerRelationship : 0,
+      leadership: typeof rc.affective?.leadership === 'number' ? rc.affective.leadership : 0,
+      emotionalStability: typeof rc.affective?.emotionalStability === 'number' ? rc.affective.emotionalStability : 0,
+      obedience: typeof rc.affective?.obedience === 'number' ? rc.affective.obedience : 0,
+      attentiveness: typeof rc.affective?.attentiveness === 'number' ? rc.affective.attentiveness : 0,
+      perseverance: typeof rc.affective?.perseverance === 'number' ? rc.affective.perseverance : 0,
     };
 
     const defaultPsychomotor: PsychomotorDomain = {
-      handwriting: initialReportCard.psychomotor?.handwriting || 4,
-      sportsAndGames: initialReportCard.psychomotor?.sportsAndGames || (initialReportCard.psychomotor as any)?.sports || 4,
-      craftsAndPractical: initialReportCard.psychomotor?.craftsAndPractical || (initialReportCard.psychomotor as any)?.crafts || 4,
-      verbalFluency: initialReportCard.psychomotor?.verbalFluency || (initialReportCard.psychomotor as any)?.speechFluency || 5,
-      musicalDramatic: initialReportCard.psychomotor?.musicalDramatic || 4,
-      handlingOfTools: initialReportCard.psychomotor?.handlingOfTools || 4,
-      physicalAgility: initialReportCard.psychomotor?.physicalAgility || 4,
+      handwriting: typeof rc.psychomotor?.handwriting === 'number' ? rc.psychomotor.handwriting : 0,
+      sportsAndGames: typeof rc.psychomotor?.sportsAndGames === 'number' ? rc.psychomotor.sportsAndGames : 0,
+      craftsAndPractical: typeof rc.psychomotor?.craftsAndPractical === 'number' ? rc.psychomotor.craftsAndPractical : 0,
+      verbalFluency: typeof rc.psychomotor?.verbalFluency === 'number' ? rc.psychomotor.verbalFluency : 0,
+      musicalDramatic: typeof rc.psychomotor?.musicalDramatic === 'number' ? rc.psychomotor.musicalDramatic : 0,
+      handlingOfTools: typeof rc.psychomotor?.handlingOfTools === 'number' ? rc.psychomotor.handlingOfTools : 0,
+      physicalAgility: typeof rc.psychomotor?.physicalAgility === 'number' ? rc.psychomotor.physicalAgility : 0,
     };
 
-    const defaultAttendance = initialReportCard.attendance || {
-      timesSchoolOpened: initialReportCard.attendanceTotalDays || 0,
-      timesPresent: initialReportCard.attendancePresent || 0,
-      timesAbsent: Math.max(0, (initialReportCard.attendanceTotalDays || 0) - (initialReportCard.attendancePresent || 0)),
+    const defaultAttendance = rc.attendance || {
+      timesSchoolOpened: typeof rc.attendanceTotalDays === 'number' ? rc.attendanceTotalDays : 0,
+      timesPresent: typeof rc.attendancePresent === 'number' ? rc.attendancePresent : 0,
+      timesAbsent: (typeof rc.attendanceTotalDays === 'number' && typeof rc.attendancePresent === 'number')
+        ? Math.max(0, rc.attendanceTotalDays - rc.attendancePresent)
+        : 0,
       timesPunctual: 0,
     };
 
     return {
-      ...initialReportCard,
+      ...rc,
       affective: defaultAffective,
       psychomotor: defaultPsychomotor,
       attendance: defaultAttendance,
-      sportsMasterRemark: initialReportCard.sportsMasterRemark || '',
-      sportsMasterName: initialReportCard.sportsMasterName || '',
-      guidanceCounselorRemark: initialReportCard.guidanceCounselorRemark || '',
-      guidanceCounselorName: initialReportCard.guidanceCounselorName || '',
-      approvalStatus: initialReportCard.approvalStatus || 'Approved & Published',
-      nextTermFeesEstimate: initialReportCard.nextTermFeesEstimate || 'Tuition and statutory fees payable into official school bank accounts before term resumption.',
+      sportsMasterRemark: rc.sportsMasterRemark || '',
+      sportsMasterName: rc.sportsMasterName || '',
+      guidanceCounselorRemark: rc.guidanceCounselorRemark || '',
+      guidanceCounselorName: rc.guidanceCounselorName || '',
+      approvalStatus: rc.approvalStatus || 'Approved & Published',
+      nextTermFeesEstimate: rc.nextTermFeesEstimate || 'Tuition and statutory fees payable into official school bank accounts before term resumption.',
     };
-  });
+  };
+
+  // Local editable copy for live preview and correction mode
+  const [reportCard, setReportCard] = useState<StudentReportCard>(() =>
+    buildInitialReportCardState(initialReportCard)
+  );
+
+  // Sync state whenever initialReportCard or modal open status changes (retrieves saved server state)
+  useEffect(() => {
+    if (isOpen) {
+      setReportCard(buildInitialReportCardState(initialReportCard));
+    }
+  }, [initialReportCard, isOpen]);
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
@@ -479,7 +492,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
 
               <div>
                 <span className="text-slate-500 block font-medium">Gender & DOB:</span>
-                <span className="text-slate-700">{student.gender} • {student.dateOfBirth || '2010-05-14'}</span>
+                <span className="text-slate-700">{student.gender} • {student.dateOfBirth || 'Not recorded'}</span>
               </div>
 
               <div>
@@ -500,7 +513,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <span className="font-semibold text-slate-800">
-                    {reportCard.attendance.timesSchoolOpened > 0 ? `${reportCard.attendance.timesSchoolOpened} days` : 'Not recorded'}
+                    {reportCard.attendance && reportCard.attendance.timesSchoolOpened > 0 ? `${reportCard.attendance.timesSchoolOpened} days` : 'Not recorded'}
                   </span>
                 )}
               </div>
@@ -516,7 +529,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                   />
                 ) : (
                   <span className="font-semibold text-emerald-700">
-                    {reportCard.attendance.timesPresent > 0 || reportCard.attendance.timesAbsent > 0
+                    {reportCard.attendance && (reportCard.attendance.timesPresent > 0 || reportCard.attendance.timesAbsent > 0)
                       ? `${reportCard.attendance.timesPresent} days (${reportCard.attendance.timesAbsent} absent)`
                       : 'Not recorded'}
                   </span>
@@ -526,8 +539,8 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
               <div>
                 <span className="text-slate-500 block font-medium">Class Rank & Position:</span>
                 <span className="font-bold text-blue-700">
-                  {reportCard.positionInClass && reportCard.positionInClass > 0
-                    ? `${reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : reportCard.positionInClass === 3 ? '3rd' : `${reportCard.positionInClass}th`} out of ${reportCard.totalStudentsInClass || 0} Pupils`
+                  {typeof reportCard.positionInClass === 'number' && reportCard.positionInClass > 0
+                    ? `${reportCard.positionInClass === 1 ? '1st' : reportCard.positionInClass === 2 ? '2nd' : reportCard.positionInClass === 3 ? '3rd' : `${reportCard.positionInClass}th`}${reportCard.totalStudentsInClass ? ` out of ${reportCard.totalStudentsInClass} Pupils` : ''}`
                     : 'Not yet calculated'}
                 </span>
               </div>
@@ -813,7 +826,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                               <button
                                 key={num}
                                 type="button"
-                                onClick={() => handleAffectiveRatingChange(key as keyof AffectiveDomain, num)}
+                                onClick={() => handleAffectiveRatingChange(key as keyof AffectiveDomain, rating === num ? 0 : num)}
                                 className={`h-5 w-5 rounded text-[10px] font-bold transition cursor-pointer ${
                                   rating === num
                                     ? 'bg-blue-600 text-white'
@@ -887,7 +900,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
                               <button
                                 key={num}
                                 type="button"
-                                onClick={() => handlePsychomotorRatingChange(key as keyof PsychomotorDomain, num)}
+                                onClick={() => handlePsychomotorRatingChange(key as keyof PsychomotorDomain, rating === num ? 0 : num)}
                                 className={`h-5 w-5 rounded text-[10px] font-bold transition cursor-pointer ${
                                   rating === num
                                     ? 'bg-emerald-600 text-white'
@@ -1122,7 +1135,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
             <div className="flex items-center gap-2">
               <Calendar className="h-3.5 w-3.5 text-blue-700 shrink-0" />
               <span>
-                NEXT TERM RESUMPTION DATE: <strong className="text-slate-900 text-[11px]">{reportCard.nextTermBegins || 'Monday 4th May, 2026'}</strong>
+                NEXT TERM RESUMPTION DATE: <strong className="text-slate-900 text-[11px]">{reportCard.nextTermBegins || 'Not published'}</strong>
               </span>
             </div>
             <div className="text-center text-slate-500 font-sans">

@@ -84,12 +84,14 @@ export const Header: React.FC<HeaderProps> = ({
   const [armsDropdownOpen, setArmsDropdownOpen] = useState(false);
   const [academicDropdownOpen, setAcademicDropdownOpen] = useState(false);
   const [academicContextDropdownOpen, setAcademicContextDropdownOpen] = useState(false);
+  const [adminDropdownOpen, setAdminDropdownOpen] = useState(false);
   const [docsDropdownOpen, setDocsDropdownOpen] = useState(false);
 
   const roleDropdownRef = useRef<HTMLDivElement>(null);
   const armsDropdownRef = useRef<HTMLDivElement>(null);
   const academicDropdownRef = useRef<HTMLDivElement>(null);
   const academicContextDropdownRef = useRef<HTMLDivElement>(null);
+  const adminDropdownRef = useRef<HTMLDivElement>(null);
   const docsDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on outside click
@@ -110,6 +112,9 @@ export const Header: React.FC<HeaderProps> = ({
       if (docsDropdownRef.current && !docsDropdownRef.current.contains(event.target as Node)) {
         setDocsDropdownOpen(false);
       }
+      if (adminDropdownRef.current && !adminDropdownRef.current.contains(event.target as Node)) {
+        setAdminDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -124,6 +129,8 @@ export const Header: React.FC<HeaderProps> = ({
     setMobileMenuOpen(false);
     setArmsDropdownOpen(false);
     setAcademicDropdownOpen(false);
+    setAdminDropdownOpen(false);
+    setDocsDropdownOpen(false);
     setRoleDropdownOpen(false);
   };
 
@@ -227,7 +234,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md transition-all duration-200 shadow-xs" id="main-app-header">
       {/* Top Utility Micro-Bar */}
       <div className="bg-slate-950 text-slate-300 border-b border-slate-800/80 px-3 sm:px-4 lg:px-6 py-1 text-[11px] select-none">
-        <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between gap-2 sm:gap-4">
+        <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between gap-2 sm:gap-4 min-w-0">
           
           {/* Left Session, Term & Dynamic Active Class Indicators */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-0.5">
@@ -547,7 +554,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Main Navbar */}
-      <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between px-3 sm:px-4 lg:px-6 py-2">
+      <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between px-3 sm:px-4 lg:px-6 py-2 min-w-0">
         
         {/* Left: Brand Identity */}
         <button 
@@ -560,7 +567,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Desktop Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5">
+        <nav className="hidden lg:flex items-center gap-1 xl:gap-2 flex-shrink min-w-0" id="desktop-primary-nav" aria-label="Desktop Primary Navigation">
           
           {/* Home */}
           <button
@@ -760,29 +767,83 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Bursary & Admin */}
-          <button
-            onClick={() => navigateTo('admin')}
-            id="nav-link-admin"
-            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-              activePage === 'admin'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-          >
-            <Building2 className={`h-3.5 w-3.5 ${activePage === 'admin' ? 'text-white' : 'text-slate-500'}`} />
-            <span>Bursary & Admin</span>
-          </button>
+          {/* Bursary & Admin (With Quick Dropdown) */}
+          <div className="relative" ref={adminDropdownRef}>
+            <button
+              onClick={() => {
+                if (activePage !== 'admin') {
+                  navigateTo('admin');
+                } else {
+                  setAdminDropdownOpen(!adminDropdownOpen);
+                }
+              }}
+              onMouseEnter={() => setAdminDropdownOpen(true)}
+              id="nav-link-admin"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                activePage === 'admin'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              aria-expanded={adminDropdownOpen}
+            >
+              <Building2 className={`h-3.5 w-3.5 ${activePage === 'admin' ? 'text-white' : 'text-slate-500'}`} />
+              <span>Bursary & Admin</span>
+              <ChevronDown className={`h-3 w-3 opacity-60 transition-transform duration-200 ${adminDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          {/* Admissions */}
-          <button
-            onClick={() => navigateTo('admin', 'admissions')}
-            id="nav-link-admissions"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition cursor-pointer whitespace-nowrap text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-          >
-            <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Admissions</span>
-          </button>
+            {adminDropdownOpen && (
+              <div 
+                className="absolute left-0 mt-1.5 w-64 rounded-2xl bg-white p-2 shadow-2xl border border-slate-200 text-slate-800 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+                onMouseLeave={() => setAdminDropdownOpen(false)}
+              >
+                <div className="px-3 py-1.5 border-b border-slate-100 mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Bursary & Administration
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    navigateTo('admin', 'overview');
+                    setAdminDropdownOpen(false);
+                  }}
+                  className="w-full text-left p-2 rounded-xl hover:bg-slate-50 transition flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                >
+                  <Building2 className="h-4 w-4 text-blue-600" />
+                  <div>
+                    <div>Executive Dashboard</div>
+                    <span className="text-[10px] text-slate-400 font-normal">System metrics & audit overview</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    navigateTo('admin', 'fees');
+                    setAdminDropdownOpen(false);
+                  }}
+                  className="w-full text-left p-2 rounded-xl hover:bg-slate-50 transition flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  <div>
+                    <div>Fee Schedules & Bursary</div>
+                    <span className="text-[10px] text-slate-400 font-normal">Tuition collections & invoices</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    navigateTo('admin', 'admissions');
+                    setAdminDropdownOpen(false);
+                  }}
+                  id="admin-dropdown-admissions"
+                  className="w-full text-left p-2 rounded-xl hover:bg-slate-50 transition flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                >
+                  <UserCheck className="h-4 w-4 text-purple-600" />
+                  <div>
+                    <div>Admissions & Enrollment</div>
+                    <span className="text-[10px] text-slate-400 font-normal">Student registration & intake</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Documentation & Developer Architecture Mega Dropdown */}
           <div className="relative" ref={docsDropdownRef}>

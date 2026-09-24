@@ -130,20 +130,20 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
       id: verifiedStudent.id,
       admissionNumber: verifiedStudent.admissionNumber,
       fullName: verifiedStudent.fullName,
-      gender: (verifiedStudent.gender as any) || 'Female',
-      currentClass: (verifiedStudent.className || verifiedStudent.classLevel || 'JSS 1') as any,
+      gender: (verifiedStudent.gender as any) || 'Unspecified',
+      currentClass: (verifiedStudent.className || verifiedStudent.classLevel || 'Unassigned') as any,
       arm: (verifiedStudent.arm as any) || 'secondary',
-      dateOfBirth: verifiedStudent.dateOfBirth || '2012-04-10',
-      dateEnrolled: '2024-09-08',
-      guardianName: 'Parent / Guardian',
-      guardianPhone: '+234 811 523 1834',
-      guardianEmail: 'parent@example.com',
-      address: 'Makurdi, Benue State',
-      stateOfOrigin: 'Benue',
-      status: 'Active',
+      dateOfBirth: verifiedStudent.dateOfBirth || '',
+      dateEnrolled: verifiedStudent.dateEnrolled || '',
+      guardianName: verifiedStudent.guardianName || 'Parent / Guardian',
+      guardianPhone: verifiedStudent.guardianPhone || '',
+      guardianEmail: verifiedStudent.guardianEmail || '',
+      address: verifiedStudent.address || '',
+      stateOfOrigin: verifiedStudent.stateOfOrigin || '',
+      status: (verifiedStudent.status as any) || 'Active',
       avatarUrl: undefined,
-      house: (verifiedStudent.house as any) || 'Eagle House (Blue)',
-      isPrefect: false,
+      house: (verifiedStudent.house as any) || 'Unassigned',
+      isPrefect: Boolean(verifiedStudent.isPrefect),
     };
 
     onClose();
@@ -351,18 +351,18 @@ export const ParentReportPortalModal: React.FC<ParentReportPortalModalProps> = (
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Current Class</span>
-                      <strong className="text-slate-900">{verifiedStudent.className || verifiedStudent.classLevel || 'JSS 1'}</strong>
+                      <strong className="text-slate-900">{verifiedStudent.className || verifiedStudent.classLevel || 'N/A'}</strong>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Class Position</span>
                       <strong className="text-emerald-700 font-bold">
-                        {publishedReport?.positionInClass ? `${publishedReport.positionInClass} of ${publishedReport.totalStudentsInClass || 38}` : '1st out of 38'}
+                        {publishedReport?.positionInClass ? `${publishedReport.positionInClass}${publishedReport.totalStudentsInClass ? ` of ${publishedReport.totalStudentsInClass}` : ''}` : 'Not ranked'}
                       </strong>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Overall Score %</span>
                       <strong className="text-blue-700 font-bold">
-                        {publishedReport?.averageScore ? `${publishedReport.averageScore}%` : '90.1% (Distinction)'}
+                        {typeof publishedReport?.averageScore === 'number' ? `${publishedReport.averageScore}%` : 'Not computed'}
                       </strong>
                     </div>
                   </div>

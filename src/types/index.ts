@@ -307,8 +307,8 @@ export interface StudentReportCard {
   classAverage: number;
   classHighest?: number;
   classLowest?: number;
-  positionInClass: number;
-  totalStudentsInClass: number;
+  positionInClass?: number;
+  totalStudentsInClass?: number;
   gpa?: number; // 5.0 scale for Secondary / 4.0 scale
   affective: AffectiveDomain;
   psychomotor: PsychomotorDomain;

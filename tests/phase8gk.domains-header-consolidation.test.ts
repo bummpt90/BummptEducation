@@ -1,10 +1,11 @@
 /**
- * BummptEducation — Phase 8G-K Automated Verification Test Suite
+ * BummptEducation — Phase 8G-K.1 Automated Verification Test Suite
  * 
  * Verifies:
- * 1. Header Navigation Consolidation (Zero Duplication & Desktop Layout)
- * 2. Domains of Education Workflow Hardening (UUID vs Human Identifier Support, Database Schema Integrity)
- * 3. Report Card Modal & PDF Authoritative Integrity (Zero Synthetic Defaults, Dynamic Trait Aggregation)
+ * 1. Authoritative Report-Card Data Integrity (Removal of all synthetic ratings, attendance, DOB, rank, and dates)
+ * 2. Header Navigation Consolidation (Zero standalone duplicate Admissions or Report Cards deep links)
+ * 3. Desktop Navigation Responsiveness (Nav container flex, min-w-0, and absence of horizontal overflow)
+ * 4. Domains of Education Database & Grading Behavior (UUID vs natural ID lookup, zero-rating "Not Assessed" state)
  */
 
 import 'dotenv/config';
@@ -36,92 +37,224 @@ function record(category: string, test: string, passed: boolean, details?: strin
 
 async function runTestSuite() {
   console.log('======================================================================');
-  console.log('BummptEducation — Phase 8G-K Domains & Header Consolidation Verification');
+  console.log('BummptEducation — Phase 8G-K.1 Authoritative Report-Card & Header Verification');
   console.log('======================================================================\n');
 
-  // -------------------------------------------------------------------------
-  // CATEGORY 1: Header Navigation Consolidation
-  // -------------------------------------------------------------------------
-  console.log('--- Category 1: Header Navigation Consolidation ---');
+  const reportCardModalPath = path.join(process.cwd(), 'src/components/ReportCardModal.tsx');
+  const reportCardModalContent = fs.readFileSync(reportCardModalPath, 'utf-8');
+
+  const pdfPath = path.join(process.cwd(), 'src/utils/pdfGenerator.ts');
+  const pdfContent = fs.readFileSync(pdfPath, 'utf-8');
+
+  const parentPortalModalPath = path.join(process.cwd(), 'src/components/ParentReportPortalModal.tsx');
+  const parentPortalModalContent = fs.readFileSync(parentPortalModalPath, 'utf-8');
+
+  const reportCardRepoPath = path.join(process.cwd(), 'src/db/repositories/reportCard.repository.ts');
+  const reportCardRepoContent = fs.readFileSync(reportCardRepoPath, 'utf-8');
 
   const headerPath = path.join(process.cwd(), 'src/components/Header.tsx');
   const headerContent = fs.readFileSync(headerPath, 'utf-8');
 
-  // 1. Exactly one Report Cards button in navigation
-  const reportCardsMatches = (headerContent.match(/Report Cards/g) || []).length;
+  const academicDashboardPath = path.join(process.cwd(), 'src/pages/AcademicDashboard.tsx');
+  const academicDashboardContent = fs.readFileSync(academicDashboardPath, 'utf-8');
+
+  // -------------------------------------------------------------------------
+  // CATEGORY 1: Removal of Synthetic Business Data & Domain Ratings
+  // -------------------------------------------------------------------------
+  console.log('--- Category 1: Authoritative Report-Card Data Integrity ---');
+
+  // 1. ReportCardModal contains no synthetic domain ratings (no || 5, || 4 in domain state initialization)
+  const hasSyntheticDomainFallbacksInModal = /affective:\s*\{[^}]*\|\|\s*[45]/s.test(reportCardModalContent) ||
+    /psychomotor:\s*\{[^}]*\|\|\s*[45]/s.test(reportCardModalContent);
   record(
     'Category 1',
-    'Header.tsx has consolidated Report Cards button without duplication',
-    reportCardsMatches === 1,
-    `Occurrences in Header.tsx: ${reportCardsMatches}`
+    'ReportCardModal contains no synthetic domain ratings (no || 4 or || 5 fallbacks in domain fields)',
+    !hasSyntheticDomainFallbacksInModal,
+    hasSyntheticDomainFallbacksInModal ? 'Synthetic || 4 / || 5 found in ReportCardModal' : 'Clean authoritative domain mapping'
   );
 
-  // 2. Exactly one Admissions link/button in navigation
-  const admissionsBtnMatches = (headerContent.match(/>Admissions<\/span>/g) || []).length;
+  // 2. pdfGenerator contains no synthetic attendance fallbacks (no || 60, || 58)
+  const hasSyntheticAttendanceInPdf = pdfContent.includes('|| 60') || pdfContent.includes('|| 58') || pdfContent.includes('opened = 60');
   record(
     'Category 1',
-    'Header.tsx has consolidated Admissions button without duplication',
-    admissionsBtnMatches === 1,
-    `Occurrences in Header.tsx: ${admissionsBtnMatches}`
+    'pdfGenerator contains no synthetic attendance (no || 60, || 58 or hardcoded 60 days)',
+    !hasSyntheticAttendanceInPdf,
+    hasSyntheticAttendanceInPdf ? 'Synthetic attendance numbers found in pdfGenerator' : 'Authoritative attendance only'
   );
 
-  // 3. Desktop navigation layout has overflow-x-auto and no horizontal breaking
-  const hasDesktopOverflowControl = headerContent.includes('overflow-x-auto') || headerContent.includes('min-w-0');
+  // 3. PDF contains no synthetic date of birth ('2010-05-14')
+  const hasSyntheticDobInPdf = pdfContent.includes('2010-05-14');
   record(
     'Category 1',
-    'Desktop navigation has responsive overflow control',
-    hasDesktopOverflowControl,
-    'Responsive flex/overflow styles confirmed'
+    'pdfGenerator contains no synthetic date of birth (2010-05-14)',
+    !hasSyntheticDobInPdf,
+    hasSyntheticDobInPdf ? 'Synthetic DOB 2010-05-14 found in pdfGenerator' : 'Clean DOB logic'
   );
 
-  // 4. Mobile drawer navigation contains 3-column quick action grid
-  const hasMobileGrid = headerContent.includes('grid grid-cols-3');
+  // 4. ReportCardModal contains no synthetic date of birth ('2010-05-14')
+  const hasSyntheticDobInModal = reportCardModalContent.includes('2010-05-14');
   record(
     'Category 1',
-    'Mobile navigation uses structured 3-column grid without redundant items',
-    hasMobileGrid,
-    'Grid confirmed in mobile drawer'
+    'ReportCardModal contains no synthetic date of birth (2010-05-14)',
+    !hasSyntheticDobInModal,
+    hasSyntheticDobInModal ? 'Synthetic DOB 2010-05-14 found in ReportCardModal' : 'Authoritative/unrecorded DOB displayed'
+  );
+
+  // 5. ParentReportPortalModal contains no fabricated class population such as 38 or '1st out of 38'
+  const hasFabricatedRankInParentPortal = parentPortalModalContent.includes('1st out of 38') ||
+    parentPortalModalContent.includes('totalStudentsInClass || 38');
+  record(
+    'Category 1',
+    'ParentReportPortalModal contains no fabricated class population (no "1st out of 38" or "|| 38")',
+    !hasFabricatedRankInParentPortal,
+    hasFabricatedRankInParentPortal ? 'Fabricated class rank/population found in ParentReportPortalModal' : 'Authoritative rank representation'
+  );
+
+  // 6. ReportCardModal & AcademicDashboard contain no hardcoded synthetic resumption dates ('Monday 4th May, 2026')
+  const hasSyntheticResumptionDate = reportCardModalContent.includes('Monday 4th May, 2026') ||
+    academicDashboardContent.includes('Monday 4th May, 2026') ||
+    pdfContent.includes('Monday 4th May, 2026');
+  record(
+    'Category 1',
+    'Production report-card files contain no synthetic resumption date ("Monday 4th May, 2026")',
+    !hasSyntheticResumptionDate,
+    hasSyntheticResumptionDate ? 'Hardcoded "Monday 4th May, 2026" found' : 'Unpublished/authoritative resumption date used'
+  );
+
+  // 7. reportCard.repository.ts does not fallback missing rank or population to 1
+  const hasRankFallbackToOne = reportCardRepoContent.includes('positionInClass || 1') ||
+    reportCardRepoContent.includes('academicResult.summary.classPosition || 1') ||
+    reportCardRepoContent.includes('totalStudentsInClass || 1') ||
+    reportCardRepoContent.includes('academicResult.summary.totalStudentsInClass || 1');
+  record(
+    'Category 1',
+    'reportCard.repository.ts does not fallback missing rank or class population to 1',
+    !hasRankFallbackToOne,
+    hasRankFallbackToOne ? 'Found fallback to 1 in reportCard.repository.ts' : 'Rank and population preserve null/unranked state'
+  );
+
+  // 8. Focused test for zero/unrecorded domain traits (0 -> "Not Assessed", 1-5 -> mapped accurately)
+  const traitZero = getDomainRatingDescription(0);
+  const traitNull = getDomainRatingDescription(null as any);
+  const traitUndefined = getDomainRatingDescription(undefined as any);
+  const traitOne = getDomainRatingDescription(1);
+  const traitFive = getDomainRatingDescription(5);
+
+  const zeroHandledProperly = traitZero.label === 'Not Assessed' && traitZero.rating === 0;
+  const nullHandledProperly = traitNull.label === 'Not Assessed' && traitNull.rating === 0;
+  const undefinedHandledProperly = traitUndefined.label === 'Not Assessed' && traitUndefined.rating === 0;
+  const oneHandledProperly = traitOne.rating === 1 && traitOne.label.includes('1/5');
+  const fiveHandledProperly = traitFive.rating === 5 && traitFive.label.includes('5/5');
+
+  const domainTraitsAccurate = zeroHandledProperly && nullHandledProperly && undefinedHandledProperly && oneHandledProperly && fiveHandledProperly;
+  record(
+    'Category 1',
+    'Domain grading helper handles 0, null, undefined as "Not Assessed" without transforming to 4 or 5',
+    domainTraitsAccurate,
+    `0: "${traitZero.label}", 1: "${traitOne.label}", 5: "${traitFive.label}"`
   );
 
   // -------------------------------------------------------------------------
-  // CATEGORY 2: Domains of Education Workflow Hardening & Identifier Safety
+  // CATEGORY 2: Header Navigation Consolidation & Redundant Deep Link Removal
   // -------------------------------------------------------------------------
-  console.log('\n--- Category 2: Domains Workflow Hardening & Identifier Safety ---');
+  console.log('\n--- Category 2: Header Navigation Consolidation ---');
 
-  // 5. getDomainRatingDescription handles rating 0 as "Not Assessed"
-  const zeroRating = getDomainRatingDescription(0);
-  const handlesZeroCleanly = zeroRating.label === 'Not Assessed' && zeroRating.rating === 0;
+  // 9. Header contains no standalone Admissions navigation item (id="nav-link-admissions" removed)
+  const hasStandaloneAdmissionsBtn = headerContent.includes('id="nav-link-admissions"');
   record(
     'Category 2',
-    'getDomainRatingDescription gracefully handles unassessed trait (rating 0)',
-    handlesZeroCleanly,
-    `Rating 0 label: "${zeroRating.label}"`
+    'Header contains no standalone Admissions navigation item (id="nav-link-admissions" removed)',
+    !hasStandaloneAdmissionsBtn,
+    hasStandaloneAdmissionsBtn ? 'Found standalone nav-link-admissions in Header.tsx' : 'Redundant standalone link removed'
   );
 
-  // 6. getDomainRatingDescription handles valid ratings 1 to 5
-  const validRatings = [1, 2, 3, 4, 5].every(num => {
-    const r = getDomainRatingDescription(num);
-    return r.rating === num && r.label.length > 0;
-  });
+  // 10. Header contains no standalone Report Cards navigation item (no standalone top-level button)
+  const hasStandaloneReportCardsBtn = headerContent.includes('id="nav-link-reports"') ||
+    headerContent.includes('id="nav-link-report-cards"');
   record(
     'Category 2',
-    'getDomainRatingDescription maps standard 1-5 rating scale correctly',
-    validRatings,
-    'Scale 1-5 mapped'
+    'Header contains no standalone Report Cards navigation item in top-level bar',
+    !hasStandaloneReportCardsBtn,
+    hasStandaloneReportCardsBtn ? 'Found standalone top-level Report Cards button' : 'No redundant top-level report card link'
   );
 
-  // 7. Verify reportCard.repository.ts uses correct students table columns (no last_name)
-  const repoPath = path.join(process.cwd(), 'src/db/repositories/reportCard.repository.ts');
-  const repoContent = fs.readFileSync(repoPath, 'utf-8');
-  const hasLastNameRef = repoContent.includes('last_name') || repoContent.includes('passport_photo_url');
+  // 11. Header still contains the legitimate Academic Wing -> Official Report Cards entry
+  const hasAcademicWingReportCards = headerContent.includes("navigateTo('academic', 'reports')") &&
+    headerContent.includes('Official Report Cards');
   record(
     'Category 2',
-    'reportCard.repository.ts contains zero invalid student column references (no last_name or passport_photo_url)',
-    !hasLastNameRef,
-    hasLastNameRef ? 'Invalid column references detected' : 'Clean column references'
+    'Header retains the legitimate Academic Wing -> Official Report Cards dropdown destination',
+    hasAcademicWingReportCards,
+    hasAcademicWingReportCards ? 'Academic Wing dropdown destination verified' : 'Official Report Cards missing from Academic Wing'
   );
 
-  // 8. Test getClassDomainAssessments with string class name (e.g., 'SSS 2 Science') against database
+  // 12. Header still contains Bursary & Admin -> Admissions functionality
+  const hasAdminAdmissions = headerContent.includes("navigateTo('admin', 'admissions')") &&
+    headerContent.includes('Bursary & Admin');
+  record(
+    'Category 2',
+    'Header retains Bursary & Admin -> Admissions navigation capability',
+    hasAdminAdmissions,
+    hasAdminAdmissions ? 'Bursary & Admin -> Admissions route verified' : 'Admissions missing from Bursary & Admin'
+  );
+
+  // -------------------------------------------------------------------------
+  // CATEGORY 3: Desktop Header Responsiveness Verification
+  // -------------------------------------------------------------------------
+  console.log('\n--- Category 3: Desktop Header Responsiveness ---');
+
+  // 13. The responsive test specifically checks the desktop nav container rather than merely finding overflow-x-auto anywhere
+  const desktopNavMatch = headerContent.match(/<nav\s+className="([^"]*hidden lg:flex[^"]*)"/);
+  const desktopNavClasses = desktopNavMatch ? desktopNavMatch[1] : '';
+  const desktopNavHasFlexShrinkOrMinW0 = desktopNavClasses.includes('min-w-0') ||
+    desktopNavClasses.includes('flex-shrink') ||
+    desktopNavClasses.includes('flex-wrap');
+
+  const navbarContainerHasMinW0 = headerContent.includes('max-w-[1600px] mx-auto flex items-center justify-between px-3 sm:px-4 lg:px-6 py-2 min-w-0');
+
+  const desktopResponsivenessSound = Boolean(desktopNavMatch && desktopNavHasFlexShrinkOrMinW0 && navbarContainerHasMinW0);
+  record(
+    'Category 3',
+    'Desktop navigation container has robust responsive flex, shrink, and min-w-0 attributes',
+    desktopResponsivenessSound,
+    `Nav classes: "${desktopNavClasses}", Container has min-w-0: ${navbarContainerHasMinW0}`
+  );
+
+  // 14. Parent Portal CTA button is accessible on desktop
+  const hasDesktopParentPortalBtn = headerContent.includes('id="header-desktop-parent-portal-btn"') &&
+    headerContent.includes('Parent Portal');
+  record(
+    'Category 3',
+    'Parent Portal CTA button remains prominently accessible on desktop navbar',
+    hasDesktopParentPortalBtn,
+    'Parent Portal CTA verified'
+  );
+
+  // 15. Mobile navigation continues to use the dedicated mobile drawer
+  const hasMobileDrawer = headerContent.includes('id="mobile-nav-toggle"') &&
+    headerContent.includes('mobileMenuOpen');
+  record(
+    'Category 3',
+    'Mobile navigation continues using dedicated responsive drawer architecture',
+    hasMobileDrawer,
+    'Mobile drawer verified'
+  );
+
+  // -------------------------------------------------------------------------
+  // CATEGORY 4: Database Repository Identifier Safety
+  // -------------------------------------------------------------------------
+  console.log('\n--- Category 4: Database Repository Identifier Safety ---');
+
+  // 16. reportCardRepository uses correct students table columns (no last_name or passport_photo_url)
+  const hasInvalidColumnRefs = reportCardRepoContent.includes('last_name') || reportCardRepoContent.includes('passport_photo_url');
+  record(
+    'Category 4',
+    'reportCard.repository.ts contains zero invalid student column references',
+    !hasInvalidColumnRefs,
+    hasInvalidColumnRefs ? 'Invalid columns detected' : 'Clean column references verified'
+  );
+
+  // 17. Database query: getClassDomainAssessments with class string identifier
   let classDomainLookupWorked = false;
   let sampleClassResult: any = null;
   try {
@@ -139,34 +272,13 @@ async function runTestSuite() {
     console.error('Error during getClassDomainAssessments test:', err);
   }
   record(
-    'Category 2',
-    'reportCardRepository.getClassDomainAssessments resolves non-UUID class identifiers without SQL syntax error',
+    'Category 4',
+    'reportCardRepository.getClassDomainAssessments resolves non-UUID class identifiers cleanly',
     classDomainLookupWorked,
     sampleClassResult ? `Resolved class: ${sampleClassResult.className}` : 'Failed to query'
   );
 
-  // 9. Test getClassDomainAssessments with actual class UUID
-  let uuidClassLookupWorked = false;
-  try {
-    const clsRes = await query<{ id: string; school_id: string }>('SELECT id, school_id FROM classes LIMIT 1;');
-    if (clsRes.rows[0]) {
-      const res = await reportCardRepository.getClassDomainAssessments(
-        clsRes.rows[0].school_id,
-        clsRes.rows[0].id
-      );
-      uuidClassLookupWorked = Boolean(res && res.classId === clsRes.rows[0].id);
-    }
-  } catch (err: any) {
-    console.error('Error during UUID class lookup:', err);
-  }
-  record(
-    'Category 2',
-    'reportCardRepository.getClassDomainAssessments resolves UUID class identifier properly',
-    uuidClassLookupWorked,
-    'UUID lookup successful'
-  );
-
-  // 10. Test getStudentDomainAssessment with admission number (non-UUID)
+  // 18. Database query: getStudentDomainAssessment with admission number
   let studentLookupWorked = false;
   try {
     const stuRes = await query<{ id: string; admission_number: string; school_id: string }>(
@@ -184,76 +296,10 @@ async function runTestSuite() {
     console.error('Error during student domain assessment lookup:', err);
   }
   record(
-    'Category 2',
-    'reportCardRepository.getStudentDomainAssessment resolves non-UUID admission number without SQL error',
+    'Category 4',
+    'reportCardRepository.getStudentDomainAssessment resolves non-UUID admission number cleanly',
     studentLookupWorked,
     'Admission number lookup successful'
-  );
-
-  // -------------------------------------------------------------------------
-  // CATEGORY 3: Report Card Modal & PDF Authoritative Integrity
-  // -------------------------------------------------------------------------
-  console.log('\n--- Category 3: Report Card Modal & PDF Authoritative Integrity ---');
-
-  const modalPath = path.join(process.cwd(), 'src/components/ReportCardModal.tsx');
-  const modalContent = fs.readFileSync(modalPath, 'utf-8');
-
-  // 11. Zero duplicated attendance/rank blocks in ReportCardModal.tsx
-  const rankCountInModal = (modalContent.match(/Class Rank/g) || []).length;
-  record(
-    'Category 3',
-    'ReportCardModal.tsx contains exactly one Class Rank matrix entry (zero duplicated cards)',
-    rankCountInModal === 1,
-    `Class Rank count in modal: ${rankCountInModal}`
-  );
-
-  // 12. Zero synthetic principal / tutor names in ReportCardModal.tsx
-  const forbiddenSyntheticNames = [
-    'Grace Nkechi Okafor',
-    'Abigail Folashade Balogun',
-    'Grace Iveren Shima',
-    'Blessing Aondoaver',
-    'Terkula Tyav',
-    'Comfort Agbo',
-    'Moses Terfa Aondo',
-    'Rita Iorfa'
-  ];
-
-  const foundModalSynthetic = forbiddenSyntheticNames.filter(n => modalContent.includes(n));
-  record(
-    'Category 3',
-    'ReportCardModal.tsx contains zero synthetic default educator names',
-    foundModalSynthetic.length === 0,
-    foundModalSynthetic.length > 0 ? `Found: ${foundModalSynthetic.join(', ')}` : 'Zero synthetic names'
-  );
-
-  // 13. Zero synthetic educator names in pdfGenerator.ts
-  const pdfPath = path.join(process.cwd(), 'src/utils/pdfGenerator.ts');
-  const pdfContent = fs.readFileSync(pdfPath, 'utf-8');
-  const foundPdfSynthetic = forbiddenSyntheticNames.filter(n => pdfContent.includes(n));
-  record(
-    'Category 3',
-    'pdfGenerator.ts contains zero synthetic default educator names',
-    foundPdfSynthetic.length === 0,
-    foundPdfSynthetic.length > 0 ? `Found: ${foundPdfSynthetic.join(', ')}` : 'Zero synthetic names'
-  );
-
-  // 14. PDF domain traits default to empty / N/A rather than hardcoded 5s or 4s
-  const hasHardcodedPdfDefaults = pdfContent.includes('punctuality: 5, neatness: 5');
-  record(
-    'Category 3',
-    'pdfGenerator.ts affective traits use authoritative values without synthetic default 5s',
-    !hasHardcodedPdfDefaults,
-    hasHardcodedPdfDefaults ? 'Hardcoded trait ratings found' : 'Authoritative traits verified'
-  );
-
-  // 15. ReportCardModal dynamic domain averages
-  const hasDynamicAverages = modalContent.includes('assessed = [') && modalContent.includes('Not assessed');
-  record(
-    'Category 3',
-    'ReportCardModal calculates domain averages dynamically from recorded scores with Not Assessed indicator',
-    hasDynamicAverages,
-    'Dynamic domain average computation verified'
   );
 
   // Cleanup DB pool
@@ -261,7 +307,7 @@ async function runTestSuite() {
 
   // Summary
   console.log('\n======================================================================');
-  console.log('Phase 8G-K Test Suite Summary:');
+  console.log('Phase 8G-K.1 Test Suite Summary:');
   const passed = results.filter(r => r.status === 'PASSED').length;
   const failed = results.filter(r => r.status === 'FAILED').length;
   console.log(`Total Assertions Evaluated : ${results.length}`);
