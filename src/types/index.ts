@@ -276,7 +276,7 @@ export interface ClassAttendanceSessionSummary {
   cumulativeClassAttendanceRate: number; // %
   boysAttendanceRate: number; // %
   girlsAttendanceRate: number; // %
-  formMaster: {
+  formMaster?: {
     fullName: string;
     staffId: string;
     designation: string;

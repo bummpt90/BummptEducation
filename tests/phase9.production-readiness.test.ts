@@ -15,6 +15,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { getAuthSecret } from '../src/auth/token';
+import { runReferenceDataSeeder } from '../src/db/seed/seed';
 import { 
   SAMPLE_EARLY_YEARS_STUDENT, 
   SAMPLE_PRIMARY_STUDENT, 
@@ -22,6 +23,7 @@ import {
   SAMPLE_EARLY_YEARS_REPORT_CARD
 } from '../src/data/demo/sampleReportCards';
 import { BENUE_LGAS_METADATA } from '../src/data/reference/benueReference';
+import { CLASS_REFERENCE_DEFINITIONS } from '../src/data/reference/classDefinitions';
 
 interface TestResult {
   category: string;
@@ -129,6 +131,7 @@ async function runTestSuite() {
   // TEST 3: Database Seeders Refuse Execution in Production (Fail-Closed)
   // ====================================================================
   const seederFiles = [
+    'src/db/seed/seed.ts',
     'src/db/seed/auth.seed.ts',
     'src/db/seed/operational.seed.ts',
     'src/db/seed/financial.seed.ts',
@@ -147,6 +150,46 @@ async function runTestSuite() {
       hasProductionGuard,
       hasProductionGuard ? 'Production guard present (throws Security Exception)' : 'Missing production guard'
     );
+  }
+
+  // Verify runReferenceDataSeeder() source guard placement before any DB query or transaction
+  const refSeederPath = path.join(process.cwd(), 'src/db/seed/seed.ts');
+  const refSeederContent = fs.readFileSync(refSeederPath, 'utf-8');
+  const guardIndex = refSeederContent.indexOf("if (process.env.NODE_ENV === 'production')");
+  const throwIndex = refSeederContent.indexOf("FATAL SECURITY EXCEPTION: Reference seeding cannot be executed directly in production.");
+  const txIndex = refSeederContent.indexOf('withTransaction(');
+  const queryIndex = refSeederContent.indexOf('await query');
+  const guardBeforeOps = guardIndex !== -1 && throwIndex !== -1 && guardIndex < txIndex && guardIndex < queryIndex;
+
+  record(
+    'Seeder Production Safety',
+    'src/db/seed/seed.ts places explicit production guard before any DB queries or withTransaction()',
+    guardBeforeOps,
+    guardBeforeOps ? 'Guard verified before query() and withTransaction()' : 'Guard missing or placed too late'
+  );
+
+  // Runtime test: Execute runReferenceDataSeeder() with NODE_ENV=production
+  const savedNodeEnvForSeeder = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = 'production';
+    let seederFailedClosed = false;
+    let seederErrorMessage = '';
+    try {
+      await runReferenceDataSeeder();
+    } catch (err: any) {
+      seederErrorMessage = err?.message || String(err);
+      if (seederErrorMessage.includes('FATAL SECURITY EXCEPTION: Reference seeding cannot be executed directly in production.')) {
+        seederFailedClosed = true;
+      }
+    }
+    record(
+      'Seeder Production Safety',
+      'runReferenceDataSeeder() fails closed at runtime when NODE_ENV=production before any seed operation',
+      seederFailedClosed,
+      seederFailedClosed ? `Threw: "${seederErrorMessage}"` : `Did not throw expected error (got: "${seederErrorMessage}")`
+    );
+  } finally {
+    process.env.NODE_ENV = savedNodeEnvForSeeder;
   }
 
   // ====================================================================
@@ -255,6 +298,45 @@ async function runTestSuite() {
     'simulateTermWeekProgress removed from runtime state',
     !hasSimulateTermWeek,
     !hasSimulateTermWeek ? 'simulateTermWeekProgress eliminated' : 'simulateTermWeekProgress still present'
+  );
+
+  // Class Reference Data vs Attendance Data Boundary Verification
+  const classesSeedPath = path.join(process.cwd(), 'src/db/seed/reference/classes.seed.ts');
+  const classesSeedContent = fs.readFileSync(classesSeedPath, 'utf-8');
+  const classesSeedImportsAttendanceData = classesSeedContent.includes('attendanceData');
+  const classesSeedImportsClassDefinitions = classesSeedContent.includes('data/reference/classDefinitions');
+
+  record(
+    'Reference Data Isolation',
+    'src/db/seed/reference/classes.seed.ts does NOT import src/data/attendanceData.ts and DOES import src/data/reference/classDefinitions.ts',
+    !classesSeedImportsAttendanceData && classesSeedImportsClassDefinitions,
+    `importsAttendanceData=${classesSeedImportsAttendanceData}, importsClassDefinitions=${classesSeedImportsClassDefinitions}`
+  );
+
+  const classDefsPath = path.join(process.cwd(), 'src/data/reference/classDefinitions.ts');
+  const classDefsContent = fs.readFileSync(classDefsPath, 'utf-8');
+  const hasNoStaffInfoInClassDefs =
+    !classDefsContent.includes('formMaster') &&
+    !classDefsContent.includes('trcnNumber') &&
+    CLASS_REFERENCE_DEFINITIONS.length === 21 &&
+    CLASS_REFERENCE_DEFINITIONS.every(c => !('formMaster' in (c as any)));
+
+  record(
+    'Reference Data Isolation',
+    'src/data/reference/classDefinitions.ts contains 21 structural classes with zero personal staff/form-master data',
+    hasNoStaffInfoInClassDefs,
+    `Total structural classes: ${CLASS_REFERENCE_DEFINITIONS.length}, zero formMaster properties`
+  );
+
+  const attendanceDataPath = path.join(process.cwd(), 'src/data/attendanceData.ts');
+  const attendanceDataContent = fs.readFileSync(attendanceDataPath, 'utf-8');
+  const attendanceDataHasClassDefs = attendanceDataContent.includes('ALL_CLASSES_DEFINITIONS');
+
+  record(
+    'Reference Data Isolation',
+    'src/data/attendanceData.ts no longer contains ALL_CLASSES_DEFINITIONS or embedded staff records',
+    !attendanceDataHasClassDefs && !attendanceDataContent.includes('trcnNumber'),
+    !attendanceDataHasClassDefs ? 'ALL_CLASSES_DEFINITIONS removed from attendanceData.ts' : 'Still contains ALL_CLASSES_DEFINITIONS'
   );
 
   // ====================================================================

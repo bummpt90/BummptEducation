@@ -30,6 +30,12 @@ export interface SeedingReport {
 }
 
 export async function runReferenceDataSeeder(): Promise<SeedingReport> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'FATAL SECURITY EXCEPTION: Reference seeding cannot be executed directly in production.'
+    );
+  }
+
   const startTime = Date.now();
   console.log('===============================================================');
   console.log('  BummptEducation — Phase 2C Reference Data Seeder');
@@ -42,8 +48,7 @@ export async function runReferenceDataSeeder(): Promise<SeedingReport> {
   );
 
   const dbName = connMeta.rows[0].current_database;
-  const isDevUrl = process.env.DATABASE_URL?.includes('ep-falling-breeze-b24wf9ul') ||
-                   process.env.NODE_ENV !== 'production';
+  const isDevUrl = Boolean(process.env.DATABASE_URL?.includes('ep-falling-breeze-b24wf9ul'));
 
   const branchLabel = isDevUrl ? 'Development Branch (ep-falling-breeze-b24wf9ul)' : 'Development Instance';
   console.log(`  ✓ Database Name:    ${dbName}`);

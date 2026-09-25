@@ -14,7 +14,7 @@
  */
 
 import type { PoolClient } from 'pg';
-import { ALL_CLASSES_DEFINITIONS } from '../../../data/attendanceData';
+import { CLASS_REFERENCE_DEFINITIONS } from '../../../data/reference/classDefinitions';
 import type { SeedResultSummary } from './organizations.seed';
 
 export async function seedClasses(
@@ -24,7 +24,7 @@ export async function seedClasses(
   let inserted = 0;
   let updated = 0;
 
-  for (const cls of ALL_CLASSES_DEFINITIONS) {
+  for (const cls of CLASS_REFERENCE_DEFINITIONS) {
     const res = await client.query<{ id: string; is_inserted: boolean }>(
       `INSERT INTO classes (
          school_id, level, arm, name, category, classroom_block, capacity
@@ -44,7 +44,7 @@ export async function seedClasses(
         cls.arm,
         cls.name,
         cls.category,
-        cls.classroom,
+        cls.classroomBlock,
         cls.capacity,
       ]
     );
@@ -59,6 +59,6 @@ export async function seedClasses(
   return {
     inserted,
     updated,
-    total: ALL_CLASSES_DEFINITIONS.length,
+    total: CLASS_REFERENCE_DEFINITIONS.length,
   };
 }

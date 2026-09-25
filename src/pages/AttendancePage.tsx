@@ -11,12 +11,12 @@ import {
   StudentAttendanceSummary
 } from '../types';
 import { 
-  ALL_CLASSES_DEFINITIONS, 
   TERM_CALENDAR_DAYS,
   CURRENT_DEFAULT_SCHOOL_DAY,
   computeStudentAttendanceSummary,
   computeClassSessionSummary
 } from '../data/attendanceData';
+import { CLASS_REFERENCE_DEFINITIONS, ClassReferenceDefinition } from '../data/reference/classDefinitions';
 import { useData } from '../context/DataContext';
 import { 
   Calendar, 
@@ -96,6 +96,7 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
   // Server-Authoritative Data Context
   const { 
     students: allDbStudents, 
+    staff: allDbStaff,
     classes, 
     isLoading: isDataContextLoading,
     createStudent,
@@ -144,10 +145,27 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
     house: 'Eagle House (Blue)' as any
   });
 
-  // Current Class Definition & Form Master Info
+  // Resolve operational Form Master from PostgreSQL staff records
+  const resolveFormMasterForClass = (level: ClassLevel) => {
+    const assignedStaff = allDbStaff.find(s => s.assignedClass === level);
+    return {
+      fullName: assignedStaff?.fullName || 'Not assigned',
+      staffId: assignedStaff?.staffId || '',
+      designation: assignedStaff?.designation || 'Form Master / Class Teacher',
+      phone: assignedStaff?.phone || 'Not recorded',
+      email: assignedStaff?.email || '',
+      qualifications: assignedStaff?.qualifications || '',
+    };
+  };
+
+  // Current Class Definition & Operational Form Master Info
   const currentClassDef = useMemo(() => {
-    return ALL_CLASSES_DEFINITIONS.find(c => c.level === selectedClass) || ALL_CLASSES_DEFINITIONS[0];
-  }, [selectedClass]);
+    const baseDef = CLASS_REFERENCE_DEFINITIONS.find(c => c.level === selectedClass) || CLASS_REFERENCE_DEFINITIONS[0];
+    return {
+      ...baseDef,
+      formMaster: resolveFormMasterForClass(baseDef.level),
+    };
+  }, [selectedClass, allDbStaff]);
 
   // Current Calendar Day Meta
   const currentDayMeta = useMemo(() => {
@@ -455,21 +473,24 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
 
   // Group all 21 classes by category for dropdown
   const classesByCategory = useMemo(() => {
-    const groups: Record<string, Array<typeof ALL_CLASSES_DEFINITIONS[number]>> = {
+    const groups: Record<string, Array<ClassReferenceDefinition & { formMaster: ReturnType<typeof resolveFormMasterForClass> }>> = {
       'Kindergarten & Early Years': [],
       'Primary Basic Education': [],
       'Junior Secondary': [],
       'Senior Secondary': []
     };
 
-    ALL_CLASSES_DEFINITIONS.forEach(c => {
+    CLASS_REFERENCE_DEFINITIONS.forEach(c => {
       if (groups[c.category]) {
-        groups[c.category].push(c);
+        groups[c.category].push({
+          ...c,
+          formMaster: resolveFormMasterForClass(c.level),
+        });
       }
     });
 
     return groups;
-  }, []);
+  }, [allDbStaff]);
 
   // Sync Attendance to Report Cards Trigger
   const handleSyncToReportCards = () => {
@@ -596,7 +617,7 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({
                     <span className="text-[10px] text-slate-400">Select your Form Class</span>
                   </div>
 
-                  {(Object.entries(classesByCategory) as [string, Array<typeof ALL_CLASSES_DEFINITIONS[number]>][]).map(([category, classes]) => (
+                  {(Object.entries(classesByCategory) as [string, Array<ClassReferenceDefinition & { formMaster: ReturnType<typeof resolveFormMasterForClass> }>][]).map(([category, classes]) => (
                     <div key={category} className="py-2">
                       <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                         {category.includes('Kindergarten') && <Baby className="h-3 w-3" />}
