@@ -34,10 +34,25 @@ import type { AuthenticatedRequest } from './src/auth/types';
 import { securityHeadersMiddleware } from './src/security/headers';
 import { corsMiddleware } from './src/security/cors';
 import { csrfProtectionMiddleware, getCsrfTokenHandler } from './src/security/csrf';
+import {
+  getServerPort,
+  getServerHost,
+  enforceProductionStartupConfig,
+  handleAppHealthCheck,
+  handleDatabaseHealthCheck,
+} from './src/config/deployment';
 
 async function startServer() {
+  // Enforce fail-closed production environment contract at startup
+  enforceProductionStartupConfig();
+
   const app = express();
-  const PORT = 3000;
+  const PORT = getServerPort();
+  const HOST = getServerHost();
+
+  if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
 
   // OWASP Recommended Security Headers
   app.use(securityHeadersMiddleware);
@@ -88,62 +103,11 @@ async function startServer() {
   // Parent & Guardian Identity & Report Access API (v1 - Phase 8B)
   app.use('/api/v1/parents', parentsRouter);
 
-  // General server health check
-  app.get('/api/health', (req, res) => {
-    res.json({ 
-      status: 'ok', 
-      server: 'BummptEducation Backend Express API',
-      timestamp: new Date().toISOString() 
-    });
-  });
+  // General server health & readiness check (sanitized)
+  app.get('/api/health', handleAppHealthCheck);
 
-  // Dedicated PostgreSQL database health check
-  app.get('/api/health/db', async (req, res) => {
-    try {
-      const dbHealth = await checkDatabaseHealth();
-      const isProd = process.env.NODE_ENV === 'production';
-
-      let migrationReady = false;
-      if (dbHealth.status === 'connected') {
-        try {
-          const migRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM migrations;');
-          migrationReady = parseInt(migRes.rows[0]?.count || '0', 10) > 0;
-        } catch {
-          migrationReady = false;
-        }
-      }
-
-      const isOk = dbHealth.status === 'connected' && (!isProd || migrationReady);
-      const httpStatus = isOk ? 200 : (isProd ? 503 : (dbHealth.status === 'unconfigured' ? 200 : 503));
-
-      res.status(httpStatus).json({
-        status: dbHealth.status === 'connected' 
-          ? (migrationReady ? 'ok' : 'pending_migrations') 
-          : (dbHealth.status === 'unconfigured' ? 'unconfigured' : 'degraded'),
-        database: dbHealth.status,
-        engine: 'PostgreSQL',
-        configured: dbHealth.configured,
-        migrationReady,
-        latencyMs: dbHealth.latencyMs,
-        timestamp: new Date().toISOString(),
-        message: dbHealth.status === 'connected'
-          ? (migrationReady ? 'PostgreSQL database connected and operational' : 'Database connected, schema migration pending')
-          : (dbHealth.status === 'unconfigured'
-              ? 'Database unconfigured. Running in development/preview mode.'
-              : 'Database connection degraded.'),
-      });
-    } catch (error: any) {
-      res.status(503).json({
-        status: 'error',
-        database: 'error',
-        engine: 'PostgreSQL',
-        configured: false,
-        migrationReady: false,
-        timestamp: new Date().toISOString(),
-        message: 'Database diagnostic check encountered an error.',
-      });
-    }
-  });
+  // Dedicated PostgreSQL database health & readiness check (sanitized)
+  app.get('/api/health/db', handleDatabaseHealthCheck);
 
   // =========================================================================
   // LESSON NOTES & TEACHER INQUIRIES API (PHASE 8D - POSTGRESQL AUTHORITATIVE)
@@ -175,8 +139,8 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`BummptEducation Full-Stack Server running on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, async () => {
+    console.log(`BummptEducation Full-Stack Server running on http://${HOST}:${PORT}`);
 
     // Database startup verification (Non-blocking: safe fallback for preview mode)
     const dbConfig = getDatabaseConfig();
@@ -234,14 +198,20 @@ async function startServer() {
           } else {
             console.warn(`[Migrations] Notice: ${migrationResult.error}`);
           }
+        } else if (process.env.NODE_ENV === 'production') {
+          console.error('[PostgreSQL] CRITICAL: Production database connection unavailable. Preview fallback is strictly disabled in production.');
         } else {
-          console.warn(`[PostgreSQL] Connection check: ${health.error || 'Unavailable'}. Safe preview mode active.`);
+          console.warn(`[PostgreSQL] Connection check: ${health.error || 'Unavailable'}. Development preview mode active.`);
         }
       } catch (err: any) {
-        console.warn(`[PostgreSQL] Initialization notice: ${err?.message}. Continuing in safe development mode.`);
+        if (process.env.NODE_ENV === 'production') {
+          console.error('[PostgreSQL] CRITICAL: Production database initialization failed. Preview fallback is strictly disabled.');
+        } else {
+          console.warn(`[PostgreSQL] Initialization notice: ${err?.message}. Continuing in development mode.`);
+        }
       }
     } else {
-      console.log('[PostgreSQL] Running in preview/development mode without DATABASE_URL. Mock & local state active.');
+      console.log('[PostgreSQL] Running in development/preview mode without DATABASE_URL.');
     }
   });
 

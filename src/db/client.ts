@@ -14,6 +14,20 @@ let pool: Pool | null = null;
 let isPoolInitialized = false;
 
 /**
+ * Scrubs any database connection string, password, or credential URI from error messages
+ */
+export function sanitizeDatabaseErrorMessage(rawMessage: string | undefined): string {
+  if (!rawMessage) return 'Database connection error';
+  let sanitized = rawMessage
+    .replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, '[REDACTED_DATABASE_URI]')
+    .replace(/password\s*=\s*[^\s'"]+/gi, 'password=[REDACTED]');
+  if (process.env.DATABASE_URL && sanitized.includes(process.env.DATABASE_URL)) {
+    sanitized = sanitized.split(process.env.DATABASE_URL).join('[REDACTED_DATABASE_URI]');
+  }
+  return sanitized;
+}
+
+/**
  * Initializes or returns the singleton PostgreSQL connection pool.
  * Returns null if DATABASE_URL is not configured in the current environment.
  */
@@ -171,7 +185,7 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthStatus> {
       database: 'PostgreSQL',
       configured: true,
       latencyMs,
-      error: error?.message ? `Connection failed: ${error.message}` : 'Connection failed',
+      error: error?.message ? `Connection failed: ${sanitizeDatabaseErrorMessage(error.message)}` : 'Connection failed',
     };
   }
 }

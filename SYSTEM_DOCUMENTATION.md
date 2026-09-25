@@ -120,6 +120,7 @@ BummptEducation operates on a four-tier architecture designed for regional relia
 
 ## 5. Deployment & Reliability
 
-- **High Availability Containerization:** Designed to operate in standard Cloud Run / Docker container environments.
-- **Port Invariant:** Dev and production environments bind to port `3000` on `0.0.0.0` to comply with reverse-proxy routing.
-- **Build Output:** esbuild packages `server.ts` into a self-contained CommonJS artifact (`dist/server.cjs`), eliminating ESM resolution overhead at startup.
+- **Provider-Neutral Containerization:** Engineered to operate across standard Linux container and Node.js 20+ hosting environments behind an HTTPS reverse proxy or load balancer.
+- **Port & Host Binding:** Binds to `process.env.PORT` (default `3000`) on `0.0.0.0` to accept ingress traffic from upstream load balancers and container orchestrators.
+- **Build & Start Contract:** `npm run build` compiles the Vite SPA (`dist/`) and packages `server.ts` into a self-contained CommonJS artifact (`dist/server.cjs`), executed in production via `npm start` (`node dist/server.cjs`).
+- **Fail-Closed Startup:** When `NODE_ENV=production`, the server verifies `DATABASE_URL`, `AUTH_SECRET` (>= 32 chars), and `ENCRYPTION_SECRET` (independent 32-byte Base64 key) before accepting traffic, and disables all demo/development seeders.

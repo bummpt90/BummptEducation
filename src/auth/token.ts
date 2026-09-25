@@ -126,29 +126,42 @@ export async function isTokenRevoked(token: string): Promise<boolean> {
 }
 
 /**
+ * Returns the canonical HTTP-only authentication cookie options for the active environment
+ */
+export function getAuthCookieOptions(): {
+  httpOnly: true;
+  secure: boolean;
+  sameSite: 'lax';
+  maxAge: number;
+  path: string;
+} {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    maxAge: 8 * 3600 * 1000, // 8 hours
+    path: '/',
+  };
+}
+
+/**
  * Configures and sets the HTTP-only authentication cookie on an Express response
  */
 export function setAuthCookie(res: Response, token: string): void {
-  const isProd = process.env.NODE_ENV === 'production';
-  res.cookie(AUTH_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'lax' : 'lax',
-    maxAge: 8 * 3600 * 1000, // 8 hours
-    path: '/',
-  });
+  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 }
 
 /**
  * Clears the authentication cookie on logout
  */
 export function clearAuthCookie(res: Response): void {
-  const isProd = process.env.NODE_ENV === 'production';
+  const opts = getAuthCookieOptions();
   res.clearCookie(AUTH_COOKIE_NAME, {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'lax' : 'lax',
-    path: '/',
+    httpOnly: opts.httpOnly,
+    secure: opts.secure,
+    sameSite: opts.sameSite,
+    path: opts.path,
   });
 }
 

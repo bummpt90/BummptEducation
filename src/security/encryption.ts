@@ -67,6 +67,15 @@ export function getEncryptionKey(overrideSecret?: string | Buffer): Buffer {
 
   const trimmed = rawSecret.trim();
 
+  if (overrideSecret === undefined) {
+    if (
+      (process.env.AUTH_SECRET && trimmed === process.env.AUTH_SECRET.trim()) ||
+      (process.env.JWT_SECRET && trimmed === process.env.JWT_SECRET.trim())
+    ) {
+      throw new CryptographicConfigurationError('ENCRYPTION_SECRET must be strictly independent from AUTH_SECRET and JWT_SECRET');
+    }
+  }
+
   // Validate Base64 formatting and padding
   if (!BASE64_REGEX.test(trimmed)) {
     throw new CryptographicConfigurationError('ENCRYPTION_SECRET must be a valid Base64-encoded string');

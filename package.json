@@ -24,6 +24,7 @@
     "test:phase8g": "tsx tests/phase8g.datacontext-zero-mock.test.ts",
     "test:phase8gk": "tsx tests/phase8gk.domains-header-consolidation.test.ts",
     "test:phase9": "tsx tests/phase9.production-readiness.test.ts",
+    "test:phase10a": "tsx tests/phase10a.production-deployment.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

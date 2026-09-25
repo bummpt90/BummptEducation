@@ -94,17 +94,18 @@
 
 ## 🔒 Security, Authentication Gateway & RBAC Architecture
 
-- **Phase 7 Authentication Gateway**: Unauthenticated visitors are directed to the secure gateway featuring verified Login, Controlled Account Requests, and OWASP-compliant Password Recovery.
+- **Phase 7–10A Production Authentication Gateway**: Unauthenticated visitors are directed to the secure gateway featuring verified Login, Controlled Account Requests, and OWASP-compliant Password Recovery.
 - **Controlled Sign-Up Model**: Prospective staff submit registration requests stored in `user_account_requests` with status `PENDING`. Public visitors cannot elevate themselves to privileged roles. School Principals vet and approve campus-level staff, while State Officers oversee statewide requests.
-- **Argon2id & JWT Cryptography**: All passwords hashed using Argon2id (`v=19`, `m=65536`, `t=3`, `p=4`). Sessions are managed via tamper-resistant, HTTP-only JWT cookies.
+- **Argon2id, JWT & AES-256-GCM Cryptography**: All passwords and parent PINs are hashed using Argon2id (`v=19`, `m=65536`, `t=3`, `p=4`). Sessions are managed via tamper-resistant, HTTP-only JWT cookies signed with `AUTH_SECRET` (minimum 32 characters). Application-level encryption uses AES-256-GCM with an independent 32-byte Base64 `ENCRYPTION_SECRET`.
 - **Multi-Tenant Isolation**: Database queries strictly filter on `school_id` based on user `TenantContext`, preventing cross-school data leakages.
-- **Wing Access Gatekeeper**: Secondary passkey clearance protecting high-sensitivity administrative and continuous assessment wings.
+- **Server-Authoritative RBAC**: Administrative and continuous assessment wings are protected by server-verified RBAC permissions (`src/auth/permissions.ts` & `src/utils/wingClearance.ts`).
 
 ---
 
 ## 📚 Project Documentation Suite
 
 Comprehensive technical, infrastructure, and user documentation is available:
+- 🚀 **[docs/PHASE_10A_PRODUCTION_DEPLOYMENT.md](./docs/PHASE_10A_PRODUCTION_DEPLOYMENT.md)** — Production deployment architecture, environment variables, startup verification, and health/readiness specification.
 - 📘 **[DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md)** — In-depth architectural patterns, database schemas, RBAC matrix, and API endpoints.
 - 🏛️ **[SYSTEM_DOCUMENTATION.md](./SYSTEM_DOCUMENTATION.md)** — Four-tier system topology, ER diagrams, OWASP security profile, and deployment specifications.
 - 📋 **[USER_OPERATIONAL_GUIDE.md](./USER_OPERATIONAL_GUIDE.md)** — Step-by-step instructions for principals, teachers, bursars, and prospective staff.
@@ -114,11 +115,13 @@ Comprehensive technical, infrastructure, and user documentation is available:
 
 ## 🛠️ Tech Stack & Architecture
 
-- **Frontend Framework**: [React 18](https://react.dev/) with [TypeScript](https://www.typescriptlang.org/)
+- **Frontend Framework**: [React 19](https://react.dev/) with [TypeScript](https://www.typescriptlang.org/)
+- **Backend Server**: [Node.js](https://nodejs.org/) + [Express 4](https://expressjs.com/) (`server.ts` / `dist/server.cjs`)
+- **Database**: [PostgreSQL 15+](https://www.postgresql.org/) with `pg` connection pooling and serial SQL migrations
 - **Styling & Layout**: [Tailwind CSS](https://tailwindcss.com/) with custom responsive container queries
 - **Icons**: [Lucide React](https://lucide.dev/)
-- **Build Tool**: [Vite](https://vitejs.dev/) with Rollup bundler
-- **State & Storage**: Resilient client-side state engine with `localStorage` fallback persistence across user sessions
+- **Build Tool**: [Vite](https://vitejs.dev/) + `esbuild` server bundler
+- **State & Storage**: Server-authoritative React `DataContext` backed by PostgreSQL REST APIs (zero `localStorage` business-data persistence)
 
 ---
 
@@ -175,17 +178,20 @@ BummptEducation utilizes an isolated, server-side PostgreSQL database layer desi
 
 - **Database Client**: `node-postgres` (`pg`) with enterprise connection pooling (`Pool`).
 - **Isolation**: The browser frontend never connects to PostgreSQL directly; all database operations are secured behind Express backend endpoints.
-- **Preview & Fallback Support**: If `DATABASE_URL` is unconfigured, the application runs seamlessly in safe development/preview mode utilizing existing local state without crashing.
-- **Health Diagnostics**: `GET /api/health/db` provides real-time connection status, server latency, and pool statistics without exposing credentials.
+- **Production Enforcement**: In `NODE_ENV=production`, `DATABASE_URL`, `AUTH_SECRET` (minimum 32 chars), and `ENCRYPTION_SECRET` (independent 32-byte Base64 key) are mandatory and fail closed on startup if missing or invalid.
+- **Health Diagnostics**: `GET /api/health` and `GET /api/health/db` provide sanitized operational readiness without exposing credentials, secrets, or tenant records.
 - **Migration System**: Version-controlled SQL migrations located under `src/db/migrations/` track schema evolution deterministically.
 
-#### Environment Configuration
+#### Production Environment Configuration
 ```env
-# PostgreSQL Connection (Optional in preview mode; required for live DB persistence)
+NODE_ENV="production"
+PORT="3000"
+APP_URL="https://your-school-domain.example.edu.ng"
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE_NAME?sslmode=require"
 DATABASE_POOL_SIZE="10"
 DATABASE_SSL="require"
-DEBUG_SQL="false"
+AUTH_SECRET="<replace-with-minimum-32-character-random-auth-secret>"
+ENCRYPTION_SECRET="<replace-with-32-byte-base64-encoded-encryption-secret>"
 ```
 
 ---
@@ -193,8 +199,9 @@ DEBUG_SQL="false"
 ## 💻 Getting Started
 
 ### Prerequisites
-- Node.js 18.0 or higher
-- npm 9.0 or higher (or pnpm / yarn)
+- Node.js 20.0 or higher
+- PostgreSQL 15+ (required for production and persistent relational operations)
+- npm 9.0 or higher
 
 ### Installation & Run
 
@@ -215,9 +222,10 @@ DEBUG_SQL="false"
    ```
    The application will be live at `http://localhost:3000`.
 
-4. **Build for production:**
+4. **Build and start for production:**
    ```bash
    npm run build
+   npm start
    ```
 
 ---

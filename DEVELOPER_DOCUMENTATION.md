@@ -254,11 +254,17 @@ npm run test:phase7
 
 ### Environment Configuration
 ```env
+NODE_ENV=production
 PORT=3000
-DATABASE_URL=postgresql://user:password@localhost:5432/bummpt_education
-JWT_SECRET=your-secure-production-random-secret-key-at-least-32-chars
-NODE_ENV=development
+APP_URL=https://your-school-domain.example.edu.ng
+DATABASE_URL=postgresql://user:password@db-host:5432/bummpt_education?sslmode=require
+DATABASE_POOL_SIZE=10
+DATABASE_SSL=require
+AUTH_SECRET=<replace-with-minimum-32-character-random-auth-secret>
+ENCRYPTION_SECRET=<replace-with-32-byte-base64-encoded-encryption-secret>
 ```
+
+> **Security Note:** Production strictly requires `AUTH_SECRET` (minimum 32 characters) for HMAC-SHA256 JWT signing and an independent `ENCRYPTION_SECRET` (32-byte Base64 key) for AES-256-GCM encryption. Legacy `JWT_SECRET` is rejected in production mode.
 
 ### Commands
 ```bash
