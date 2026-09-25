@@ -46,7 +46,7 @@ export const StudentLeadershipPage: React.FC<StudentLeadershipPageProps> = ({ on
   const seniorPrefects = [
     {
       title: 'Senior Prefect / Head Girl',
-      name: 'Dooshima Matthew Beeun',
+      name: 'Hilda Matthew Beeun',
       class: 'SSS 2 Science',
       house: 'Eagle House (Blue)',
       portfolio: 'Apex student representative, liaison between student body and General Administrator, speaker of the Student Assembly.',
@@ -54,7 +54,7 @@ export const StudentLeadershipPage: React.FC<StudentLeadershipPageProps> = ({ on
     },
     {
       title: 'Head Boy',
-      name: 'Emmanuel Terkula Agbo',
+      name: 'Namtor Beeun',
       class: 'SSS 2 Science',
       house: 'Falcon House (Red)',
       portfolio: 'Chief pupil disciplinary coordinator, morning assembly parade commander, and student welfare advocate.',
