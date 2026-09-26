@@ -8,7 +8,7 @@
 [![Status](https://img.shields.io/badge/Statewide_Coverage-23_LGAs_Audited-10B981?style=flat-square&logo=google-maps&logoColor=white)]()
 [![NERDC Compliant](https://img.shields.io/badge/Curriculum-NERDC_%2F_WAEC_%2F_NECO-F59E0B?style=flat-square)]()
 
-**BummptEducation** is an enterprise-grade, multi-tier educational administration and telemetry management system designed and developed by **Bummptech Global Concepts**. Built to serve modern African educational ecosystems, it unifies Early Childhood (KG 1–3), Primary School (Basic 1–6), Secondary College (JSS 1–SSS 3), and central State Ministry of Education & SUBEB supervisory oversight into a single cohesive platform.
+**BummptEducation** is an enterprise-grade, multi-tier educational administration and telemetry management system designed and developed by **Bummptech Global Concepts**. Built to serve modern educational ecosystems, it unifies Early Childhood (KG 1–3), Primary School (Basic 1–6), Secondary College (JSS 1–SSS 3), and central State Ministry of Education & SUBEB supervisory oversight into a single cohesive platform.
 
 ---
 
@@ -32,7 +32,7 @@
 
 ## 🌟 Executive Overview
 
-- **Founder & General Administrator**: Dr. Matthew Ternenge Beeun (Chief Educational Technologist)
+- **Founder & General Administrator**: Mr Matthew Ternenge Beeun (Data Scientist and Web Developer)
 - **Ministry Clearances**: Aligned with the **Benue State Ministry of Education, Science & Technology (Hon. Commissioner Prof. Frederick Ikyaan)** and the **Benue State Universal Basic Education Board (SUBEB Executive Chairman Dr. Grace Adagba)**.
 - **Scope**: Supports over 1,200 public and private basic/secondary institutions across the 23 Local Government Areas in Benue State (Zones A, B, and C).
 
