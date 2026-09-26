@@ -50,11 +50,11 @@ PostgreSQL 15+ Relational Database (SSL/TLS Pool)
 | Variable | Classification | Requirement & Purpose |
 | :--- | :--- | :--- |
 | `NODE_ENV` | **Production-Required** | Must be set to `production` to activate fail-closed startup guards, secure cookies, and seeder lockouts. |
-| `PORT` | **Production-Required** | TCP port supplied by the hosting runtime (defaults safely to `3000` if omitted). Server binds to `0.0.0.0`. |
-| `APP_URL` | **Production-Required** | Canonical public `https://` origin of the deployed application (e.g., `https://portal.school.edu.ng`). |
+| `PORT` | **Production-Required** | TCP port dynamically supplied by the hosting platform (defaults safely to `3000` if omitted). Production host is always `0.0.0.0` regardless of any `HOST` override. |
+| `APP_URL` | **Production-Required** | Mandatory in production. Must be a valid `https://` origin URL (not `*`). `ALLOWED_ORIGINS` cannot substitute for `APP_URL`. |
 | `DATABASE_URL` | **Production-Required** | PostgreSQL connection URI (`postgresql://USER:PASSWORD@HOST:5432/DB_NAME?sslmode=require`). |
 | `DATABASE_POOL_SIZE` | **Production-Required** | Maximum PostgreSQL pool connections (default: `10` in production, `5` in development). |
-| `DATABASE_SSL` | **Production-Required** | TLS transport setting (`require` or `true` in production). |
+| `DATABASE_SSL` | **Production-Required** | Mandatory in production; must be explicitly set to `require` or `true` (`disable` or `false` is rejected). |
 | `AUTH_SECRET` | **Production-Required** | High-entropy secret (minimum 32 characters) for signing HS256 JWT authentication tokens. |
 | `ENCRYPTION_SECRET` | **Production-Required** | Dedicated 32-byte Base64-encoded key for AES-256-GCM symmetric encryption. |
 | `ALLOWED_ORIGINS` | Optional (Prod/Dev) | Comma-separated additional `https://` origins permitted for CORS (wildcard `*` prohibited). |
@@ -84,7 +84,7 @@ PostgreSQL 15+ Relational Database (SSL/TLS Pool)
 
 - **Engine Version:** PostgreSQL 15 or higher.
 - **Mandatory `DATABASE_URL`:** In `NODE_ENV=production`, `getDatabaseConfig()` immediately throws if `DATABASE_URL` is missing or empty.
-- **SSL/TLS Transport:** Controlled via `DATABASE_SSL=require` (or `sslmode=require` in `DATABASE_URL`). Production connections default to SSL enabled.
+- **Mandatory `DATABASE_SSL`:** In `NODE_ENV=production`, `DATABASE_SSL` must be explicitly configured as `require` or `true`. Any insecure value (`disable`, `false`, or unset) fails production startup validation and throws in `getDatabaseConfig()`. Development/preview (`NODE_ENV !== 'production'`) may continue to use `DATABASE_SSL=disable`.
 - **Connection Pooling:** Managed via `pg.Pool` (`DATABASE_POOL_SIZE`, default `10` in production, `5000ms` connection timeout, `30000ms` idle timeout).
 - **Credential Redaction:** `sanitizeDatabaseErrorMessage()` strips any `postgresql://` URI or password parameter before logging or returning diagnostic states.
 
@@ -100,8 +100,9 @@ PostgreSQL 15+ Relational Database (SSL/TLS Pool)
 
 ## 6. `APP_URL` / Origin Configuration
 
-- `APP_URL` defines the canonical public HTTPS origin of the deployment (e.g., `https://portal.school.edu.ng`).
-- In production (`NODE_ENV=production`), `APP_URL` and any entries in `ALLOWED_ORIGINS` must use the `https://` scheme. Plaintext `http://` origins and wildcard `*` origins are rejected by `validateProductionStartupConfig()` and `isAllowedOrigin()`.
+- `APP_URL` is **mandatory in production** and defines the canonical public HTTPS origin of the deployment (e.g., `https://portal.school.edu.ng`).
+- When `NODE_ENV=production`, missing or empty `APP_URL` fails production validation (`validateProductionStartupConfig().valid === false`) and causes `enforceProductionStartupConfig()` to throw. `ALLOWED_ORIGINS` cannot substitute for `APP_URL`.
+- In production (`NODE_ENV=production`), `APP_URL` and any entries in `ALLOWED_ORIGINS` must be valid `https://` origin URLs. Plaintext `http://` origins and wildcard `*` origins are strictly rejected.
 
 ---
 
@@ -122,7 +123,8 @@ CSRF cookies (`bummpt_csrf_token`) are paired with required `X-CSRF-Token` / `X-
 Implemented in `src/security/cors.ts`:
 - **No Wildcard with Credentials:** `Access-Control-Allow-Origin: *` is strictly prohibited.
 - **Explicit Origin Matching:** Cross-origin requests are permitted only if the request `Origin` matches the normalized `APP_URL` or an entry in `ALLOWED_ORIGINS`.
-- **HTTPS Enforcement in Production:** In production mode, any non-HTTPS `Origin` header is rejected.
+- **HTTPS Enforcement in Production:** When `NODE_ENV === 'production'`, any non-HTTPS `Origin` header is rejected.
+- **`AI_STUDIO_PREVIEW` Never Weakens Production Security:** Production CORS and startup rules depend strictly on `process.env.NODE_ENV === 'production'`. Setting `AI_STUDIO_PREVIEW=true` in production never bypasses HTTPS enforcement, wildcard blocking, or trusted-origin validation.
 - **Preflight Rejection:** Disallowed origins receive `403 CORS_FORBIDDEN` on `OPTIONS` preflight requests and never receive `Access-Control-Allow-Origin` headers.
 
 ---
@@ -145,8 +147,8 @@ npm start
 ```
 
 Executes `node dist/server.cjs`:
-1. Runs `enforceProductionStartupConfig()` to verify `NODE_ENV`, `DATABASE_URL`, `AUTH_SECRET`, `ENCRYPTION_SECRET`, and `APP_URL`/`ALLOWED_ORIGINS`.
-2. Binds Express to `0.0.0.0` on `process.env.PORT` (default `3000`).
+1. Runs `enforceProductionStartupConfig()` to verify `NODE_ENV`, `DATABASE_URL`, `DATABASE_SSL`, `AUTH_SECRET`, `ENCRYPTION_SECRET`, and `APP_URL`/`ALLOWED_ORIGINS`.
+2. Always binds Express to `0.0.0.0` in production (`getServerHost()` returns `0.0.0.0` regardless of any unsafe `HOST` override such as `127.0.0.1` or `localhost`), while `PORT` remains dynamically supplied by the hosting platform via `process.env.PORT` (defaulting safely to `3000`).
 3. Serves static frontend assets from `dist/` and mounts all `/api/v1/*` routers.
 
 ---
@@ -155,11 +157,14 @@ Executes `node dist/server.cjs`:
 
 When `NODE_ENV=production`, server startup (`enforceProductionStartupConfig()` in `src/config/deployment.ts` and `server.ts`) enforces:
 1. `DATABASE_URL` must be configured and non-empty.
-2. `AUTH_SECRET` must be configured, at least 32 characters, and not using `JWT_SECRET`.
-3. `ENCRYPTION_SECRET` must be configured, valid Base64 decoding to 32 bytes, and distinct from `AUTH_SECRET`.
-4. `APP_URL` / `ALLOWED_ORIGINS` (if set) must use `https://` and must never contain `*`.
-5. All development/reference seeders (`seed.ts`, `auth.seed.ts`, `operational.seed.ts`, `financial.seed.ts`, `lessonNotes.seed.ts`) are disabled and throw fatal exceptions if invoked in production.
-6. No demo schools, demo users, Super Admin accounts, or preview identities are ever created automatically.
+2. `DATABASE_SSL` must be explicitly configured as `require` or `true` (`disable` or `false` is rejected).
+3. `AUTH_SECRET` must be configured, at least 32 characters, and not using `JWT_SECRET`.
+4. `ENCRYPTION_SECRET` must be configured, valid Base64 decoding to 32 bytes, and distinct from `AUTH_SECRET`.
+5. `APP_URL` is mandatory and must be a valid `https://` origin URL (not `*`). `ALLOWED_ORIGINS` (if set) must also use `https://` and must never contain `*`.
+6. Production bind host is always `0.0.0.0`, while `PORT` remains dynamically configurable via `process.env.PORT`.
+7. `AI_STUDIO_PREVIEW` never weakens or bypasses any production security or CORS requirement.
+8. All development/reference seeders (`seed.ts`, `auth.seed.ts`, `operational.seed.ts`, `financial.seed.ts`, `lessonNotes.seed.ts`) are disabled and throw fatal exceptions if invoked in production.
+9. No demo schools, demo users, Super Admin accounts, or preview identities are ever created automatically.
 
 ---
 

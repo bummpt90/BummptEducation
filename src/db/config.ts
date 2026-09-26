@@ -39,18 +39,23 @@ export function getDatabaseConfig(): DatabaseConfig {
 
   // SSL configuration
   // When running against cloud providers (Neon, Cloud SQL, Supabase, RDS), SSL is required.
-  const sslExplicit = process.env.DATABASE_SSL;
+  const sslExplicit = process.env.DATABASE_SSL?.trim().toLowerCase();
   let ssl: boolean | { rejectUnauthorized: boolean } = false;
 
-  if (sslExplicit === 'true' || sslExplicit === 'require') {
+  if (process.env.NODE_ENV === 'production') {
+    if (sslExplicit !== 'require' && sslExplicit !== 'true') {
+      throw new Error(
+        'FATAL: DATABASE_SSL must be explicitly set to "require" or "true" in production. Insecure or disabled database SSL is prohibited in production.'
+      );
+    }
+    ssl = { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'true' };
+  } else if (sslExplicit === 'true' || sslExplicit === 'require') {
     // For hosted cloud databases (like Neon, AWS RDS, Supabase), rejectUnauthorized is set to false
     // unless explicitly enforced to allow flexible SSL certificate verification.
     ssl = { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'true' };
   } else if (sslExplicit === 'false' || sslExplicit === 'disable') {
     ssl = false;
   } else if (connectionString && (connectionString.includes('neon.tech') || connectionString.includes('supabase') || connectionString.includes('sslmode=require'))) {
-    ssl = { rejectUnauthorized: false };
-  } else if (process.env.NODE_ENV === 'production') {
     ssl = { rejectUnauthorized: false };
   }
 

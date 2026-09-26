@@ -51,9 +51,9 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
     return false; // Wildcard origin is strictly prohibited
   }
 
-  const isProd = process.env.NODE_ENV === 'production' && !process.env.AI_STUDIO_PREVIEW;
+  const isProd = process.env.NODE_ENV === 'production';
 
-  // In strict production mode, cross-origin requests MUST use HTTPS
+  // In production mode, cross-origin requests MUST use HTTPS (AI_STUDIO_PREVIEW cannot bypass this)
   if (isProd && !trimmedOrigin.startsWith('https://')) {
     return false;
   }
@@ -64,7 +64,7 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
     return true;
   }
 
-  // 2. In development or preview environments, permit local and AI Studio container domains
+  // 2. In development or preview environments (strictly when NODE_ENV !== 'production'), permit local and preview domains
   if (!isProd) {
     if (
       trimmedOrigin.startsWith('http://localhost:') ||

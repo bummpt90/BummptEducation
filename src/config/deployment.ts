@@ -31,13 +31,36 @@ export function getServerPort(envPort: string | undefined = process.env.PORT): n
 }
 
 /**
- * Resolves the bind host. Always binds to 0.0.0.0 unless explicitly overridden.
+ * Resolves the bind host.
+ * In production (NODE_ENV === 'production'), ALWAYS resolves to '0.0.0.0' regardless of any HOST override.
+ * In development/preview, defaults to '0.0.0.0' unless explicitly overridden.
  */
 export function getServerHost(envHost: string | undefined = process.env.HOST): string {
+  if (process.env.NODE_ENV === 'production') {
+    return DEFAULT_HOST;
+  }
   if (envHost && envHost.trim().length > 0) {
     return envHost.trim();
   }
   return DEFAULT_HOST;
+}
+
+function isValidHttpsOrigin(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '*') {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      parsed.protocol === 'https:' &&
+      Boolean(parsed.hostname) &&
+      parsed.hostname !== '*' &&
+      parsed.origin.toLowerCase().startsWith('https://')
+    );
+  } catch {
+    return false;
+  }
 }
 
 export interface ProductionValidationResult {
@@ -61,58 +84,62 @@ export function validateProductionStartupConfig(): ProductionValidationResult {
 
   if (isProd) {
     // 1. Validate DATABASE_URL
-    try {
-      const dbCfg = getDatabaseConfig();
-      if (!dbCfg.isConfigured || !dbCfg.connectionString) {
-        errors.push('DATABASE_URL is required in production.');
-      }
-    } catch {
+    const rawDbUrl = process.env.DATABASE_URL?.trim() || '';
+    if (!rawDbUrl) {
       errors.push('DATABASE_URL is required in production.');
     }
 
-    // 2. Validate AUTH_SECRET
+    // 2. Validate DATABASE_SSL (must be explicitly 'require' or 'true' in production)
+    const rawDbSsl = process.env.DATABASE_SSL?.trim().toLowerCase() || '';
+    if (rawDbSsl !== 'require' && rawDbSsl !== 'true') {
+      errors.push('DATABASE_SSL must be explicitly set to "require" or "true" in production.');
+    } else if (rawDbUrl) {
+      try {
+        const dbCfg = getDatabaseConfig();
+        if (!dbCfg.isConfigured || !dbCfg.connectionString || !dbCfg.ssl) {
+          errors.push('DATABASE_URL and secure DATABASE_SSL are required in production.');
+        }
+      } catch {
+        errors.push('Database configuration is invalid in production.');
+      }
+    }
+
+    // 3. Validate AUTH_SECRET
     try {
       getAuthSecret();
     } catch {
       errors.push('AUTH_SECRET is required and must be at least 32 characters in production (JWT_SECRET fallback is prohibited).');
     }
 
-    // 3. Validate ENCRYPTION_SECRET
+    // 4. Validate ENCRYPTION_SECRET
     try {
       getEncryptionKey();
     } catch {
       errors.push('ENCRYPTION_SECRET is required in production and must be an independent 32-byte Base64 secret.');
     }
 
-    // 4. Validate APP_URL (if provided in strict production, must use HTTPS and not wildcard)
-    if (process.env.APP_URL && process.env.APP_URL.trim().length > 0) {
-      const appUrl = process.env.APP_URL.trim().toLowerCase();
-      if (appUrl === '*' || (!process.env.AI_STUDIO_PREVIEW && !appUrl.startsWith('https://'))) {
-        errors.push('APP_URL must be a valid https:// origin in production.');
-      }
+    // 5. Validate APP_URL (mandatory in production, must be a valid https:// URL origin, not "*")
+    const rawAppUrl = process.env.APP_URL?.trim() || '';
+    if (!rawAppUrl) {
+      errors.push('APP_URL is mandatory in production and must be configured.');
+    } else if (!isValidHttpsOrigin(rawAppUrl)) {
+      errors.push('APP_URL must be a valid https:// origin URL in production (wildcard "*" and non-HTTPS origins are prohibited).');
     }
 
-    // 5. Validate ALLOWED_ORIGINS (if provided in strict production, no wildcard and must use HTTPS)
+    // 6. Validate ALLOWED_ORIGINS (if provided in production, no wildcard and must use valid https:// origins)
     if (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.trim().length > 0) {
-      const parts = process.env.ALLOWED_ORIGINS.split(',').map(p => p.trim().toLowerCase()).filter(Boolean);
+      const parts = process.env.ALLOWED_ORIGINS.split(',').map(p => p.trim()).filter(Boolean);
       for (const origin of parts) {
         if (origin === '*') {
           errors.push('Wildcard (*) in ALLOWED_ORIGINS is strictly prohibited.');
-        } else if (!process.env.AI_STUDIO_PREVIEW && !origin.startsWith('https://')) {
-          errors.push('All ALLOWED_ORIGINS entries in production must use https://.');
+        } else if (!isValidHttpsOrigin(origin)) {
+          errors.push('All ALLOWED_ORIGINS entries in production must be valid https:// origins.');
         }
       }
     }
   }
 
-  const httpsOriginConfigured = Boolean(
-    (process.env.APP_URL && process.env.APP_URL.trim().toLowerCase().startsWith('https://')) ||
-    (process.env.ALLOWED_ORIGINS &&
-      process.env.ALLOWED_ORIGINS
-        .split(',')
-        .map(o => o.trim().toLowerCase())
-        .some(o => o.startsWith('https://')))
-  );
+  const httpsOriginConfigured = Boolean(process.env.APP_URL && isValidHttpsOrigin(process.env.APP_URL));
 
   return {
     valid: errors.length === 0,

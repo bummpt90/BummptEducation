@@ -285,24 +285,51 @@ async function runPhase10aSuite() {
     }
 
     // =========================================================================
-    // 5. Port & Host Configuration
+    // 5. Port & Host Configuration (Including TEST D — Production HOST)
     // =========================================================================
-    delete process.env.PORT;
-    const defaultPort = getServerPort(undefined);
-    const customPort = getServerPort('8080');
-    const invalidPortFallback = getServerPort('invalid_port');
-    const defaultHost = getServerHost(undefined);
-    restoreEnv();
+    try {
+      delete process.env.PORT;
+      const defaultPort = getServerPort(undefined);
+      const customPort = getServerPort('8080');
+      const invalidPortFallback = getServerPort('invalid_port');
+      const defaultHost = getServerHost(undefined);
 
-    record(
-      '5. Port & Host Binding',
-      'getServerPort() honors process.env.PORT (e.g. 8080) and defaults safely to 3000 when unset or invalid',
-      defaultPort === 3000 && customPort === 8080 && invalidPortFallback === 3000,
-      `default=${defaultPort}, custom=${customPort}, invalidFallback=${invalidPortFallback}`
-    );
+      record(
+        '5. Port & Host Binding',
+        'getServerPort() honors process.env.PORT (e.g. 8080) and defaults safely to 3000 when unset or invalid',
+        defaultPort === 3000 && customPort === 8080 && invalidPortFallback === 3000,
+        `default=${defaultPort}, custom=${customPort}, invalidFallback=${invalidPortFallback}`
+      );
+
+      // TEST D — Production HOST must resolve to 0.0.0.0 regardless of unsafe HOST override
+      process.env.NODE_ENV = 'production';
+      process.env.HOST = '127.0.0.1';
+      const prodHostFromLoopback = getServerHost();
+
+      process.env.HOST = 'localhost';
+      const prodHostFromLocalhost = getServerHost();
+
+      process.env.NODE_ENV = 'development';
+      process.env.HOST = '127.0.0.1';
+      const devHostOverride = getServerHost();
+      delete process.env.HOST;
+      const devHostDefault = getServerHost();
+
+      record(
+        '5. Port & Host Binding',
+        'TEST D: Production HOST resolves to 0.0.0.0 even when HOST=127.0.0.1 or HOST=localhost, while preserving development host behavior',
+        prodHostFromLoopback === '0.0.0.0' &&
+          prodHostFromLocalhost === '0.0.0.0' &&
+          devHostOverride === '127.0.0.1' &&
+          devHostDefault === '0.0.0.0',
+        `prod(127.0.0.1)=${prodHostFromLoopback}, prod(localhost)=${prodHostFromLocalhost}, dev(127.0.0.1)=${devHostOverride}`
+      );
+    } finally {
+      restoreEnv();
+    }
 
     const serverSource = fs.readFileSync(path.join(process.cwd(), 'server.ts'), 'utf-8');
-    const bindsToAllInterfaces = defaultHost === '0.0.0.0' && serverSource.includes('getServerPort()') && serverSource.includes('getServerHost()');
+    const bindsToAllInterfaces = serverSource.includes('getServerPort()') && serverSource.includes('getServerHost()');
     record(
       '5. Port & Host Binding',
       'server.ts binds to 0.0.0.0 and dynamically resolves PORT via getServerPort()',
@@ -310,7 +337,7 @@ async function runPhase10aSuite() {
     );
 
     // =========================================================================
-    // 6. APP_URL, HTTPS Origin, CORS & Secure Cookie Enforcement
+    // 6. APP_URL, HTTPS Origin, CORS & Secure Cookie Enforcement (Including TEST C)
     // =========================================================================
     try {
       process.env.NODE_ENV = 'production';
@@ -331,6 +358,23 @@ async function runPhase10aSuite() {
         allowsAppUrlHttps && allowsConfiguredHttps && blocksPlainHttpInProd && blocksLocalhostInProd && blocksWildcard && blocksUntrustedHttps
       );
 
+      // TEST C — AI_STUDIO_PREVIEW cannot bypass production CORS
+      process.env.NODE_ENV = 'production';
+      process.env.AI_STUDIO_PREVIEW = 'true';
+      process.env.APP_URL = 'https://portal.example.com';
+      delete process.env.ALLOWED_ORIGINS;
+
+      const testCAllowsTrustedHttps = isAllowedOrigin('https://portal.example.com') === true;
+      const testCRejectsHttp = isAllowedOrigin('http://portal.example.com') === false;
+      const testCRejectsUntrusted = isAllowedOrigin('https://attacker.example.com') === false;
+      const testCRejectsWildcard = isAllowedOrigin('*') === false;
+
+      record(
+        '6. Origin, CORS & Cookies',
+        'TEST C: AI_STUDIO_PREVIEW=true cannot bypass production CORS (allows https://portal.example.com, rejects http://, untrusted origins, and "*")',
+        testCAllowsTrustedHttps && testCRejectsHttp && testCRejectsUntrusted && testCRejectsWildcard
+      );
+
       const prodCookieOpts = getAuthCookieOptions();
       record(
         '6. Origin, CORS & Cookies',
@@ -342,14 +386,16 @@ async function runPhase10aSuite() {
     }
 
     // =========================================================================
-    // 7. Production Startup Validation & Seeder Lockout
+    // 7. Production Startup Validation & Seeder Lockout (Including TEST A & TEST B)
     // =========================================================================
     try {
       process.env.NODE_ENV = 'production';
       delete process.env.AI_STUDIO_PREVIEW;
       delete process.env.DATABASE_URL;
+      delete process.env.DATABASE_SSL;
       delete process.env.AUTH_SECRET;
       delete process.env.ENCRYPTION_SECRET;
+      delete process.env.JWT_SECRET;
       process.env.APP_URL = 'http://insecure-origin.example.com';
 
       const invalidStartup = validateProductionStartupConfig();
@@ -364,22 +410,85 @@ async function runPhase10aSuite() {
 
       record(
         '7. Startup & Seeder Safety',
-        'enforceProductionStartupConfig() fails closed when DATABASE_URL, AUTH_SECRET, ENCRYPTION_SECRET, or HTTPS APP_URL are invalid in production',
+        'enforceProductionStartupConfig() fails closed when DATABASE_URL, DATABASE_SSL, AUTH_SECRET, ENCRYPTION_SECRET, or HTTPS APP_URL are invalid in production',
         !invalidStartup.valid && invalidStartup.errors.length >= 4 && startupThrew,
         `Detected ${invalidStartup.errors.length} configuration violations`
       );
 
-      // Valid production config passes startup check
+      // TEST A — Missing APP_URL must fail production validation even when all other settings are valid
+      process.env.NODE_ENV = 'production';
       process.env.DATABASE_URL = 'postgresql://user:pass@db.example.edu.ng:5432/prod_db?sslmode=require';
+      process.env.DATABASE_SSL = 'require';
       process.env.AUTH_SECRET = crypto.randomBytes(32).toString('hex');
       process.env.ENCRYPTION_SECRET = crypto.randomBytes(32).toString('base64');
-      process.env.APP_URL = 'https://portal.bummpteducation.edu.ng';
-      delete process.env.ALLOWED_ORIGINS;
+      delete process.env.JWT_SECRET;
+      delete process.env.APP_URL;
+      process.env.ALLOWED_ORIGINS = 'https://hq.example.com'; // Must NOT substitute for missing APP_URL
 
-      const validStartup = validateProductionStartupConfig();
+      const missingAppUrlCheck = validateProductionStartupConfig();
+      const hasMissingAppUrlError = missingAppUrlCheck.errors.some(e => e.includes('APP_URL'));
+      let missingAppUrlThrew = false;
+      try {
+        enforceProductionStartupConfig();
+      } catch (err: any) {
+        if (err?.message?.includes('APP_URL')) {
+          missingAppUrlThrew = true;
+        }
+      }
+
       record(
         '7. Startup & Seeder Safety',
-        'validateProductionStartupConfig() succeeds when all production secrets, DATABASE_URL, and HTTPS APP_URL are valid',
+        'TEST A: Missing APP_URL in production causes validateProductionStartupConfig().valid === false and enforceProductionStartupConfig() to throw',
+        missingAppUrlCheck.valid === false && hasMissingAppUrlError && missingAppUrlThrew,
+        `valid=${missingAppUrlCheck.valid}, errors=${missingAppUrlCheck.errors.join('; ')}`
+      );
+
+      // TEST B — DATABASE_SSL=disable and DATABASE_SSL=false must fail in production, while DATABASE_SSL=require succeeds
+      process.env.APP_URL = 'https://portal.bummpteducation.edu.ng';
+      delete process.env.ALLOWED_ORIGINS;
+      process.env.DATABASE_SSL = 'disable';
+
+      const disabledSslCheck = validateProductionStartupConfig();
+      const hasSslError = disabledSslCheck.errors.some(e => e.includes('DATABASE_SSL'));
+      let disabledSslStartupThrew = false;
+      try {
+        enforceProductionStartupConfig();
+      } catch (err: any) {
+        if (err?.message?.includes('DATABASE_SSL')) {
+          disabledSslStartupThrew = true;
+        }
+      }
+      let disabledSslDbConfigThrew = false;
+      try {
+        getDatabaseConfig();
+      } catch (err: any) {
+        if (err?.message?.includes('DATABASE_SSL')) {
+          disabledSslDbConfigThrew = true;
+        }
+      }
+
+      process.env.DATABASE_SSL = 'false';
+      const falseSslCheck = validateProductionStartupConfig();
+
+      // Now set DATABASE_SSL=require and verify valid === true
+      process.env.DATABASE_SSL = 'require';
+      const validStartup = validateProductionStartupConfig();
+
+      record(
+        '7. Startup & Seeder Safety',
+        'TEST B: DATABASE_SSL=disable or false fails closed in production and throws on startup, while DATABASE_SSL=require succeeds',
+        disabledSslCheck.valid === false &&
+          hasSslError &&
+          disabledSslStartupThrew &&
+          disabledSslDbConfigThrew &&
+          falseSslCheck.valid === false &&
+          validStartup.valid === true,
+        `disableValid=${disabledSslCheck.valid}, falseValid=${falseSslCheck.valid}, requireValid=${validStartup.valid}`
+      );
+
+      record(
+        '7. Startup & Seeder Safety',
+        'validateProductionStartupConfig() succeeds when all production secrets, DATABASE_URL, DATABASE_SSL=require, and HTTPS APP_URL are valid',
         validStartup.valid === true && validStartup.errors.length === 0
       );
 
