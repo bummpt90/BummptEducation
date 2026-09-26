@@ -35,7 +35,7 @@ export const AboutMePage: React.FC = () => {
               <div className="relative overflow-hidden rounded-2xl border-2 border-slate-700 bg-slate-900 shadow-2xl w-full max-w-sm aspect-[3/4]">
                 {/* Developer / Executive Photo */}
                 <img
-                  src="/developer_portrait.jpg"
+                  src="/Office Laptop sit.jpeg"
                   alt="Matthew Ternenge Beeun - Founder, CEO & Lead Developer"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
