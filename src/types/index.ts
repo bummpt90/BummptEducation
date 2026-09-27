@@ -690,8 +690,14 @@ export interface GovSchool {
   zone: SenatorialZone;
   category: GovSchoolCategory;
   principalName: string;
+  principalTitle?: string;
   vicePrincipalAcademic: string;
   bursarName: string;
+  headmistressPrimary?: string;
+  headEarlyYears?: string;
+  examOfficerName?: string;
+  seniorFormTutor?: string;
+  registrarName?: string;
   phone: string;
   email: string;
   address: string;
@@ -726,5 +732,29 @@ export interface GovSchool {
   financialStatement: SchoolFinancialStatement;
   governingBodyReview: GoverningBodyReview;
 }
+
+export interface SchoolLeadershipRoster {
+  schoolId: string;
+  schoolName: string;
+  schoolCode: string;
+  lga: BenueLGA;
+  zone: SenatorialZone;
+  category: GovSchoolCategory;
+  address: string;
+  isPrimarySchool: boolean;
+  generalAdministrator: string;
+  principalName: string;
+  principalTitle: string;
+  vicePrincipalAcademic: string;
+  vicePrincipalTitle: string;
+  headmistressPrimary: string;
+  headEarlyYears: string;
+  bursarName: string;
+  examOfficerName: string;
+  seniorFormTutor: string;
+  registrarName: string;
+  isSimulationOverride?: boolean;
+}
+
 
 

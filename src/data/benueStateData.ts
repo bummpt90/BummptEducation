@@ -2,7 +2,8 @@ import {
   BenueLGA, 
   SenatorialZone, 
   LGAMetadata, 
-  GovSchool 
+  GovSchool,
+  SchoolLeadershipRoster
 } from '../types';
 
 // ==================== ALL 23 BENUE STATE LOCAL GOVERNMENTS ====================
@@ -2032,6 +2033,209 @@ const LGA_SCHOOL_TEMPLATES: Record<BenueLGA, { name: string; category: GovSchool
   ]
 };
 
+const REGIONAL_SECONDARY_PRINCIPALS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Dr. Terhemba Kator-Chia (Ph.D, M.Ed, TRCN)',
+    'Mrs. Dooshima Vember-Tsegba (M.Ed, B.Sc Ed)',
+    'Rev. Fr. Moses Aondover Iorliam (M.Ed, Ph.D)',
+    'Mr. Shimaor Clement Ugba (M.Sc Ed, TRCN)',
+    'Dr. (Mrs.) Nguvan Comfort Akor (Ph.D Educational Admin)',
+    'Elder Terver Joseph Tyokyaa (M.Ed, FCE)',
+    'Chief Vershima David Msugh (M.Ed, B.A Ed)',
+    'Mrs. Mimidoo Bridget Kough (M.Ed Curriculum)',
+    'Mr. Aondohemba Peter Hembafan (M.Sc, PGDE)',
+    'Dr. Terna Emmanuel Agber (Ph.D, TRCN)'
+  ],
+  B: [
+    'Prof. Iorwuese Gabriel Tarkumbur (Ph.D, M.Ed)',
+    'Dr. (Mrs.) Sewuese Helen Waniko (Ph.D, TRCN)',
+    'Mr. Terkula Simon Tyough (M.Ed, B.Sc)',
+    'Mrs. Hembadoon Monica Chia (M.Ed Admin)',
+    'Rev. Sr. Scholastica Mlumun Orkaa (M.Ed, B.Ed)',
+    'Dr. Aondowase Benjamin Iorpuu (Ph.D, TRCN)',
+    'Chief Orkaa Jude Torkuma (M.Ed, PGDE)',
+    'Mrs. Doofan Rosemary Aondo (M.Sc Ed, TRCN)',
+    'Mr. Tersoo Matthias Gbor (M.Ed, B.A Ed)',
+    'Dr. (Mrs.) Ngodoo Veronica Kpelai (Ph.D, M.Ed)'
+  ],
+  C: [
+    'Dr. Ocheje Bartholomew Onoja (Ph.D, M.Ed)',
+    'Mrs. Ene Veronica Ochigbo (M.Ed, TRCN)',
+    'Elder Sunday Ogbu Ejembi (M.Sc Ed, B.Ed)',
+    'Dr. (Mrs.) Onyeche Martha Abah (Ph.D Admin)',
+    'Mr. Idoko Sylvester Obande (M.Ed, PGDE)',
+    'Chief Odeh Patrick Onu (M.Ed, TRCN)',
+    'Mrs. Owoicho Cecilia Agbo (M.A Ed, B.Ed)',
+    'Dr. Egbodo Innocent Uloko (Ph.D, M.Sc Ed)',
+    'Mr. Adakole Emmanuel Okpe (M.Ed, TRCN)',
+    'Mrs. Enewa Victoria Oche (M.Ed Guidance)'
+  ]
+};
+
+const REGIONAL_PRIMARY_HEADMASTERS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Mrs. Eunice Mwuese Kator (M.Ed Early Childhood, NCE)',
+    'Mr. Terngu Barnabas Iorfa (B.Ed Primary, NCE)',
+    'Mrs. Member Grace Akaa (B.Ed, NCE, TRCN)',
+    'Mr. Aondona Philip Tyo (B.Ed Basic Ed, NCE)',
+    'Mrs. Dooshima Juliana Mba (B.Ed, NCE)',
+    'Elder Iorwuese Samuel Chia (B.Ed Primary, TRCN)',
+    'Mrs. Nguveren Theresa Ugba (M.Ed, NCE)',
+    'Mr. Shima Fidelis Akor (B.Ed, NCE)'
+  ],
+  B: [
+    'Chief (Mrs.) Felicia Ngodoo Iorliam (M.Ed Primary, NCE)',
+    'Mr. Terver Augustine Dzurgba (B.Ed, NCE, TRCN)',
+    'Mrs. Mlumun Cecilia Tarkighir (B.Ed Early Years, NCE)',
+    'Mr. Orseer Dominic Jato (B.Ed Basic Ed, NCE)',
+    'Mrs. Hembadoon Agatha Ukeyima (B.Ed, NCE)',
+    'Mr. Aondover Lawrence Yina (M.Ed, NCE, TRCN)',
+    'Mrs. Sewuese Beatrice Ortese (B.Ed Primary, NCE)',
+    'Mr. Terna Gregory Mkor (B.Ed, NCE)'
+  ],
+  C: [
+    'Mrs. Ochanya Elizabeth Ocheje (M.Ed Primary, NCE)',
+    'Elder Ogbaji Christopher Onoja (B.Ed, NCE, TRCN)',
+    'Mrs. Ene Comfort Idoko (B.Ed Early Childhood, NCE)',
+    'Mr. Abah Michael Obande (B.Ed Basic Ed, NCE)',
+    'Mrs. Onyeche Margaret Odeh (B.Ed, NCE)',
+    'Mr. Ejembi Paul Agbo (B.Ed Primary, TRCN)',
+    'Mrs. Adaobi Blessing Okpe (M.Ed, NCE)',
+    'Mr. Owoicho Stephen Uloko (B.Ed, NCE)'
+  ]
+};
+
+const REGIONAL_VICE_PRINCIPALS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Mrs. Judith Mwuese Akor (M.Ed, B.Ed)',
+    'Mr. Tersoo Jude Aondo (B.Sc Ed, TRCN)',
+    'Mrs. Comfort Doofan Tyokyaa (M.Ed Curriculum)',
+    'Mr. Vershima Clement Chia (B.Ed, NCE)',
+    'Mrs. Bridget Mimidoo Ugba (M.Ed, TRCN)',
+    'Mr. Kator Emmanuel Msugh (B.Sc Ed, PGDE)'
+  ],
+  B: [
+    'Mr. Bemigho Matthew Tsegba (M.Ed, B.Sc Ed)',
+    'Mrs. Ngodoo Patience Waniko (M.Ed, TRCN)',
+    'Mr. Iorfa Kenneth Tyough (B.A Ed, PGDE)',
+    'Mrs. Dooshima Stella Tarkumbur (M.Ed Admin)',
+    'Mr. Aondoakaa Victor Hembafan (B.Sc Ed, TRCN)',
+    'Mrs. Mlumun Rita Agber (B.Ed, NCE)'
+  ],
+  C: [
+    'Mrs. Grace Owoicho Abah (M.Ed, B.Ed)',
+    'Mr. Oche Sunday Ochigbo (B.Sc Ed, TRCN)',
+    'Mrs. Mary Ene Onu (M.Ed Curriculum)',
+    'Mr. Ogbu Daniel Ejembi (B.A Ed, PGDE)',
+    'Mrs. Victoria Onyeche Ode (B.Ed, TRCN)',
+    'Mr. Idoko Anthony Agbo (M.Sc Ed, B.Ed)'
+  ]
+};
+
+const REGIONAL_BURSARS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Mr. Gabriel Iorpuu (B.Sc Accounting, CNA)',
+    'Mrs. Grace Iorfa (HND Accountancy, ANAN)',
+    'Mr. Terkula Pius Kator (B.Sc Finance, CNA)',
+    'Mrs. Dooshima Vivian Chia (B.Sc Accounting, ICAN)',
+    'Mr. Aondona Felix Ugba (HND Accounting, CNA)',
+    'Mrs. Nguvan Esther Akor (B.Sc Accounting, ANAN)'
+  ],
+  B: [
+    'Mr. Terna Desmond Orkaa (B.Sc Accounting, CNA)',
+    'Mrs. Sewuese Janet Torkuma (HND Finance, ANAN)',
+    'Mr. Terhemba Charles Tyough (B.Sc Accounting, ICAN)',
+    'Mrs. Hembadoon Lucy Waniko (B.Sc Economics, CNA)',
+    'Mr. Iorwuese Henry Gbor (HND Accountancy, CNA)',
+    'Mrs. Ngodoo Agnes Kpelai (B.Sc Accounting, ANAN)'
+  ],
+  C: [
+    'Mr. Emmanuel Obande (B.Sc Accounting, CNA)',
+    'Mrs. Patricia Ameh-Onoja (HND Accountancy, ANAN)',
+    'Mr. Sunday Idoko-Abah (B.Sc Finance, ICAN)',
+    'Mrs. Ene Deborah Ochigbo (B.Sc Accounting, CNA)',
+    'Mr. Ocheje Francis Ejembi (HND Accounting, ANAN)',
+    'Mrs. Onyeche Rose Uloko (B.Sc Accounting, CNA)'
+  ]
+};
+
+const REGIONAL_PRIMARY_HEADS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Mrs. Rosemary Iorpuu (B.Ed Primary, NCE)',
+    'Mrs. Comfort Nguvan Kator (B.Ed Basic Ed, NCE)',
+    'Mr. Terver Hillary Akaa (B.Ed Primary, TRCN)',
+    'Mrs. Doofan Christiana Ugba (M.Ed Primary, NCE)'
+  ],
+  B: [
+    'Mrs. Veronica Ngodoo Chia (M.Ed Primary, NCE)',
+    'Mr. Tersoo Sylvanus Ortese (B.Ed Basic Ed, TRCN)',
+    'Mrs. Mlumun Catherine Dzurgba (B.Ed Primary, NCE)',
+    'Mrs. Sewuese Francisca Jato (B.Ed, NCE)'
+  ],
+  C: [
+    'Mrs. Cecilia Ene Ocheje (M.Ed Primary, NCE)',
+    'Mr. Adakole Bernard Idoko (B.Ed Basic Ed, TRCN)',
+    'Mrs. Ochanya Paulina Onoja (B.Ed Primary, NCE)',
+    'Mrs. Onyeche Juliana Abah (B.Ed, NCE)'
+  ]
+};
+
+const REGIONAL_ECCDE_HEADS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Mrs. Patricia Ameh-Kator (B.Ed Early Childhood, Montessori Dip.)',
+    'Mrs. Mimidoo Blessing Chia (B.Ed ECCDE, NCE)',
+    'Ms. Dooshima Sandra Tyokyaa (B.Ed Early Years, TRCN)',
+    'Mrs. Nguveren Joy Msugh (NCE Early Childhood, B.Ed)'
+  ],
+  B: [
+    'Mrs. Hembadoon Angela Tsegba (M.Ed Early Childhood, Montessori)',
+    'Mrs. Ngodoo Dorothy Tarkumbur (B.Ed ECCDE, NCE)',
+    'Ms. Sewuese Evelyn Waniko (B.Ed Early Years, TRCN)',
+    'Mrs. Mlumun Theresa Agber (NCE Early Childhood, B.Ed)'
+  ],
+  C: [
+    'Mrs. Ene Josephine Ochigbo (M.Ed Early Childhood, Montessori)',
+    'Mrs. Ochanya Grace Obande (B.Ed ECCDE, NCE)',
+    'Ms. Onyeche Linda Ejembi (B.Ed Early Years, TRCN)',
+    'Mrs. Owoicho Mary Uloko (NCE Early Childhood, B.Ed)'
+  ]
+};
+
+const REGIONAL_EXAM_OFFICERS: Record<'A' | 'B' | 'C', string[]> = {
+  A: [
+    'Mr. Clement Torkuma (B.Sc Ed Physics, PGDE)',
+    'Mr. Vershima Leonard Kator (B.Sc Ed Math, TRCN)',
+    'Mrs. Dooshima Helen Ugba (B.Ed Measurement & Eval)',
+    'Mr. Terhemba Godwin Chia (B.Sc Ed Chemistry, TRCN)'
+  ],
+  B: [
+    'Mr. Aondover Martin Ortese (M.Ed Measurement & Eval)',
+    'Mrs. Ngodoo Gladys Tyough (B.Sc Ed Biology, TRCN)',
+    'Mr. Terkula Raymond Waniko (B.Sc Ed Math, PGDE)',
+    'Mr. Iorwuese Benson Gbor (B.Ed Testing & Eval)'
+  ],
+  C: [
+    'Mr. Ocheje Lawrence Abah (M.Ed Measurement & Eval)',
+    'Mrs. Ene Florence Onoja (B.Sc Ed Mathematics, TRCN)',
+    'Mr. Idoko Gabriel Ochigbo (B.Sc Ed Physics, PGDE)',
+    'Mr. Ogbu Vincent Ejembi (B.Ed Assessment, TRCN)'
+  ]
+};
+
+function getZoneKey(zone: SenatorialZone): 'A' | 'B' | 'C' {
+  if (zone.includes('Zone A')) return 'A';
+  if (zone.includes('Zone B')) return 'B';
+  return 'C';
+}
+
+function deterministicHash(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
 // Generate full realistic school profile if not explicitly in BENUE_GOVERNMENT_SCHOOLS
 function generateCompleteGovSchool(lga: BenueLGA, template: { name: string; category: GovSchool['category']; address: string; established: number; rank: number }, index: number): GovSchool {
   const lgaMeta = getLgaMetadata(lga) || BENUE_LGAS_METADATA[0];
@@ -2065,10 +2269,23 @@ function generateCompleteGovSchool(lga: BenueLGA, template: { name: string; cate
   const egmaMath = Math.min(95, basePassRate - 3 + (index % 4));
   const feedingRate = 96.5 + (index % 3);
 
-  const principalTitle = isPrimary ? 'Headmaster/Headmistress' : 'Principal';
-  const principalName = isPrimary 
-    ? `Mrs. Eunice Mwuese ${lga} (NCE, B.Ed)`
-    : `Mr. Dennis Terver ${lga} (M.Ed, TRCN)`;
+  const zoneKey = getZoneKey(lgaMeta.zone);
+  const hash = deterministicHash(`${lga}-${template.name}-${index}`);
+
+  const principalTitle = isPrimary ? 'Headmaster / Head Teacher' : 'Principal';
+  const principalPool = isPrimary ? REGIONAL_PRIMARY_HEADMASTERS[zoneKey] : REGIONAL_SECONDARY_PRINCIPALS[zoneKey];
+  const vpPool = REGIONAL_VICE_PRINCIPALS[zoneKey];
+  const bursarPool = REGIONAL_BURSARS[zoneKey];
+  const primaryHeadPool = REGIONAL_PRIMARY_HEADS[zoneKey];
+  const eccdeHeadPool = REGIONAL_ECCDE_HEADS[zoneKey];
+  const examPool = REGIONAL_EXAM_OFFICERS[zoneKey];
+
+  const principalName = principalPool[(hash + index) % principalPool.length];
+  const vicePrincipalAcademic = vpPool[(hash + index * 3) % vpPool.length];
+  const bursarName = bursarPool[(hash + index * 5) % bursarPool.length];
+  const headmistressPrimary = isPrimary ? principalName : primaryHeadPool[(hash + index * 2) % primaryHeadPool.length];
+  const headEarlyYears = eccdeHeadPool[(hash + index * 7) % eccdeHeadPool.length];
+  const examOfficerName = examPool[(hash + index * 11) % examPool.length];
 
   return {
     id: schoolId,
@@ -2078,8 +2295,12 @@ function generateCompleteGovSchool(lga: BenueLGA, template: { name: string; cate
     zone: lgaMeta.zone,
     category: template.category,
     principalName,
-    vicePrincipalAcademic: isPrimary ? 'Mr. Jude Tersoo Aondo (NCE)' : 'Mrs. Judith Mwuese Akor (B.Ed)',
-    bursarName: isPrimary ? 'Mrs. Grace Iorfa (LGEA Bursary Unit)' : 'Mr. Gabriel Iorpuu (CNA)',
+    principalTitle,
+    vicePrincipalAcademic,
+    bursarName,
+    headmistressPrimary,
+    headEarlyYears,
+    examOfficerName,
     phone: `+234 80${index + 2} ${String(100 + ((index * 37) % 899)).padStart(3, '0')} ${String(1000 + ((index * 137) % 8999)).padStart(4, '0')}`,
     email: `${template.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@subeb.benue.gov.ng`,
     address: `${template.address}, Benue State`,
@@ -2183,7 +2404,7 @@ function generateCompleteGovSchool(lga: BenueLGA, template: { name: string; cate
       auditorRemarks: isPrimary 
         ? 'SUBEB Matching Grants and LGEA direct capitation verified without audit exceptions.'
         : 'Bursary accounts reconciled with zero variances.',
-      bursarName: isPrimary ? 'Mrs. Grace Iorfa (LGEA Internal Auditor)' : 'Mr. Gabriel Iorpuu (CNA)'
+      bursarName
     },
     governingBodyReview: {
       stateRanking: template.rank,
@@ -2239,6 +2460,153 @@ export function getSchoolsByLGA(lga: BenueLGA): GovSchool[] {
   });
 
   return schools;
+}
+
+export function getAllBenueGovSchools(): GovSchool[] {
+  const allSchools: GovSchool[] = [];
+  const seenIds = new Set<string>();
+  BENUE_LGAS_METADATA.forEach((meta) => {
+    const lgaSchools = getSchoolsByLGA(meta.lga);
+    lgaSchools.forEach((school) => {
+      if (!seenIds.has(school.id)) {
+        seenIds.add(school.id);
+        allSchools.push(school);
+      }
+    });
+  });
+  return allSchools;
+}
+
+export interface SimulationLeadershipPreset {
+  id: string;
+  label: string;
+  description: string;
+  principalTitle: string;
+  principalName: string;
+  vicePrincipalAcademic: string;
+  bursarName: string;
+  headmistressPrimary: string;
+  headEarlyYears: string;
+  examOfficerName: string;
+}
+
+export const SIMULATION_LEADERSHIP_PRESETS: SimulationLeadershipPreset[] = [
+  {
+    id: 'school-authentic',
+    label: 'Selected School Official Roster (Default)',
+    description: 'Uses the authentic Principal / Headmaster, Vice Principal, and Bursar registered to the selected school in its Local Government Area.',
+    principalTitle: 'Auto (Based on School Category)',
+    principalName: '',
+    vicePrincipalAcademic: '',
+    bursarName: '',
+    headmistressPrimary: '',
+    headEarlyYears: '',
+    examOfficerName: ''
+  },
+  {
+    id: 'zone-a-model',
+    label: 'Zone A (Benue North-East) Model Simulation Team',
+    description: 'Katsina-Ala / Kwande / Vandeikya Senatorial Zone Senior Principal & SUBEB Headmaster delegation.',
+    principalTitle: 'Principal / Headmaster',
+    principalName: 'Dr. Terhemba Kator-Chia (Ph.D, M.Ed, TRCN)',
+    vicePrincipalAcademic: 'Mrs. Judith Mwuese Akor (M.Ed, B.Ed)',
+    bursarName: 'Mr. Gabriel Iorpuu (B.Sc Accounting, CNA)',
+    headmistressPrimary: 'Mrs. Eunice Mwuese Kator (M.Ed Primary, NCE)',
+    headEarlyYears: 'Mrs. Patricia Ameh-Kator (B.Ed ECCDE, Montessori)',
+    examOfficerName: 'Mr. Vershima Leonard Kator (B.Sc Ed Math, TRCN)'
+  },
+  {
+    id: 'zone-b-model',
+    label: 'Zone B (Benue North-West) Capital & Flagship Team',
+    description: 'Makurdi / Gboko Senatorial Zone Executive Principal, Academic VP & SUBEB Headmistress delegation.',
+    principalTitle: 'Director / Principal',
+    principalName: 'Dr. Terkula Suswam (Ph.D Educational Admin)',
+    vicePrincipalAcademic: 'Mrs. Dooshima Orkaa (M.Ed Curriculum)',
+    bursarName: 'Mr. Aondona Kough (B.Sc Accounting, ICAN)',
+    headmistressPrimary: 'Chief (Mrs.) Felicia Ngodoo Iorliam (M.Ed Primary, NCE)',
+    headEarlyYears: 'Mrs. Hembadoon Angela Tsegba (M.Ed Early Childhood)',
+    examOfficerName: 'Mr. Clement Torkuma (B.Sc Ed Physics, PGDE)'
+  },
+  {
+    id: 'zone-c-model',
+    label: 'Zone C (Benue South) Model Simulation Team',
+    description: 'Otukpo / Okpokwu / Ogbadibo Senatorial Zone Senior Principal & LGEA Headmaster delegation.',
+    principalTitle: 'Principal / Headmaster',
+    principalName: 'Chief Emmanuel Obande (M.Ed, TRCN)',
+    vicePrincipalAcademic: 'Mrs. Grace Owoicho Abah (M.Ed, B.Ed)',
+    bursarName: 'Mrs. Patricia Ameh-Onoja (HND Accountancy, ANAN)',
+    headmistressPrimary: 'Mrs. Ochanya Elizabeth Ocheje (M.Ed Primary, NCE)',
+    headEarlyYears: 'Mrs. Ene Josephine Ochigbo (M.Ed Early Childhood)',
+    examOfficerName: 'Mr. Ocheje Lawrence Abah (M.Ed Measurement & Eval)'
+  }
+];
+
+export function resolveSchoolLeadershipRoster(
+  school?: GovSchool | null,
+  customOverride?: Partial<SchoolLeadershipRoster> | null
+): SchoolLeadershipRoster {
+  const targetSchool = school || BENUE_GOVERNMENT_SCHOOLS[0];
+  const lgaMeta = getLgaMetadata(targetSchool.lga) || BENUE_LGAS_METADATA[0];
+  const zoneKey = getZoneKey(targetSchool.zone);
+  const hash = deterministicHash(`${targetSchool.id}-${targetSchool.name}`);
+  const isPrimarySchool =
+    targetSchool.category.includes('Primary') ||
+    targetSchool.category.includes('Basic') ||
+    targetSchool.category.includes('Special Education');
+
+  const defaultPrimaryHead = isPrimarySchool
+    ? targetSchool.principalName
+    : targetSchool.headmistressPrimary ||
+      REGIONAL_PRIMARY_HEADS[zoneKey][hash % REGIONAL_PRIMARY_HEADS[zoneKey].length];
+
+  const defaultEarlyYearsHead =
+    targetSchool.headEarlyYears ||
+    REGIONAL_ECCDE_HEADS[zoneKey][(hash + 2) % REGIONAL_ECCDE_HEADS[zoneKey].length];
+
+  const defaultExamOfficer =
+    targetSchool.examOfficerName ||
+    REGIONAL_EXAM_OFFICERS[zoneKey][(hash + 3) % REGIONAL_EXAM_OFFICERS[zoneKey].length];
+
+  const defaultPrincipalTitle =
+    targetSchool.principalTitle ||
+    (isPrimarySchool ? 'Headmaster / Head Teacher' : 'Principal');
+
+  const defaultVpTitle = isPrimarySchool
+    ? 'Assistant Headmaster / Head Teacher (Academics)'
+    : 'Vice Principal (Academics)';
+
+  const baseRoster: SchoolLeadershipRoster = {
+    schoolId: targetSchool.id,
+    schoolName: targetSchool.name,
+    schoolCode: targetSchool.code,
+    lga: targetSchool.lga,
+    zone: targetSchool.zone,
+    category: targetSchool.category,
+    address: targetSchool.address,
+    isPrimarySchool,
+    generalAdministrator: `${lgaMeta.educationSecretary} (${targetSchool.lga} LGEA / Ministry Overseer)`,
+    principalName: targetSchool.principalName,
+    principalTitle: defaultPrincipalTitle,
+    vicePrincipalAcademic: targetSchool.vicePrincipalAcademic,
+    vicePrincipalTitle: defaultVpTitle,
+    headmistressPrimary: defaultPrimaryHead,
+    headEarlyYears: defaultEarlyYearsHead,
+    bursarName: targetSchool.bursarName,
+    examOfficerName: defaultExamOfficer,
+    seniorFormTutor: `Senior Master / Form Coordinator (${targetSchool.code})`,
+    registrarName: `Admissions & EMIS Registrar (${targetSchool.lga} LGA)`
+  };
+
+  if (!customOverride) {
+    return baseRoster;
+  }
+
+  return {
+    ...baseRoster,
+    ...Object.fromEntries(
+      Object.entries(customOverride).filter(([_, val]) => val !== undefined && val !== '')
+    )
+  } as SchoolLeadershipRoster;
 }
 
 export function getSchoolsByZone(zone: SenatorialZone): GovSchool[] {

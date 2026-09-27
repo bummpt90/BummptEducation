@@ -25,6 +25,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { NavigationPage, Student, StudentReportCard } from '../types';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import {
   SAMPLE_SECONDARY_STUDENT,
   SAMPLE_SECONDARY_REPORT_CARD
@@ -39,6 +40,7 @@ export const SecondaryCollegePage: React.FC<SecondaryCollegePageProps> = ({
   onNavigate,
   onOpenReportCardModal
 }) => {
+  const { activeSchool, leadershipRoster } = useSchoolSimulation();
   const [selectedTrack, setSelectedTrack] = useState<'science' | 'arts' | 'commercial'>('science');
 
   const navigateTo = (page: NavigationPage, subTab?: string, param?: any) => {
@@ -49,7 +51,10 @@ export const SecondaryCollegePage: React.FC<SecondaryCollegePageProps> = ({
 
   const handleLaunchSampleReportCard = () => {
     if (onOpenReportCardModal) {
-      onOpenReportCardModal(SAMPLE_SECONDARY_STUDENT, SAMPLE_SECONDARY_REPORT_CARD);
+      onOpenReportCardModal(SAMPLE_SECONDARY_STUDENT, {
+        ...SAMPLE_SECONDARY_REPORT_CARD,
+        principalName: leadershipRoster.principalName,
+      });
     } else {
       navigateTo('academic', 'reports');
     }
@@ -114,32 +119,32 @@ export const SecondaryCollegePage: React.FC<SecondaryCollegePageProps> = ({
 
   const collegeLeadership = [
     {
-      name: 'Dr. (Mrs.) Grace Nkechi Okafor',
-      role: 'Principal & Sub-Head (Secondary College)',
-      qualifications: 'Ph.D. Educational Administration, M.Ed, B.Sc. (Ed) Chemistry',
-      email: 'principal@bummpteducation.edu.ng',
-      scope: 'Secondary College Apex, Academic Rigor, WAEC/NECO Quality & University Guidance'
+      name: leadershipRoster.principalName,
+      role: `${leadershipRoster.principalTitle} (${activeSchool.name})`,
+      qualifications: 'Educational Administration & Curriculum Leadership, TRCN Certified',
+      email: `principal@${activeSchool.code.toLowerCase()}.benue.gov.ng`,
+      scope: `Secondary College Apex (${activeSchool.lga} LGA), Academic Rigor, WAEC/NECO Quality & Guidance`
     },
     {
-      name: 'Mr. Emmanuel Terkula Iorfa',
-      role: 'Vice-Principal (Academics - Secondary)',
-      qualifications: 'M.Sc. Mathematics, B.Sc. (Ed) Mathematics',
-      email: 'vp.academic@bummpteducation.edu.ng',
+      name: leadershipRoster.vicePrincipalAcademic,
+      role: leadershipRoster.vicePrincipalTitle,
+      qualifications: 'M.Ed / B.Sc. (Ed) Curriculum & Instruction, TRCN Certified',
+      email: `vp.academic@${activeSchool.code.toLowerCase()}.benue.gov.ng`,
       scope: 'Curriculum Delivery, Timetables, HOD Audits & Continuous Assessment Standards'
     },
     {
-      name: 'Mrs. Fatima Al-Hassan',
+      name: leadershipRoster.examOfficerName,
       role: 'Chief Examination Officer (Secondary)',
-      qualifications: 'M.Ed Measurement & Evaluation, B.Sc Physics',
-      email: 'exams@bummpteducation.edu.ng',
+      qualifications: 'M.Ed / B.Sc Ed Measurement & Evaluation, TRCN Certified',
+      email: `exams@${activeSchool.code.toLowerCase()}.benue.gov.ng`,
       scope: 'WAEC, NECO, IGCSE, SAT & JAMB Registration, Biometrics & CBT Operations'
     },
     {
-      name: 'Mr. David Olatunji',
-      role: 'Head of Department (Sciences) & Senior Physics Master',
-      qualifications: 'B.Sc Physics, PGDE',
-      email: 'd.olatunji@bummpteducation.edu.ng',
-      scope: 'Science Laboratories, STEM Research Projects & Olympiad Coaching'
+      name: leadershipRoster.bursarName,
+      role: 'School Bursar & Chief Financial Officer',
+      qualifications: 'B.Sc / HND Accounting, CNA / ICAN / ANAN',
+      email: `bursar@${activeSchool.code.toLowerCase()}.benue.gov.ng`,
+      scope: 'Subvention Accounts, Fee Reconciliation, Laboratory Procurement & Audits'
     }
   ];
 
@@ -178,7 +183,7 @@ export const SecondaryCollegePage: React.FC<SecondaryCollegePageProps> = ({
             </h1>
 
             <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed max-w-3xl">
-              Led by Sub-Head <strong>Dr. (Mrs.) Grace Nkechi Okafor</strong> (Principal, Ph.D) under Central Executive Governance (<strong>Dr. Matthew Ternenge Beeun</strong>), the Secondary College provides world-class STEM, Humanities, and Business education. Our students achieve top distinctions in West African and International board examinations.
+              Led by <strong>{leadershipRoster.principalName}</strong> ({leadershipRoster.principalTitle}) at <strong>{activeSchool.name}</strong> ({activeSchool.lga} LGA) under the oversight of <strong>{leadershipRoster.generalAdministrator}</strong>, the Secondary College provides rigorous STEM, Humanities, and Business education.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -221,20 +226,22 @@ export const SecondaryCollegePage: React.FC<SecondaryCollegePageProps> = ({
           <div className="lg:col-span-4">
             <div className="rounded-2xl bg-blue-900/40 p-5 border border-blue-500/30 backdrop-blur-sm space-y-3">
               <div className="flex items-center gap-3 border-b border-blue-500/20 pb-3">
-                <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-lg shadow-md">
-                  GO
+                <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-md">
+                  SEC
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-mono text-blue-300 font-bold block">Sub-Head Officer</span>
-                  <h3 className="text-sm font-bold text-white">Dr. (Mrs.) Grace Okafor</h3>
-                  <p className="text-[11px] text-blue-200">Principal (Ph.D in Education)</p>
+                  <span className="text-[10px] uppercase font-mono text-blue-300 font-bold block">
+                    {leadershipRoster.principalTitle} ({activeSchool.lga} LGA)
+                  </span>
+                  <h3 className="text-sm font-bold text-white">{leadershipRoster.principalName}</h3>
+                  <p className="text-[11px] text-blue-200">{activeSchool.name}</p>
                 </div>
               </div>
 
               <div className="text-[11px] text-blue-200 space-y-1.5 leading-tight">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Reporting Line:</span>
-                  <strong className="text-white">General Administrator</strong>
+                  <span className="text-slate-400">VP Academic:</span>
+                  <strong className="text-white">{leadershipRoster.vicePrincipalAcademic}</strong>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Grading Scale:</span>

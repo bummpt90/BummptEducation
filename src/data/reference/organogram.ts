@@ -1,4 +1,5 @@
-import { OrganogramNode } from '../../types';
+import { OrganogramNode, GovSchool, SchoolLeadershipRoster } from '../../types';
+import { resolveSchoolLeadershipRoster } from '../benueStateData';
 
 export const ORGANOGRAM_DATA: OrganogramNode[] = [
   // ==================== EXECUTIVE CENTRAL GOVERNANCE ====================
@@ -201,3 +202,69 @@ export const ORGANOGRAM_DATA: OrganogramNode[] = [
     ]
   }
 ];
+
+export function buildDynamicOrganogramForSchool(
+  school?: GovSchool | null,
+  customOverride?: Partial<SchoolLeadershipRoster> | null
+): OrganogramNode[] {
+  const roster = resolveSchoolLeadershipRoster(school, customOverride);
+  return ORGANOGRAM_DATA.map((node) => {
+    switch (node.id) {
+      case 'ORG-01':
+        return {
+          ...node,
+          title: `Benue State Ministry of Education & ${roster.lga} LGEA Board`,
+          holderName: `Benue State SUBEB / TSB Governing Board (${roster.zone})`,
+          description: `State and Local Government supervisory board overseeing ${roster.schoolName} (${roster.schoolCode}) in ${roster.lga} LGA.`
+        };
+      case 'ORG-02':
+        return {
+          ...node,
+          title: `${roster.lga} LGA Education Secretary / Institutional Overseer`,
+          holderName: roster.generalAdministrator
+        };
+      case 'ORG-EY-01':
+        return {
+          ...node,
+          holderName: roster.headEarlyYears
+        };
+      case 'ORG-PRI-01':
+        return {
+          ...node,
+          title: roster.isPrimarySchool
+            ? `${roster.principalTitle} (${roster.schoolName})`
+            : 'Headmistress / Headmaster (Primary Sub-Head)',
+          holderName: roster.headmistressPrimary
+        };
+      case 'ORG-03':
+        return {
+          ...node,
+          title: `${roster.principalTitle} (${roster.schoolName})`,
+          holderName: roster.principalName
+        };
+      case 'ORG-04':
+        return {
+          ...node,
+          title: roster.vicePrincipalTitle,
+          holderName: roster.vicePrincipalAcademic
+        };
+      case 'ORG-05':
+        return {
+          ...node,
+          holderName: roster.examOfficerName
+        };
+      case 'ORG-08':
+        return {
+          ...node,
+          holderName: roster.registrarName
+        };
+      case 'ORG-09':
+        return {
+          ...node,
+          holderName: roster.bursarName
+        };
+      default:
+        return node;
+    }
+  });
+}

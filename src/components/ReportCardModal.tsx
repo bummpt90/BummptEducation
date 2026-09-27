@@ -3,6 +3,7 @@ import { Student, StudentReportCard, Subject, getSchoolArm, AssessmentScore, Aff
 import { calculateGrade, calculatePrimaryGrade, evaluatePromotionStatus, getDomainRatingDescription, calculateGpa } from '../utils/grading';
 import { downloadReportCardAsPDF } from '../utils/pdfGenerator';
 import { BummptechLogo } from './BummptechLogo';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import { 
   Printer, X, Award, CheckCircle2, School, ShieldCheck, Sparkles, 
   Star, Edit3, Download, Check, Save, UserCheck, Activity, HeartHandshake,
@@ -31,6 +32,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
   onSaveReportCard,
   onNavigate,
 }) => {
+  const { activeSchool, leadershipRoster } = useSchoolSimulation();
   if (!isOpen) return null;
 
   // Helper to extract authoritative or unassessed domain ratings
@@ -224,25 +226,34 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
   );
 
   const getHeaderInfo = () => {
+    const resolvedPrincipal =
+      reportCard.principalName && reportCard.principalName !== 'Not designated'
+        ? reportCard.principalName
+        : arm === 'kindergarten'
+        ? leadershipRoster.headEarlyYears
+        : arm === 'primary'
+        ? leadershipRoster.headmistressPrimary
+        : leadershipRoster.principalName || 'Not designated';
+
     switch (arm) {
       case 'kindergarten':
         return {
-          title: 'BUMMPTECH INTERNATIONAL EARLY YEARS & MONTESSORI ACADEMY',
-          subTitle: 'Montessori & Early Childhood Care and Education (ECCE) Center • Ages 2–5 Years',
-          centerBadge: 'ECCE Approval No: BN/ECCE/2024/091 • Govt. Reg: BN/ED/KG/041',
+          title: `${activeSchool.name.toUpperCase()} — EARLY YEARS & KINDERGARTEN WING`,
+          subTitle: `${activeSchool.lga} LGA (${activeSchool.zone}) • Early Childhood Care & Education (ECCE) • Ages 2–5 Years`,
+          centerBadge: `EMIS Code: ${activeSchool.code} • ECCE Reg: BN/ECCE/${activeSchool.lga.substring(0, 3).toUpperCase()}`,
           subHeadTitle: 'Head of Kindergarten & Early Learning',
-          subHeadName: reportCard.principalName || 'Not designated',
+          subHeadName: resolvedPrincipal || 'Not designated',
           tutorTitle: 'Early Years Lead Educator / Facilitator',
           tutorName: reportCard.formTutorName || 'Not designated',
           ratingSystemName: 'Early Learning Mastery Scale (Exceeding • Proficient • Developing • Emerging)',
         };
       case 'primary':
         return {
-          title: 'BUMMPTECH INTERNATIONAL PRIMARY & BASIC MODEL SCHOOL',
-          subTitle: 'Approved Universal Basic Education (UBE) & Cambridge Primary Model Center • Basic 1 – 6',
-          centerBadge: 'National UBE Center No: BN/UBE/PRI/1042 • Basic 1 – 6 Approved',
-          subHeadTitle: 'Headmistress (Primary Model School)',
-          subHeadName: reportCard.principalName || 'Not designated',
+          title: `${activeSchool.name.toUpperCase()} (${activeSchool.lga.toUpperCase()} LGA)`,
+          subTitle: `Approved Universal Basic Education (SUBEB / UBE) Institution • ${activeSchool.zone} • Basic 1 – 6`,
+          centerBadge: `EMIS Code: ${activeSchool.code} • SUBEB / UBE Approved (${activeSchool.lga} LGA)`,
+          subHeadTitle: leadershipRoster.isPrimarySchool ? leadershipRoster.principalTitle : 'Headmaster / Headmistress (Primary Wing)',
+          subHeadName: resolvedPrincipal || 'Not designated',
           tutorTitle: 'Primary Class Master / Tutor',
           tutorName: reportCard.formTutorName || 'Not designated',
           ratingSystemName: 'Primary Distinction Standard (A+ • A • B • C • D • E • F)',
@@ -250,11 +261,11 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
       case 'secondary':
       default:
         return {
-          title: 'BUMMPTECH INTERNATIONAL COLLEGE (JSS 1 – SSS 3)',
-          subTitle: 'Approved WAEC, NECO, Cambridge IGCSE, SAT & JAMB Examination Center',
-          centerBadge: 'WAEC / NECO Center No: 028491 • JAMB CBT Code: 49021 • BN/MOE/SEC/2021/489',
-          subHeadTitle: 'Principal (Secondary College)',
-          subHeadName: reportCard.principalName || 'Not designated',
+          title: `${activeSchool.name.toUpperCase()} (${activeSchool.lga.toUpperCase()} LGA)`,
+          subTitle: `Approved WAEC, NECO & BECE Secondary Institution • ${activeSchool.zone}`,
+          centerBadge: `EMIS Code: ${activeSchool.code} • ${activeSchool.lga} LGA • Benue State Ministry of Education`,
+          subHeadTitle: leadershipRoster.principalTitle || 'Principal (Secondary College)',
+          subHeadName: resolvedPrincipal || 'Not designated',
           tutorTitle: 'Senior Form Tutor',
           tutorName: reportCard.formTutorName || 'Not designated',
           ratingSystemName: 'West African Standard 9-Point Scale (A1 to F9)',

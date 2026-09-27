@@ -48,12 +48,14 @@ import {
   BENUE_GOVERNMENT_SCHOOLS, 
   getStatewideAggregateKPIs, 
   getSchoolsByLGA, 
-  getLgaMetadata
+  getLgaMetadata,
+  resolveSchoolLeadershipRoster
 } from '../data/benueStateData';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { MinistryUpdatesCommand } from '../components/MinistryUpdatesCommand';
 import { HeadquartersLiveChat } from '../components/HeadquartersLiveChat';
 import { useAuth } from '../context/AuthContext';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 
 interface BenueStateHQPageProps {
@@ -63,6 +65,12 @@ interface BenueStateHQPageProps {
 
 export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStateHQPageProps) {
   const { currentUser, isAuthenticated } = useAuth();
+  const {
+    activeSchool: globalActiveSchool,
+    selectActiveSchool,
+    leadershipRoster: globalLeadershipRoster,
+    setIsLeadershipModalOpen
+  } = useSchoolSimulation();
   // Server-authoritative Authentication Check for Benue State Education Headquarters
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     return isAuthenticated && isUserAuthorizedForWingDisplay(currentUser, 'benue_moe');
@@ -76,8 +84,8 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
   const [telemetryCount, setTelemetryCount] = useState<number>(0);
 
   const [selectedZone, setSelectedZone] = useState<SenatorialZone | 'All'>('All');
-  const [selectedLGA, setSelectedLGA] = useState<BenueLGA>('Makurdi');
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('SCH-MKD-001');
+  const [selectedLGA, setSelectedLGA] = useState<BenueLGA>(() => globalActiveSchool?.lga || 'Makurdi');
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>(() => globalActiveSchool?.id || 'SCH-MKD-001');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeReviewTab, setActiveReviewTab] = useState<'teachers' | 'students' | 'finances' | 'governor-brief' | 'ministry-command' | 'live-chat'>('teachers');
   
@@ -358,10 +366,47 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
     };
   }, [lgaSchools, selectedSchoolId, schoolOverrides]);
 
-  // Authoritative school without synthetic simulation
+  // Authoritative school with active simulation leadership resolved
   const activeSchool = useMemo(() => {
-    return baseSelectedSchool;
-  }, [baseSelectedSchool]);
+    if (globalActiveSchool && globalActiveSchool.id === baseSelectedSchool.id) {
+      return {
+        ...baseSelectedSchool,
+        principalName: globalLeadershipRoster.principalName,
+        principalTitle: globalLeadershipRoster.principalTitle,
+        vicePrincipalAcademic: globalLeadershipRoster.vicePrincipalAcademic,
+        bursarName: globalLeadershipRoster.bursarName,
+        headmistressPrimary: globalLeadershipRoster.headmistressPrimary,
+        headEarlyYears: globalLeadershipRoster.headEarlyYears,
+        examOfficerName: globalLeadershipRoster.examOfficerName
+      };
+    }
+    const resolved = resolveSchoolLeadershipRoster(baseSelectedSchool, null);
+    return {
+      ...baseSelectedSchool,
+      principalName: resolved.principalName,
+      principalTitle: resolved.principalTitle,
+      vicePrincipalAcademic: resolved.vicePrincipalAcademic,
+      bursarName: resolved.bursarName,
+      headmistressPrimary: resolved.headmistressPrimary,
+      headEarlyYears: resolved.headEarlyYears,
+      examOfficerName: resolved.examOfficerName
+    };
+  }, [baseSelectedSchool, globalActiveSchool, globalLeadershipRoster]);
+
+  // Keep local LGA & school selection synced when globalActiveSchool changes via modal
+  React.useEffect(() => {
+    if (globalActiveSchool) {
+      setSelectedLGA(globalActiveSchool.lga);
+      setSelectedSchoolId(globalActiveSchool.id);
+    }
+  }, [globalActiveSchool?.id, globalActiveSchool?.lga]);
+
+  const handlePickSchool = (school: GovSchool) => {
+    setSelectedLGA(school.lga);
+    setSelectedSchoolId(school.id);
+    selectActiveSchool(school);
+    onSelectActiveSchool?.(school);
+  };
 
   // Statewide aggregate KPIs
   const stateSummary = useMemo(() => getStatewideAggregateKPIs(), []);
@@ -397,7 +442,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
     setSchoolCategoryFilter('All');
     const schools = getSchoolsByLGA(lga);
     if (schools.length > 0) {
-      setSelectedSchoolId(schools[0].id);
+      handlePickSchool(schools[0]);
     } else {
       setSelectedSchoolId(`SCH-${lga.substring(0, 3).toUpperCase()}-001`);
     }
@@ -749,7 +794,12 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                     id="school-native-select-dropdown"
                     value={activeSchool.id}
                     onChange={(e) => {
-                      setSelectedSchoolId(e.target.value);
+                      const picked = lgaSchools.find((s) => s.id === e.target.value);
+                      if (picked) {
+                        handlePickSchool(picked);
+                      } else {
+                        setSelectedSchoolId(e.target.value);
+                      }
                       setIsSchoolDropdownOpen(false);
                     }}
                     className="w-full bg-slate-900 text-white font-bold text-xs sm:text-sm rounded-xl p-3.5 pr-10 border-2 border-emerald-600 shadow-sm focus:ring-2 focus:ring-amber-400 cursor-pointer appearance-none"
@@ -887,7 +937,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                             <div
                               key={sch.id}
                               onClick={() => {
-                                setSelectedSchoolId(sch.id);
+                                handlePickSchool(sch);
                                 setIsSchoolDropdownOpen(false);
                               }}
                               className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 ${
@@ -1056,13 +1106,24 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => setIsGovernorBriefModalOpen(true)}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      <FileText className="h-4 w-4" />
-                      <span>Governor Brief</span>
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setIsLeadershipModalOpen(true)}
+                        className="px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
+                        title="Configure school leadership or simulation options for this institution"
+                      >
+                        <Sliders className="h-4 w-4" />
+                        <span>Simulation Leadership Options</span>
+                      </button>
+
+                      <button
+                        onClick={() => setIsGovernorBriefModalOpen(true)}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <FileText className="h-4 w-4" />
+                        <span>Governor Brief</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

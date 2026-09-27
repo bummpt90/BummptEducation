@@ -23,8 +23,12 @@ import { FeeReceiptModal } from './components/FeeReceiptModal';
 import { AiRemarkModal } from './components/AiRemarkModal';
 import { ParentReportPortalModal } from './components/ParentReportPortalModal';
 import { AuthLoginModal } from './components/AuthLoginModal';
+import { ActiveSchoolContextBar } from './components/ActiveSchoolContextBar';
+import { SchoolLeadershipSimulationModal } from './components/SchoolLeadershipSimulationModal';
 import { useAuth } from './context/AuthContext';
 import { useData } from './context/DataContext';
+import { SchoolSimulationProvider } from './context/SchoolSimulationContext';
+import { BENUE_GOVERNMENT_SCHOOLS, getGovSchoolById } from './data/benueStateData';
 import { GraduationCap, ShieldCheck } from 'lucide-react';
 import { 
   ALL_SUBJECTS as INITIAL_SUBJECTS, 
@@ -37,7 +41,8 @@ import {
   FeePayment,
   ClassLevel,
   Term,
-  AcademicYear
+  AcademicYear,
+  GovSchool
 } from './types';
 
 export function App() {
@@ -47,6 +52,29 @@ export function App() {
   const [activeSubTab, setActiveSubTab] = useState<string | undefined>(undefined);
   const [activeParam, setActiveParam] = useState<any>(undefined);
   const [userRole, setUserRole] = useState<UserRole>('principal');
+
+  // Active Statewide School Selection (across 23 Benue LGAs)
+  const [activeSchool, setActiveSchool] = useState<GovSchool>(() => {
+    try {
+      const savedId = localStorage.getItem('bummpt_ActiveSchoolId_v1');
+      if (savedId) {
+        const found = getGovSchoolById(savedId);
+        if (found) return found;
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+    return BENUE_GOVERNMENT_SCHOOLS[0];
+  });
+
+  const handleSelectActiveSchool = (school: GovSchool) => {
+    setActiveSchool(school);
+    try {
+      localStorage.setItem('bummpt_ActiveSchoolId_v1', school.id);
+    } catch {
+      // Ignore storage write errors
+    }
+  };
 
   // Synchronize userRole with verified server identity
   useEffect(() => {
@@ -152,42 +180,50 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white" id="bummpt-education-app">
-      {/* Global Navigation Header */}
-      <Header
-        activePage={activePage}
-        onNavigate={handleNavigate}
-        userRole={userRole}
-        onRoleChange={setUserRole}
-        academicYear={academicYear}
-        onAcademicYearChange={setAcademicYear}
-        selectedTerm={selectedTerm}
-        onTermChange={setSelectedTerm}
-        selectedClass={selectedClass}
-        onClassChange={setSelectedClass}
-        onOpenSecurityModal={() => handleNavigate('admin', 'security')}
-        onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
-        onOpenAuthModal={() => setIsGlobalAuthModalOpen(true)}
-      />
+    <SchoolSimulationProvider
+      activeSchool={activeSchool}
+      onSelectActiveSchool={handleSelectActiveSchool}
+    >
+      <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans antialiased selection:bg-blue-600 selection:text-white" id="bummpt-education-app">
+        {/* Global Navigation Header */}
+        <Header
+          activePage={activePage}
+          onNavigate={handleNavigate}
+          userRole={userRole}
+          onRoleChange={setUserRole}
+          academicYear={academicYear}
+          onAcademicYearChange={setAcademicYear}
+          selectedTerm={selectedTerm}
+          onTermChange={setSelectedTerm}
+          selectedClass={selectedClass}
+          onClassChange={setSelectedClass}
+          onOpenSecurityModal={() => handleNavigate('admin', 'security')}
+          onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
+          onOpenAuthModal={() => setIsGlobalAuthModalOpen(true)}
+        />
 
-      {/* Main Dynamic Viewport */}
-      <main className="flex-1">
-        {activePage === 'home' && (
-          <HomePage
-            onNavigate={handleNavigate}
-            students={students}
-            assessments={assessments}
-            onOpenReportCardModal={handleOpenReportCard}
-            onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
-            onOpenSecurityModal={() => setIsGlobalAuthModalOpen(true)}
-          />
-        )}
+        {/* Statewide Active School & Dynamic Leadership Context Bar */}
+        <ActiveSchoolContextBar />
 
-        {(activePage === 'state-hq' || activePage === 'benue-state-hq') && (
-          <BenueStateHQPage
-            onNavigate={handleNavigate}
-          />
-        )}
+        {/* Main Dynamic Viewport */}
+        <main className="flex-1">
+          {activePage === 'home' && (
+            <HomePage
+              onNavigate={handleNavigate}
+              students={students}
+              assessments={assessments}
+              onOpenReportCardModal={handleOpenReportCard}
+              onOpenParentPortalModal={() => setIsGlobalParentPortalOpen(true)}
+              onOpenSecurityModal={() => setIsGlobalAuthModalOpen(true)}
+            />
+          )}
+
+          {(activePage === 'state-hq' || activePage === 'benue-state-hq') && (
+            <BenueStateHQPage
+              onNavigate={handleNavigate}
+              onSelectActiveSchool={handleSelectActiveSchool}
+            />
+          )}
 
         {(activePage === 'academic' || activePage === 'attendance') && (
           <AcademicDashboard
@@ -334,11 +370,15 @@ export function App() {
         onClose={() => setIsGlobalAuthModalOpen(false)}
       />
 
+      {/* Statewide School & Simulation Leadership Configurator Modal */}
+      <SchoolLeadershipSimulationModal />
+
       {/* Global Footer */}
       <Footer
         onNavigate={handleNavigate}
       />
     </div>
+    </SchoolSimulationProvider>
   );
 }
 

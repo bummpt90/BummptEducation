@@ -25,6 +25,7 @@ import {
   Info
 } from 'lucide-react';
 import { NavigationPage, Student, StudentReportCard } from '../types';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import { 
   SAMPLE_EARLY_YEARS_STUDENT, 
   SAMPLE_EARLY_YEARS_REPORT_CARD 
@@ -39,6 +40,7 @@ export const EarlyChildhoodPage: React.FC<EarlyChildhoodPageProps> = ({
   onNavigate,
   onOpenReportCardModal
 }) => {
+  const { activeSchool, leadershipRoster } = useSchoolSimulation();
   const [selectedMilestoneDomain, setSelectedMilestoneDomain] = useState<string>('Communication & Phonics');
   const [interactiveSkillIndex, setInteractiveSkillIndex] = useState<number>(0);
   const [interactiveMastery, setInteractiveMastery] = useState<'Exceeding' | 'Proficient' | 'Developing' | 'Emerging'>('Exceeding');
@@ -51,7 +53,10 @@ export const EarlyChildhoodPage: React.FC<EarlyChildhoodPageProps> = ({
 
   const handleLaunchSampleReportCard = () => {
     if (onOpenReportCardModal) {
-      onOpenReportCardModal(SAMPLE_EARLY_YEARS_STUDENT, SAMPLE_EARLY_YEARS_REPORT_CARD);
+      onOpenReportCardModal(SAMPLE_EARLY_YEARS_STUDENT, {
+        ...SAMPLE_EARLY_YEARS_REPORT_CARD,
+        principalName: leadershipRoster.headEarlyYears,
+      });
     } else {
       navigateTo('academic', 'reports');
     }
@@ -129,25 +134,25 @@ export const EarlyChildhoodPage: React.FC<EarlyChildhoodPageProps> = ({
 
   const educators = [
     {
-      name: 'Mrs. Abigail Folashade Balogun',
-      role: 'Head of Early Childhood & Kindergarten Wing (Sub-Head)',
-      qualifications: 'M.Ed Early Childhood Education, Montessori Certified Lead, B.Ed Guidance & Counseling',
-      email: 'head.kindergarten@bummpteducation.edu.ng',
-      experience: '14+ Years in Early Years Pedagogical Leadership'
+      name: leadershipRoster.headEarlyYears,
+      role: `Head of Early Childhood & Kindergarten Wing (${activeSchool.name})`,
+      qualifications: 'M.Ed / B.Ed Early Childhood Education, Montessori & TRCN Certified Lead',
+      email: `eccde.${activeSchool.code.toLowerCase()}@subeb.benue.gov.ng`,
+      experience: `Early Years Pedagogical Lead — ${activeSchool.lga} LGA`
     },
     {
-      name: 'Miss Rita Nguveren Iorfa',
+      name: `Lead KG 3 Transition Educator (${activeSchool.lga})`,
       role: 'Lead Educator (KG 3 - Pre-Primary Transition Class)',
       qualifications: 'B.Ed Early Childhood Care & Education, TRCN Certified',
-      email: 'r.iorfa@bummpteducation.edu.ng',
-      experience: '7+ Years in Phonics & Primary Readiness'
+      email: `kg3.${activeSchool.code.toLowerCase()}@subeb.benue.gov.ng`,
+      experience: 'Phonics & Primary Readiness Specialist'
     },
     {
-      name: 'Mrs. Comfort Chisom Eze',
+      name: `Early Years Sensory Facilitator (${activeSchool.lga})`,
       role: 'Early Years Phonics & Sensory Facilitator (KG 1 & 2)',
       qualifications: 'NCE Early Childhood Education, B.A. (Ed) English',
-      email: 'c.eze@bummpteducation.edu.ng',
-      experience: '6+ Years in Toddler Sensory Guidance'
+      email: `kg1.${activeSchool.code.toLowerCase()}@subeb.benue.gov.ng`,
+      experience: 'Toddler Sensory & Numeracy Guidance'
     },
   ];
 
@@ -229,20 +234,22 @@ export const EarlyChildhoodPage: React.FC<EarlyChildhoodPageProps> = ({
           <div className="lg:col-span-4">
             <div className="rounded-2xl bg-purple-900/40 p-5 border border-purple-500/30 backdrop-blur-sm space-y-3">
               <div className="flex items-center gap-3 border-b border-purple-500/20 pb-3">
-                <div className="h-12 w-12 rounded-xl bg-purple-600 flex items-center justify-center text-white font-black text-lg shadow-md">
-                  AB
+                <div className="h-12 w-12 rounded-xl bg-purple-600 flex items-center justify-center text-white font-black text-sm shadow-md">
+                  ECCE
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-mono text-purple-300 font-bold block">Sub-Head Officer</span>
-                  <h3 className="text-sm font-bold text-white">Mrs. Abigail Balogun</h3>
-                  <p className="text-[11px] text-purple-200">Head of Early Childhood Wing</p>
+                  <span className="text-[10px] uppercase font-mono text-purple-300 font-bold block">
+                    Sub-Head Officer ({activeSchool.lga} LGA)
+                  </span>
+                  <h3 className="text-sm font-bold text-white">{leadershipRoster.headEarlyYears}</h3>
+                  <p className="text-[11px] text-purple-200">Early Childhood Wing — {activeSchool.name}</p>
                 </div>
               </div>
 
               <div className="text-[11px] text-purple-200 space-y-1.5 leading-tight">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Reporting Line:</span>
-                  <strong className="text-white">General Administrator</strong>
+                  <strong className="text-white">{leadershipRoster.principalName}</strong>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Grading Scale:</span>

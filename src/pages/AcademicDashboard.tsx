@@ -95,6 +95,7 @@ import { AttendancePage } from './AttendancePage';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 
 interface AcademicDashboardProps {
@@ -195,6 +196,13 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
 
   const { currentUser, isAuthenticated, hasRole, hasPermission } = useAuth();
   const { classes, fetchClassDomainAssessments, saveStudentDomainAssessment } = useData();
+  const { leadershipRoster } = useSchoolSimulation();
+
+  const getActiveSchoolLeaderForArm = useCallback((arm?: string) => {
+    if (arm === 'kindergarten') return leadershipRoster.headEarlyYears;
+    if (arm === 'primary') return leadershipRoster.headmistressPrimary;
+    return leadershipRoster.principalName;
+  }, [leadershipRoster]);
 
   const canEnterDomains = hasPermission('assessments.enter') || hasRole('teacher', 'principal', 'vice_principal', 'headmistress', 'head_kindergarten', 'super_admin', 'state_officer', 'exam_officer');
   const canEditPrincipalRemark = hasRole('principal', 'headmistress', 'head_kindergarten', 'super_admin', 'state_officer');
@@ -676,7 +684,7 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
         guidanceCounselorRemark: studentDomain?.guidanceCounselorRemark || '',
         guidanceCounselorName: studentDomain?.guidanceCounselorName || '',
         principalRemark: studentDomain?.principalRemark || principalRemark,
-        principalName: studentDomain?.principalName || 'Not designated',
+        principalName: studentDomain?.principalName || getActiveSchoolLeaderForArm(stuArm) || 'Not designated',
         promotionalStatus: item.overallPercentage >= 50 ? 'Promoted to Next Class' : 'Repeat Class',
         nextTermBegins: 'Not published',
         approvalStatus: 'Approved & Published',
@@ -685,7 +693,7 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
     });
 
     return resultMap;
-  }, [classStudents, classSubjects, localAssessments, selectedTerm, selectedClass, selectedSession, currentArm, localDomains]);
+  }, [classStudents, classSubjects, localAssessments, selectedTerm, selectedClass, selectedSession, currentArm, localDomains, getActiveSchoolLeaderForArm]);
 
   // Helper to get or create report card for a student
   const getStudentReportCard = (student: Student): StudentReportCard => {
@@ -744,7 +752,7 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({
       guidanceCounselorRemark: localDomains[student.id]?.guidanceCounselorRemark || '',
       guidanceCounselorName: localDomains[student.id]?.guidanceCounselorName || '',
       principalRemark: localDomains[student.id]?.principalRemark || '',
-      principalName: localDomains[student.id]?.principalName || 'Not designated',
+      principalName: localDomains[student.id]?.principalName || getActiveSchoolLeaderForArm(stuArm) || 'Not designated',
       promotionalStatus: 'N/A',
       nextTermBegins: 'Not published',
       approvalStatus: 'Draft',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Copy, Check, RefreshCw, X } from 'lucide-react';
 import { Student, StudentReportCard, getSchoolArm } from '../types';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 
 interface AiRemarkModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export const AiRemarkModal: React.FC<AiRemarkModalProps> = ({
   reportCard,
   onApplyRemark,
 }) => {
+  const { leadershipRoster } = useSchoolSimulation();
   const arm = student.arm || getSchoolArm(student.currentClass);
   const [targetType, setTargetType] = useState<'tutor' | 'principal'>('tutor');
   const [tone, setTone] = useState<'encouraging' | 'rigorous' | 'balanced' | 'distinction'>('balanced');
@@ -122,9 +124,9 @@ export const AiRemarkModal: React.FC<AiRemarkModalProps> = ({
   };
 
   const getSubHeadLabel = () => {
-    if (arm === 'kindergarten') return 'Head of Early Childhood (Mrs. Abigail Balogun)';
-    if (arm === 'primary') return 'Headmistress (Mrs. Grace Iveren Shima)';
-    return 'Principal (Dr. Mrs. Grace Nkechi Okafor)';
+    if (arm === 'kindergarten') return `Head of Early Childhood (${leadershipRoster.headEarlyYears})`;
+    if (arm === 'primary') return `Headmaster / Headmistress (${leadershipRoster.headmistressPrimary})`;
+    return `${leadershipRoster.principalTitle} (${leadershipRoster.principalName})`;
   };
 
   const getTutorLabel = () => {

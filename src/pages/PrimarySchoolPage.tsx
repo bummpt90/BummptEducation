@@ -23,6 +23,7 @@ import {
   Brain
 } from 'lucide-react';
 import { NavigationPage, Student, StudentReportCard } from '../types';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import {
   SAMPLE_PRIMARY_STUDENT,
   SAMPLE_PRIMARY_REPORT_CARD
@@ -37,6 +38,7 @@ export const PrimarySchoolPage: React.FC<PrimarySchoolPageProps> = ({
   onNavigate,
   onOpenReportCardModal
 }) => {
+  const { activeSchool, leadershipRoster } = useSchoolSimulation();
   const [selectedCurriculumTier, setSelectedCurriculumTier] = useState<'lower' | 'upper'>('upper');
 
   const navigateTo = (page: NavigationPage, subTab?: string, param?: any) => {
@@ -47,7 +49,10 @@ export const PrimarySchoolPage: React.FC<PrimarySchoolPageProps> = ({
 
   const handleLaunchSampleReportCard = () => {
     if (onOpenReportCardModal) {
-      onOpenReportCardModal(SAMPLE_PRIMARY_STUDENT, SAMPLE_PRIMARY_REPORT_CARD);
+      onOpenReportCardModal(SAMPLE_PRIMARY_STUDENT, {
+        ...SAMPLE_PRIMARY_REPORT_CARD,
+        principalName: leadershipRoster.headmistressPrimary,
+      });
     } else {
       navigateTo('academic', 'reports');
     }
@@ -81,32 +86,32 @@ export const PrimarySchoolPage: React.FC<PrimarySchoolPageProps> = ({
 
   const faculty = [
     {
-      name: 'Mrs. Grace Iveren Shima',
-      role: 'Headmistress & Sub-Head (Primary Wing)',
-      qualifications: 'M.Ed Primary School Administration, B.Ed Primary Education Studies, TRCN',
-      email: 'headmistress@bummpteducation.edu.ng',
-      scope: 'Universal Basic Education 1–6 Supervision, Curriculum Quality & Common Entrance Lead'
+      name: leadershipRoster.headmistressPrimary,
+      role: `Headmaster / Headmistress (Primary Wing — ${activeSchool.name})`,
+      qualifications: 'M.Ed / B.Ed Primary Education Studies, NCE, TRCN Certified',
+      email: `primary.head@${activeSchool.code.toLowerCase()}.subeb.benue.gov.ng`,
+      scope: `Universal Basic Education 1–6 Supervision (${activeSchool.lga} LGA) & Common Entrance Lead`
     },
     {
-      name: 'Mr. Moses Terfa Aondo',
-      role: 'Basic 6 Form Tutor & Common Entrance Lead',
-      qualifications: 'B.Sc. (Ed) Mathematics, TRCN Certified',
-      email: 'm.aondo@bummpteducation.edu.ng',
+      name: leadershipRoster.vicePrincipalAcademic,
+      role: 'Assistant Head Teacher & Basic 6 Common Entrance Lead',
+      qualifications: 'B.Sc. (Ed) Mathematics / Primary Education, TRCN Certified',
+      email: `vp.primary@${activeSchool.code.toLowerCase()}.subeb.benue.gov.ng`,
       scope: 'Quantitative Reasoning, Primary Mathematics & NCEE Prep'
     },
     {
-      name: 'Mrs. Hadiza Abubakar',
-      role: 'Basic 3 Form Tutor & Primary Literacy Lead',
+      name: leadershipRoster.examOfficerName,
+      role: 'Primary Assessment & Literacy Coordinator',
       qualifications: 'B.A. (Ed) English, NCE Primary Education',
-      email: 'h.abubakar@bummpteducation.edu.ng',
-      scope: 'English Studies, Verbal Reasoning & Remedial Reading'
+      email: `exams@${activeSchool.code.toLowerCase()}.subeb.benue.gov.ng`,
+      scope: 'English Studies, Verbal Reasoning & Continuous Assessment'
     },
     {
-      name: 'Mr. Jude Chukwudi Okafor',
-      role: 'Primary STEM, ICT & Robotics Specialist',
-      qualifications: 'B.Tech Computer Science, PGDE',
-      email: 'j.okafor@bummpteducation.edu.ng',
-      scope: 'Elementary Coding, Robotics Kits & Basic Science Labs'
+      name: leadershipRoster.bursarName,
+      role: 'LGEA / School Bursary & Resources Officer',
+      qualifications: 'B.Sc / HND Accounting, CNA / ANAN',
+      email: `bursar@${activeSchool.code.toLowerCase()}.subeb.benue.gov.ng`,
+      scope: 'SUBEB Textbooks, Instructional Kits & School Feeding Accounts'
     }
   ];
 
@@ -145,7 +150,7 @@ export const PrimarySchoolPage: React.FC<PrimarySchoolPageProps> = ({
             </h1>
 
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed max-w-3xl">
-              Presided over by Sub-Head <strong>Mrs. Grace Iveren Shima</strong> (Headmistress) under Central Governance (<strong>Dr. Matthew Ternenge Beeun</strong>), our Primary Arm delivers rigorous 9-year basic education foundations, mental arithmetic, STEM discovery, verbal/quantitative reasoning, and high pass-rates in the National Common Entrance Examination (NCEE).
+              Presided over by <strong>{leadershipRoster.headmistressPrimary}</strong> at <strong>{activeSchool.name}</strong> ({activeSchool.lga} LGA) under the oversight of <strong>{leadershipRoster.generalAdministrator}</strong>, our Primary Arm delivers rigorous basic education foundations, mental arithmetic, STEM discovery, verbal/quantitative reasoning, and high pass-rates in the National Common Entrance Examination (NCEE).
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -188,20 +193,22 @@ export const PrimarySchoolPage: React.FC<PrimarySchoolPageProps> = ({
           <div className="lg:col-span-4">
             <div className="rounded-2xl bg-emerald-900/40 p-5 border border-emerald-500/30 backdrop-blur-sm space-y-3">
               <div className="flex items-center gap-3 border-b border-emerald-500/20 pb-3">
-                <div className="h-12 w-12 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-lg shadow-md">
-                  GS
+                <div className="h-12 w-12 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-sm shadow-md">
+                  UBE
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-mono text-emerald-300 font-bold block">Sub-Head Officer</span>
-                  <h3 className="text-sm font-bold text-white">Mrs. Grace Iveren Shima</h3>
-                  <p className="text-[11px] text-emerald-200">Headmistress Basic Education</p>
+                  <span className="text-[10px] uppercase font-mono text-emerald-300 font-bold block">
+                    Primary Wing Leader ({activeSchool.lga} LGA)
+                  </span>
+                  <h3 className="text-sm font-bold text-white">{leadershipRoster.headmistressPrimary}</h3>
+                  <p className="text-[11px] text-emerald-200">{activeSchool.name}</p>
                 </div>
               </div>
 
               <div className="text-[11px] text-emerald-200 space-y-1.5 leading-tight">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Reporting Line:</span>
-                  <strong className="text-white">General Administrator</strong>
+                  <span className="text-slate-400">LGA Overseer:</span>
+                  <strong className="text-white">{leadershipRoster.generalAdministrator}</strong>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Assessment System:</span>

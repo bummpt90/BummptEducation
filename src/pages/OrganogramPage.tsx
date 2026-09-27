@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { ORGANOGRAM_DATA } from '../data/reference/organogram';
+import React, { useState, useEffect } from 'react';
 import { OrganogramNode, NavigationPage } from '../types';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import { 
   GitFork, 
   ShieldCheck, 
@@ -18,7 +18,8 @@ import {
   Layers, 
   ArrowDown,
   ExternalLink,
-  ArrowRight
+  ArrowRight,
+  Sliders
 } from 'lucide-react';
 
 interface OrganogramPageProps {
@@ -26,7 +27,20 @@ interface OrganogramPageProps {
 }
 
 export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) => {
-  const [selectedNode, setSelectedNode] = useState<OrganogramNode>(ORGANOGRAM_DATA[0]);
+  const {
+    activeSchool,
+    leadershipRoster,
+    dynamicOrganogram,
+    setIsLeadershipModalOpen
+  } = useSchoolSimulation();
+  const [selectedNodeId, setSelectedNodeId] = useState<string>(dynamicOrganogram[0]?.id || 'ORG-01');
+  const selectedNode = dynamicOrganogram.find((n) => n.id === selectedNodeId) || dynamicOrganogram[0];
+
+  useEffect(() => {
+    if (!dynamicOrganogram.some((n) => n.id === selectedNodeId) && dynamicOrganogram[0]) {
+      setSelectedNodeId(dynamicOrganogram[0].id);
+    }
+  }, [dynamicOrganogram, selectedNodeId]);
 
   const navigateTo = (page: NavigationPage) => {
     if (onNavigate) {
@@ -37,31 +51,38 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
   const wings = [
     { 
       id: 'Executive', 
-      label: 'Central Executive Governance & General Administration', 
+      label: 'Central Executive Governance & LGA Oversight', 
       icon: Crown, 
       color: 'text-amber-500 bg-amber-50 border-amber-200',
       page: 'about' as NavigationPage
     },
     { 
-      id: 'Early Childhood Wing', 
+      id: 'Early Years Wing', 
       label: 'Early Childhood & Kindergarten Arm (KG 1 - 3)', 
       icon: Baby, 
       color: 'text-purple-500 bg-purple-50 border-purple-200',
       page: 'kindergarten-arm' as NavigationPage
     },
     { 
-      id: 'Primary School Wing', 
+      id: 'Primary Wing', 
       label: 'Primary School / Basic Education Arm (Basic 1 - 6)', 
       icon: BookOpen, 
       color: 'text-emerald-500 bg-emerald-50 border-emerald-200',
       page: 'primary-arm' as NavigationPage
     },
     { 
-      id: 'Secondary College Wing', 
+      id: 'Secondary Academic Wing', 
       label: 'Secondary College Arm (JSS 1 - SSS 3)', 
       icon: School, 
       color: 'text-blue-500 bg-blue-50 border-blue-200',
       page: 'secondary-arm' as NavigationPage
+    },
+    { 
+      id: 'Central Administrative Wing', 
+      label: 'Bursary, Registry & Institutional Operations', 
+      icon: Briefcase, 
+      color: 'text-slate-600 bg-slate-50 border-slate-200',
+      page: 'admin' as NavigationPage
     },
     { 
       id: 'Student Leadership', 
@@ -82,38 +103,55 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8" id="organogram-page-root">
       {/* Title */}
-      <div className="border-b border-slate-200 pb-6">
-        <div className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-200">
-          <GitFork className="h-3.5 w-3.5" />
-          <span>Integrated Multi-Arm Educational Organogram</span>
+      <div className="border-b border-slate-200 pb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-200">
+            <GitFork className="h-3.5 w-3.5" />
+            <span>{activeSchool.lga} LGA • {activeSchool.code} Institutional Organogram</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-1">
+            {activeSchool.name} — Leadership Hierarchy
+          </h1>
+          <p className="text-xs text-slate-600 max-w-3xl leading-relaxed mt-1">
+            Displaying the active institutional leadership structure for <strong>{activeSchool.name}</strong> in <strong>{activeSchool.lga} Local Government Area</strong> ({activeSchool.zone}). Select any school across the 23 LGAs or configure simulation leadership options.
+          </p>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-1">
-          Institutional Governance & Multi-Wing Leadership Hierarchy
-        </h1>
-        <p className="text-xs text-slate-600 max-w-3xl leading-relaxed mt-1">
-          Our unified school system incorporates three distinct pedagogical arms—Kindergarten (KG 1–3), Primary (Basic 1–6), and Secondary (JSS 1–SSS 3)—governed through the Central General Administrator with autonomous sub-heads.
-        </p>
+        <button
+          onClick={() => setIsLeadershipModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs transition cursor-pointer shrink-0"
+        >
+          <Sliders className="h-4 w-4" />
+          <span>Switch School / Simulation Leaders</span>
+        </button>
       </div>
 
       {/* Visual Hierarchy Flow Chart Banner */}
       <div className="p-6 bg-slate-900 text-white rounded-3xl border border-slate-800 shadow-xl space-y-6">
         <div className="text-center max-w-2xl mx-auto space-y-1">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">Central Governance Architecture</span>
-          <h2 className="text-xl font-bold">Unified School System Administrative Nexus</h2>
-          <p className="text-xs text-slate-400">Single governing apex supervising three specialized educational arms</p>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">
+            {activeSchool.lga} LGA • {activeSchool.category}
+          </span>
+          <h2 className="text-xl font-bold">{activeSchool.name} Administrative Nexus</h2>
+          <p className="text-xs text-slate-400">
+            LGA Supervisory Authority & School-Level Leadership Roster
+          </p>
         </div>
 
         {/* Top Node: Board & General Admin */}
         <div className="flex flex-col items-center space-y-4">
           <div className="p-4 bg-slate-800 rounded-2xl border border-amber-400/40 text-center max-w-md w-full shadow-lg">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Central Apex</span>
-            <h3 className="font-extrabold text-sm text-white">Board of Governors & General Administrator</h3>
-            <p className="text-xs text-slate-300">Dr. Matthew Ternenge Beeun (General Administrator)</p>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+              {activeSchool.lga} LGA & Ministry Oversight
+            </span>
+            <h3 className="font-extrabold text-sm text-white">
+              LGA Education Authority & Institutional Overseer
+            </h3>
+            <p className="text-xs text-slate-300">{leadershipRoster.generalAdministrator}</p>
             <button
-              onClick={() => navigateTo('about')}
+              onClick={() => setIsLeadershipModalOpen(true)}
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-amber-300 hover:text-amber-200 transition cursor-pointer"
             >
-              <span>View Executive Profile</span>
+              <span>Configure Simulation Leadership Options</span>
               <ArrowRight className="h-3 w-3" />
             </button>
           </div>
@@ -128,8 +166,8 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-900 text-purple-200 inline-block">
                   Kindergarten Arm (KG 1-3)
                 </span>
-                <h4 className="font-bold text-xs text-white">Sub-Head: Mrs. Abigail Balogun</h4>
-                <p className="text-[11px] text-purple-200">Head of Early Childhood</p>
+                <h4 className="font-bold text-xs text-white">Sub-Head: {leadershipRoster.headEarlyYears}</h4>
+                <p className="text-[11px] text-purple-200">Head of Early Childhood ({activeSchool.lga})</p>
                 <div className="pt-2 border-t border-purple-800/60 text-[10px] text-slate-300">
                   Montessori, Phonics, Sensory Discovery & Early Numeracy
                 </div>
@@ -150,8 +188,8 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-900 text-emerald-200 inline-block">
                   Primary School Arm (Basic 1-6)
                 </span>
-                <h4 className="font-bold text-xs text-white">Sub-Head: Mrs. Grace Iveren Shima</h4>
-                <p className="text-[11px] text-emerald-200">Headmistress Basic Education</p>
+                <h4 className="font-bold text-xs text-white">Sub-Head: {leadershipRoster.headmistressPrimary}</h4>
+                <p className="text-[11px] text-emerald-200">Headmaster / Headmistress Basic Education</p>
                 <div className="pt-2 border-t border-emerald-800/60 text-[10px] text-slate-300">
                   UBE Curriculum, STEM Labs, Reasoning & NCEE Lead
                 </div>
@@ -172,8 +210,10 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-900 text-blue-200 inline-block">
                   Secondary College Arm (JSS 1 - SSS 3)
                 </span>
-                <h4 className="font-bold text-xs text-white">Sub-Head: Dr. (Mrs.) Grace Nkechi Okafor</h4>
-                <p className="text-[11px] text-blue-200">Principal (Ph.D)</p>
+                <h4 className="font-bold text-xs text-white">
+                  {leadershipRoster.principalTitle}: {leadershipRoster.principalName}
+                </h4>
+                <p className="text-[11px] text-blue-200">VP: {leadershipRoster.vicePrincipalAcademic}</p>
                 <div className="pt-2 border-t border-blue-800/60 text-[10px] text-slate-300">
                   WAEC, NECO, Cambridge IGCSE, SAT & JAMB Center
                 </div>
@@ -217,7 +257,7 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
         <div className="lg:col-span-7 space-y-6">
           {wings.map((w) => {
             const WingIcon = w.icon;
-            const nodesInWing = ORGANOGRAM_DATA.filter((n) => n.wing === w.id);
+            const nodesInWing = dynamicOrganogram.filter((n) => n.wing === w.id);
 
             return (
               <div key={w.id} className="rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden">
@@ -243,7 +283,7 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
                     return (
                       <button
                         key={node.id}
-                        onClick={() => setSelectedNode(node)}
+                        onClick={() => setSelectedNodeId(node.id)}
                         className={`w-full text-left p-3 rounded-xl border transition flex items-center justify-between group cursor-pointer ${
                           isSelected
                             ? 'bg-blue-50/80 border-blue-300 shadow-xs ring-1 ring-blue-400'
@@ -353,8 +393,8 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
             <tbody className="divide-y divide-slate-100">
               <tr className="hover:bg-slate-50">
                 <td className="p-3 font-bold text-purple-900">Kindergarten (KG 1 - 3)</td>
-                <td className="p-3 font-semibold text-slate-800">Mrs. Abigail Folashade Balogun</td>
-                <td className="p-3 text-slate-600">General Administrator</td>
+                <td className="p-3 font-semibold text-slate-800">{leadershipRoster.headEarlyYears}</td>
+                <td className="p-3 text-slate-600">{leadershipRoster.generalAdministrator}</td>
                 <td className="p-3 text-slate-600">Early Learning Milestones, Sensory Development, Phonics & Transition to Basic 1</td>
                 <td className="p-3">
                   <button
@@ -367,8 +407,8 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
               </tr>
               <tr className="hover:bg-slate-50">
                 <td className="p-3 font-bold text-emerald-900">Primary School (Basic 1 - 6)</td>
-                <td className="p-3 font-semibold text-slate-800">Mrs. Grace Iveren Shima</td>
-                <td className="p-3 text-slate-600">General Administrator</td>
+                <td className="p-3 font-semibold text-slate-800">{leadershipRoster.headmistressPrimary}</td>
+                <td className="p-3 text-slate-600">{leadershipRoster.generalAdministrator}</td>
                 <td className="p-3 text-slate-600">Universal Basic Education (UBE 1-6), Distinction Scale (A+ to F), National Common Entrance (NCEE)</td>
                 <td className="p-3">
                   <button
@@ -381,8 +421,8 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
               </tr>
               <tr className="hover:bg-slate-50">
                 <td className="p-3 font-bold text-blue-900">Secondary College (JSS 1 - SSS 3)</td>
-                <td className="p-3 font-semibold text-slate-800">Dr. (Mrs.) Grace Nkechi Okafor</td>
-                <td className="p-3 text-slate-600">General Administrator</td>
+                <td className="p-3 font-semibold text-slate-800">{leadershipRoster.principalName}</td>
+                <td className="p-3 text-slate-600">{leadershipRoster.generalAdministrator}</td>
                 <td className="p-3 text-slate-600">BECE / Junior WAEC, WAEC WASSCE, NECO SSCE, Cambridge IGCSE, SAT & JAMB UTME</td>
                 <td className="p-3">
                   <button

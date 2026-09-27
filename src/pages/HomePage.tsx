@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationPage, Student, AssessmentScore, StudentReportCard, ClassLevel, Announcement } from '../types';
+import { useSchoolSimulation } from '../context/SchoolSimulationContext';
 import { 
   GraduationCap, 
   Award, 
@@ -51,6 +52,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onOpenParentPortalModal,
   onOpenSecurityModal
 }) => {
+  const { activeSchool, leadershipRoster } = useSchoolSimulation();
   const [announcementFilter, setAnnouncementFilter] = useState<'All' | 'Academic' | 'Administrative' | 'Sports & Events' | 'Examination'>('All');
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState<boolean>(true);
@@ -141,9 +143,9 @@ export const HomePage: React.FC<HomePageProps> = ({
           physicalAgility: 0,
         },
         formTutorRemark: '',
-        formTutorName: 'Not designated',
+        formTutorName: leadershipRoster.seniorFormTutor,
         principalRemark: '',
-        principalName: 'Not designated',
+        principalName: leadershipRoster.principalName,
         attendanceTotalDays: undefined,
         attendancePresent: undefined,
         promotionalStatus: 'N/A',
@@ -502,7 +504,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     Ages 2 - 5
                   </span>
                 </div>
-                <span className="text-[10px] font-mono uppercase text-purple-700 font-bold block mb-1">Sub-Head: Mrs. Abigail Balogun</span>
+                <span className="text-[10px] font-mono uppercase text-purple-700 font-bold block mb-1">Sub-Head: {leadershipRoster.headEarlyYears}</span>
                 <h3 className="font-bold text-slate-900 text-sm">Kindergarten Wing (KG 1 - 3)</h3>
                 <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Montessori-grounded discovery, phonics sounds, early numeracy, social interaction, and motor development preparing toddlers for primary transition.
@@ -544,7 +546,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     Basic 1 - 6
                   </span>
                 </div>
-                <span className="text-[10px] font-mono uppercase text-emerald-700 font-bold block mb-1">Sub-Head: Mrs. Grace Iveren Shima</span>
+                <span className="text-[10px] font-mono uppercase text-emerald-700 font-bold block mb-1">Sub-Head: {leadershipRoster.headmistressPrimary}</span>
                 <h3 className="font-bold text-slate-900 text-sm">Primary School (Basic 1 - 6)</h3>
                 <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   Universal Basic Education (UBE) foundation with quantitative reasoning, science experiments, coding fundamentals, and National Common Entrance (NCEE) mastery.
@@ -586,8 +588,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                     JSS 1 - SSS 3
                   </span>
                 </div>
-                <span className="text-[10px] font-mono uppercase text-blue-700 font-bold block mb-1">Sub-Head: Dr. (Mrs.) Grace Okafor</span>
-                <h3 className="font-bold text-slate-900 text-sm">Secondary College (JSS 1 - SSS 3)</h3>
+                <span className="text-[10px] font-mono uppercase text-blue-700 font-bold block mb-1">{leadershipRoster.principalTitle}: {leadershipRoster.principalName}</span>
+                <h3 className="font-bold text-slate-900 text-sm">{activeSchool.name} — Secondary College (JSS 1 - SSS 3)</h3>
                 <p className="text-xs text-slate-600 mt-2 leading-relaxed">
                   High-rigor secondary academic streams (Science, Arts, Commercial) preparing scholars for WAEC, NECO, Cambridge IGCSE, SAT, and JAMB UTME.
                 </p>
