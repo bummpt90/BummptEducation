@@ -5,12 +5,14 @@
  * with transaction wrapping and idempotency checks.
  */
 
-import { withTransaction, query } from './client';
+import crypto from 'crypto';
+import { withTransaction, query, sanitizeDatabaseErrorMessage } from './client';
 import { getDatabaseConfig } from './config';
 
 export interface MigrationDefinition {
   version: string;
   name: string;
+  filename?: string;
   sql: string;
 }
 
@@ -19,6 +21,7 @@ export const MIGRATIONS: MigrationDefinition[] = [
   {
     version: '0001',
     name: 'initial_foundation',
+    filename: '0001_initial_foundation.sql',
     sql: `
       CREATE EXTENSION IF NOT EXISTS "pgcrypto";
       CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -27,6 +30,7 @@ export const MIGRATIONS: MigrationDefinition[] = [
           id SERIAL PRIMARY KEY,
           version VARCHAR(100) UNIQUE NOT NULL,
           name VARCHAR(255) NOT NULL,
+          checksum VARCHAR(64),
           applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -911,18 +915,6 @@ export const MIGRATIONS: MigrationDefinition[] = [
       CREATE INDEX IF NOT EXISTS idx_enrollments_student ON student_enrollments(student_id);
       CREATE INDEX IF NOT EXISTS idx_enrollments_school_class ON student_enrollments(school_id, class_id);
       CREATE INDEX IF NOT EXISTS idx_enrollments_session ON student_enrollments(academic_session_id);
-
-      -- 4. Baseline Classes for Government College Makurdi (School B)
-      -- Ensures multi-school class scoping and cross-school boundary enforcement can be verified
-      INSERT INTO classes (school_id, level, arm, name, category, classroom_block, capacity)
-      VALUES
-        ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'JSS 1', 'secondary', 'JSS 1 Gold (Govt College Makurdi)', 'Junior Secondary', 'Block A', 40),
-        ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'JSS 2', 'secondary', 'JSS 2 Silver (Govt College Makurdi)', 'Junior Secondary', 'Block A', 40),
-        ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'JSS 3', 'secondary', 'JSS 3 Bronze (Govt College Makurdi)', 'Junior Secondary', 'Block B', 40),
-        ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'SSS 1', 'secondary', 'SSS 1 Science (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35),
-        ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'SSS 2', 'secondary', 'SSS 2 Science (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35),
-        ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'SSS 3', 'secondary', 'SSS 3 Finalist (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35)
-      ON CONFLICT (school_id, level, name) DO NOTHING;
     `,
   },
   {
@@ -1662,10 +1654,82 @@ export interface MigrationResult {
   error?: string;
 }
 
+export interface MigrationVerificationReport {
+  ready: boolean;
+  connected: boolean;
+  trackingTableExists: boolean;
+  expectedCount: number;
+  appliedCount: number;
+  pendingVersions: string[];
+  checksumMismatches: Array<{
+    version: string;
+    name: string;
+    expectedChecksum: string;
+    actualChecksum: string | null;
+  }>;
+  unexpectedVersions: string[];
+  error?: string;
+}
+
+/**
+ * Computes a deterministic SHA-256 hex checksum for a migration SQL body.
+ */
+export function computeMigrationChecksum(sql: string): string {
+  const normalized = sql.replace(/\r\n/g, '\n').trim();
+  return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+}
+
+/**
+ * Validates that a migration sequence is non-empty, uniquely versioned, and strictly ascending.
+ */
+export function validateMigrationOrdering(
+  migrationsList: MigrationDefinition[] = MIGRATIONS
+): { valid: boolean; error?: string } {
+  if (!Array.isArray(migrationsList) || migrationsList.length === 0) {
+    return { valid: false, error: 'Migration registry is empty.' };
+  }
+
+  const seenVersions = new Set<string>();
+  const seenNames = new Set<string>();
+  let prevNumeric = 0;
+
+  for (const mig of migrationsList) {
+    if (!/^\d{4}$/.test(mig.version)) {
+      return {
+        valid: false,
+        error: `Invalid migration version format "${mig.version}". Expected 4-digit version (e.g. "0001").`,
+      };
+    }
+    if (seenVersions.has(mig.version)) {
+      return { valid: false, error: `Duplicate migration version "${mig.version}" detected.` };
+    }
+    if (seenNames.has(mig.name)) {
+      return { valid: false, error: `Duplicate migration name "${mig.name}" detected.` };
+    }
+
+    const num = parseInt(mig.version, 10);
+    if (num !== prevNumeric + 1) {
+      return {
+        valid: false,
+        error: `Non-sequential migration version "${mig.version}". Expected "${String(prevNumeric + 1).padStart(4, '0')}".`,
+      };
+    }
+
+    seenVersions.add(mig.version);
+    seenNames.add(mig.name);
+    prevNumeric = num;
+  }
+
+  return { valid: true };
+}
+
 /**
  * Runs all pending migrations against the configured PostgreSQL database.
+ * Enforces deterministic ordering, atomic per-migration transactions, and fail-closed SHA-256 checksum verification.
  */
-export async function runMigrations(): Promise<MigrationResult> {
+export async function runMigrations(
+  migrationsList: MigrationDefinition[] = MIGRATIONS
+): Promise<MigrationResult> {
   const config = getDatabaseConfig();
   if (!config.isConfigured) {
     return {
@@ -1677,42 +1741,100 @@ export async function runMigrations(): Promise<MigrationResult> {
     };
   }
 
+  const orderingCheck = validateMigrationOrdering(migrationsList);
+  if (!orderingCheck.valid) {
+    return {
+      success: false,
+      appliedCount: 0,
+      appliedVersions: [],
+      skippedCount: 0,
+      error: `FATAL MIGRATION ORDERING ERROR: ${orderingCheck.error}`,
+    };
+  }
+
+  const newlyApplied: string[] = [];
+  let skipped = 0;
+
   try {
-    // 1. Ensure migrations table exists
+    // 1. Ensure migrations tracking table and checksum column exist
     await query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
           id SERIAL PRIMARY KEY,
           version VARCHAR(100) UNIQUE NOT NULL,
           name VARCHAR(255) NOT NULL,
+          checksum VARCHAR(64),
           applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum VARCHAR(64);
     `);
 
-    // 2. Fetch already applied versions
-    const appliedRows = await query<{ version: string }>(
-      'SELECT version FROM schema_migrations ORDER BY id ASC'
+    // 2. Fetch already applied versions & checksums
+    const appliedRows = await query<{ version: string; name: string; checksum: string | null }>(
+      'SELECT version, name, checksum FROM schema_migrations ORDER BY version ASC'
     );
-    const appliedSet = new Set(appliedRows.rows.map((r) => r.version));
+    const appliedMap = new Map<string, { version: string; name: string; checksum: string | null }>();
+    for (const row of appliedRows.rows) {
+      appliedMap.set(row.version, row);
+    }
 
-    const newlyApplied: string[] = [];
-    let skipped = 0;
+    // 3. Backfill checksums ONLY for pre-existing legacy rows that had NULL checksum
+    for (const migration of migrationsList) {
+      const existing = appliedMap.get(migration.version);
+      if (existing && (!existing.checksum || existing.checksum.trim() === '')) {
+        const computed = computeMigrationChecksum(migration.sql);
+        await query(
+          'UPDATE schema_migrations SET checksum = $1 WHERE version = $2 AND (checksum IS NULL OR TRIM(checksum) = \'\')',
+          [computed, migration.version]
+        );
+        existing.checksum = computed;
+      }
+    }
 
-    for (const migration of MIGRATIONS) {
-      if (appliedSet.has(migration.version)) {
+    // 4. Fail-closed verification of already-applied migrations (checksum & ordering)
+    let encounteredUnapplied = false;
+    let firstUnappliedVersion: string | null = null;
+
+    for (const migration of migrationsList) {
+      const expectedChecksum = computeMigrationChecksum(migration.sql);
+      const applied = appliedMap.get(migration.version);
+
+      if (applied) {
+        if (encounteredUnapplied) {
+          throw new Error(
+            `FATAL MIGRATION ORDER VIOLATION: Migration ${firstUnappliedVersion} is unapplied while later migration ${migration.version} is already recorded.`
+          );
+        }
+        if (applied.checksum !== expectedChecksum) {
+          throw new Error(
+            `FATAL MIGRATION CHECKSUM MISMATCH: Migration ${migration.version} (${migration.name}) checksum mismatch (expected ${expectedChecksum}, found ${applied.checksum}). Modified migrations cannot be executed.`
+          );
+        }
+      } else {
+        if (!encounteredUnapplied) {
+          encounteredUnapplied = true;
+          firstUnappliedVersion = migration.version;
+        }
+      }
+    }
+
+    // 5. Execute pending migrations in deterministic order inside atomic transactions
+    for (const migration of migrationsList) {
+      if (appliedMap.has(migration.version)) {
         skipped++;
         continue;
       }
 
+      const expectedChecksum = computeMigrationChecksum(migration.sql);
       console.log(`[Migrations] Applying migration ${migration.version}: ${migration.name}...`);
 
       await withTransaction(async (client) => {
         // Execute the migration DDL
         await client.query(migration.sql);
 
-        // Record the migration in history
+        // Record the migration and its SHA-256 checksum atomically
         await client.query(
-          'INSERT INTO schema_migrations (version, name) VALUES ($1, $2)',
-          [migration.version, migration.name]
+          'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
+          [migration.version, migration.name, expectedChecksum]
         );
       });
 
@@ -1727,13 +1849,184 @@ export async function runMigrations(): Promise<MigrationResult> {
       skippedCount: skipped,
     };
   } catch (error: any) {
-    console.error('[Migrations] Migration failed:', error?.message);
+    const safeMsg = sanitizeDatabaseErrorMessage(error?.message || 'Migration execution failed');
+    console.error('[Migrations] Migration failed:', safeMsg);
     return {
       success: false,
+      appliedCount: newlyApplied.length,
+      appliedVersions: newlyApplied,
+      skippedCount: skipped,
+      error: safeMsg,
+    };
+  }
+}
+
+/**
+ * Read-only verification of PostgreSQL migration state and SHA-256 checksums.
+ * Never modifies schema or business data.
+ */
+export async function verifyMigrations(
+  migrationsList: MigrationDefinition[] = MIGRATIONS
+): Promise<MigrationVerificationReport> {
+  try {
+    const config = getDatabaseConfig();
+    if (!config.isConfigured || !config.connectionString) {
+      return {
+        ready: false,
+        connected: false,
+        trackingTableExists: false,
+        expectedCount: migrationsList.length,
+        appliedCount: 0,
+        pendingVersions: migrationsList.map((m) => m.version),
+        checksumMismatches: [],
+        unexpectedVersions: [],
+        error: 'Database is not configured.',
+      };
+    }
+
+    const orderingCheck = validateMigrationOrdering(migrationsList);
+    if (!orderingCheck.valid) {
+      return {
+        ready: false,
+        connected: false,
+        trackingTableExists: false,
+        expectedCount: migrationsList.length,
+        appliedCount: 0,
+        pendingVersions: migrationsList.map((m) => m.version),
+        checksumMismatches: [],
+        unexpectedVersions: [],
+        error: orderingCheck.error,
+      };
+    }
+
+    // 1. Check database connectivity and tracking table existence in current_schema()
+    const regRes = await query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.tables
+         WHERE table_schema = current_schema() AND table_name = 'schema_migrations'
+       ) AS exists;`
+    );
+    const trackingTableExists = Boolean(regRes.rows[0]?.exists);
+
+    if (!trackingTableExists) {
+      return {
+        ready: false,
+        connected: true,
+        trackingTableExists: false,
+        expectedCount: migrationsList.length,
+        appliedCount: 0,
+        pendingVersions: migrationsList.map((m) => m.version),
+        checksumMismatches: [],
+        unexpectedVersions: [],
+        error: 'Migration tracking table (schema_migrations) does not exist.',
+      };
+    }
+
+    // 2. Check if checksum column exists on schema_migrations in current_schema()
+    const colRes = await query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'schema_migrations' AND column_name = 'checksum'
+       ) AS exists;`
+    );
+    const hasChecksumColumn = Boolean(colRes.rows[0]?.exists);
+
+    const appliedRows = hasChecksumColumn
+      ? await query<{ version: string; name: string; checksum: string | null }>(
+          'SELECT version, name, checksum FROM schema_migrations ORDER BY version ASC'
+        )
+      : await query<{ version: string; name: string; checksum: string | null }>(
+          'SELECT version, name, NULL::text AS checksum FROM schema_migrations ORDER BY version ASC'
+        );
+
+    const appliedMap = new Map<string, { version: string; name: string; checksum: string | null }>();
+    for (const row of appliedRows.rows) {
+      appliedMap.set(row.version, row);
+    }
+
+    const expectedMap = new Map<string, MigrationDefinition>();
+    for (const mig of migrationsList) {
+      expectedMap.set(mig.version, mig);
+    }
+
+    const pendingVersions: string[] = [];
+    const checksumMismatches: Array<{
+      version: string;
+      name: string;
+      expectedChecksum: string;
+      actualChecksum: string | null;
+    }> = [];
+    const unexpectedVersions: string[] = [];
+
+    for (const mig of migrationsList) {
+      const applied = appliedMap.get(mig.version);
+      if (!applied) {
+        pendingVersions.push(mig.version);
+        continue;
+      }
+      const expectedChecksum = computeMigrationChecksum(mig.sql);
+      if (!applied.checksum || applied.checksum !== expectedChecksum) {
+        checksumMismatches.push({
+          version: mig.version,
+          name: mig.name,
+          expectedChecksum,
+          actualChecksum: applied.checksum || null,
+        });
+      }
+    }
+
+    for (const [appliedVer] of appliedMap.entries()) {
+      if (!expectedMap.has(appliedVer)) {
+        unexpectedVersions.push(appliedVer);
+      }
+    }
+
+    const ready =
+      pendingVersions.length === 0 &&
+      checksumMismatches.length === 0 &&
+      unexpectedVersions.length === 0 &&
+      appliedRows.rows.length === migrationsList.length;
+
+    let error: string | undefined;
+    if (!ready) {
+      const issues: string[] = [];
+      if (pendingVersions.length > 0) {
+        issues.push(`Pending migrations: ${pendingVersions.join(', ')}`);
+      }
+      if (checksumMismatches.length > 0) {
+        issues.push(
+          `Checksum mismatch in version(s): ${checksumMismatches.map((c) => c.version).join(', ')}`
+        );
+      }
+      if (unexpectedVersions.length > 0) {
+        issues.push(`Unexpected migration version(s): ${unexpectedVersions.join(', ')}`);
+      }
+      error = issues.join('; ') || 'Database migrations are not ready.';
+    }
+
+    return {
+      ready,
+      connected: true,
+      trackingTableExists: true,
+      expectedCount: migrationsList.length,
+      appliedCount: appliedRows.rows.length,
+      pendingVersions,
+      checksumMismatches,
+      unexpectedVersions,
+      error,
+    };
+  } catch (err: any) {
+    const safeError = sanitizeDatabaseErrorMessage(err?.message || 'Database migration verification failed.');
+    return {
+      ready: false,
+      connected: false,
+      trackingTableExists: false,
+      expectedCount: migrationsList.length,
       appliedCount: 0,
-      appliedVersions: [],
-      skippedCount: 0,
-      error: error?.message || 'Migration execution failed',
+      pendingVersions: migrationsList.map((m) => m.version),
+      checksumMismatches: [],
+      unexpectedVersions: [],
+      error: safeError,
     };
   }
 }

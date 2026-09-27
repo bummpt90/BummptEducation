@@ -9,7 +9,7 @@
  */
 
 import type { Request, Response } from 'express';
-import { getDatabaseConfig, checkDatabaseHealth, query } from '../db';
+import { getDatabaseConfig, checkDatabaseHealth, verifyMigrations } from '../db';
 import { getAuthSecret } from '../auth/token';
 import { getEncryptionKey } from '../security/encryption';
 
@@ -226,8 +226,8 @@ export async function handleDatabaseHealthCheck(_req: Request, res: Response): P
     let migrationReady = false;
     if (dbHealth.status === 'connected') {
       try {
-        const migRes = await query<{ count: string }>('SELECT COUNT(*) as count FROM schema_migrations;');
-        migrationReady = parseInt(migRes.rows[0]?.count || '0', 10) > 0;
+        const migVerification = await verifyMigrations();
+        migrationReady = migVerification.ready;
       } catch {
         migrationReady = false;
       }

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     id SERIAL PRIMARY KEY,
     version VARCHAR(100) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
+    checksum VARCHAR(64),
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

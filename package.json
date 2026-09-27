@@ -8,6 +8,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
+    "db:migrate": "tsx src/db/cli/migrate.ts",
+    "db:migrate:verify": "tsx src/db/cli/migrate-verify.ts",
     "db:seed:reference": "tsx src/db/seed/seed.ts",
     "db:seed:verify": "tsx src/db/seed/verify.ts",
     "db:seed:operational": "tsx src/db/seed/operational.seed.ts",
@@ -25,6 +27,7 @@
     "test:phase8gk": "tsx tests/phase8gk.domains-header-consolidation.test.ts",
     "test:phase9": "tsx tests/phase9.production-readiness.test.ts",
     "test:phase10a": "tsx tests/phase10a.production-deployment.test.ts",
+    "test:phase10b": "tsx tests/phase10b.production-database.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

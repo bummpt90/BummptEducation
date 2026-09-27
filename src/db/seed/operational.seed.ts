@@ -66,7 +66,20 @@ export async function seedOperationalFoundation(externalClient?: PoolClient): Pr
     );
     const currentTerm = termRes.rows[0];
 
-    // 3. Resolve sample classes for School A and School B
+    // 3. Ensure baseline demo classes exist for School B and resolve classes for School A and School B
+    await client.query(
+      `INSERT INTO classes (school_id, level, arm, name, category, classroom_block, capacity)
+       VALUES
+         ($1, 'JSS 1', 'secondary', 'JSS 1 Gold (Govt College Makurdi)', 'Junior Secondary', 'Block A', 40),
+         ($1, 'JSS 2', 'secondary', 'JSS 2 Silver (Govt College Makurdi)', 'Junior Secondary', 'Block A', 40),
+         ($1, 'JSS 3', 'secondary', 'JSS 3 Bronze (Govt College Makurdi)', 'Junior Secondary', 'Block B', 40),
+         ($1, 'SSS 1', 'secondary', 'SSS 1 Science (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35),
+         ($1, 'SSS 2', 'secondary', 'SSS 2 Science (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35),
+         ($1, 'SSS 3', 'secondary', 'SSS 3 Finalist (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35)
+       ON CONFLICT (school_id, level, name) DO NOTHING;`,
+      [schoolB.id]
+    );
+
     const classARes = await client.query<{ id: string; name: string; level: string; arm: string }>(
       `SELECT id, name, level, arm FROM classes WHERE school_id = $1 ORDER BY level ASC;`,
       [schoolA.id]

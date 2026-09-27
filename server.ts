@@ -195,6 +195,12 @@ async function startServer() {
                 console.warn('[DevelopmentSeed] Notice:', seedErr?.message);
               }
             }
+          } else if (process.env.NODE_ENV === 'production') {
+            console.error('[Migrations] CRITICAL: Production database migration failed. Refusing to continue in an inconsistent schema state.');
+            server.close(async () => {
+              await closeDatabasePool();
+              process.exit(1);
+            });
           } else {
             console.warn(`[Migrations] Notice: ${migrationResult.error}`);
           }

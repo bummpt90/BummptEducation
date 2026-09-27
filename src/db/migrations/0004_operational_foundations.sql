@@ -66,15 +66,3 @@ CREATE TABLE IF NOT EXISTS student_enrollments (
 CREATE INDEX IF NOT EXISTS idx_enrollments_student ON student_enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_school_class ON student_enrollments(school_id, class_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_session ON student_enrollments(academic_session_id);
-
--- 4. Baseline Classes for Government College Makurdi (School B)
--- Ensures multi-school class scoping and cross-school boundary enforcement can be verified
-INSERT INTO classes (school_id, level, arm, name, category, classroom_block, capacity)
-VALUES
-  ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'JSS 1', 'secondary', 'JSS 1 Gold (Govt College Makurdi)', 'Junior Secondary', 'Block A', 40),
-  ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'JSS 2', 'secondary', 'JSS 2 Silver (Govt College Makurdi)', 'Junior Secondary', 'Block A', 40),
-  ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'JSS 3', 'secondary', 'JSS 3 Bronze (Govt College Makurdi)', 'Junior Secondary', 'Block B', 40),
-  ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'SSS 1', 'secondary', 'SSS 1 Science (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35),
-  ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'SSS 2', 'secondary', 'SSS 2 Science (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35),
-  ('3da67ba7-6b94-4269-ba90-85478c8dd456', 'SSS 3', 'secondary', 'SSS 3 Finalist (Govt College Makurdi)', 'Senior Secondary', 'Science Wing', 35)
-ON CONFLICT (school_id, level, name) DO NOTHING;
