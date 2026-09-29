@@ -16,7 +16,12 @@ import { authenticateUser } from './middleware';
 import { requirePermission } from './middleware';
 import { logAuthEvent } from './audit';
 import { withTransaction, query } from '../db';
-import { isValidRole } from './roles';
+import {
+  isValidRole,
+  validateRoleTenantScope,
+  roleRequiresStaffIdentity,
+  getDefaultStaffProfileForRole,
+} from './roles';
 import type { AuthenticatedRequest, AuthRole } from './types';
 
 export const accountRequestsRouter = Router();
@@ -323,6 +328,14 @@ accountRequestsRouter.post(
 
       // 2. Only Super Admin can approve super_admin or state_officer
       const finalRole = (assignedRole || request.requested_role).toLowerCase().trim();
+      if (!isValidRole(finalRole)) {
+        return res.status(400).json({
+          success: false,
+          error: 'INVALID_ROLE',
+          message: `The assigned role '${finalRole}' is not a valid system role.`,
+        });
+      }
+
       if ((finalRole === 'super_admin' || finalRole === 'state_officer') && !req.user!.isSuperAdmin) {
         return res.status(403).json({
           success: false,
@@ -333,7 +346,38 @@ accountRequestsRouter.post(
 
       const finalSchoolId = assignedSchoolId !== undefined ? assignedSchoolId : request.requested_school_id;
 
-      // 3. Atomically create the user and update the request status
+      // Phase 10C: Enforce strict role-to-school scope boundary on approval
+      const scopeValidation = validateRoleTenantScope(finalRole, finalSchoolId);
+      if (!scopeValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: scopeValidation.error || 'SCHOOL_SCOPE_REQUIRED',
+          message: scopeValidation.reason || 'A valid school assignment is required to approve this role.',
+        });
+      }
+
+      let targetSchool: { id: string; code: string; organization_id: string; principal_name: string | null } | null = null;
+      if (finalSchoolId) {
+        const schoolCheck = await query<{
+          id: string;
+          code: string;
+          organization_id: string;
+          principal_name: string | null;
+        }>(
+          'SELECT id, code, organization_id, principal_name FROM schools WHERE id = $1 AND is_active = TRUE LIMIT 1;',
+          [finalSchoolId]
+        );
+        if (schoolCheck.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            error: 'SCHOOL_NOT_FOUND',
+            message: 'The assigned school does not exist or is inactive.',
+          });
+        }
+        targetSchool = schoolCheck.rows[0];
+      }
+
+      // 3. Atomically create the user, linked staff/parent identity, and update the request status
       await withTransaction(async (client) => {
         const fullName = [request.first_name, request.middle_name, request.surname]
           .filter(Boolean)
@@ -357,6 +401,56 @@ accountRequestsRouter.post(
         ]);
         const createdUserId = userInsertRes.rows[0]?.id;
 
+        // Phase 10C: Atomically provision linked staff record for staff-backed school roles
+        let createdStaffId: string | null = null;
+        if (targetSchool && roleRequiresStaffIdentity(finalRole as AuthRole)) {
+          const profile = getDefaultStaffProfileForRole(finalRole as AuthRole);
+          const staffCountRes = await client.query<{ count: string }>(
+            'SELECT COUNT(*) as count FROM staff WHERE school_id = $1;',
+            [targetSchool.id]
+          );
+          const nextSeq = parseInt(staffCountRes.rows[0]?.count || '0', 10) + 1;
+          const staffIdNumber = `${targetSchool.code.toUpperCase()}-${profile.staffCodePrefix}-${String(nextSeq).padStart(3, '0')}`;
+
+          const staffInsertRes = await client.query<{ id: string }>(
+            `INSERT INTO staff (
+              user_id, organization_id, school_id, staff_id_number,
+              first_name, middle_name, surname, full_name,
+              staff_type, arm, designation, role,
+              status, is_active, date_joined, phone, email
+            ) VALUES (
+              $1, $2, $3, $4,
+              $5, $6, $7, $8,
+              $9, $10, $11, $12,
+              'Active', TRUE, CURRENT_DATE, $13, $14
+            ) RETURNING id;`,
+            [
+              createdUserId,
+              targetSchool.organization_id,
+              targetSchool.id,
+              staffIdNumber,
+              request.first_name,
+              request.middle_name || null,
+              request.surname,
+              fullName,
+              profile.staffType,
+              profile.arm,
+              profile.designation,
+              profile.roleLabel,
+              request.phone || null,
+              request.email,
+            ]
+          );
+          createdStaffId = staffInsertRes.rows[0]?.id || null;
+
+          if (finalRole === 'principal' && !targetSchool.principal_name) {
+            await client.query(
+              'UPDATE schools SET principal_name = $1, updated_at = NOW() WHERE id = $2;',
+              [fullName, targetSchool.id]
+            );
+          }
+        }
+
         // Phase 8B: Link approved parent users to parent_guardians domain
         if (finalRole === 'parent') {
           const existingParent = await client.query(
@@ -372,7 +466,7 @@ accountRequestsRouter.post(
                    is_active = TRUE,
                    updated_at = NOW()
                WHERE id = $4;`,
-              [createdUserId, finalSchoolId || null, request.organization_id, existingParent.rows[0].id]
+              [createdUserId, finalSchoolId || null, targetSchool?.organization_id || request.organization_id, existingParent.rows[0].id]
             );
           } else {
             await client.query(
@@ -382,7 +476,7 @@ accountRequestsRouter.post(
               [
                 createdUserId,
                 finalSchoolId || null,
-                request.organization_id,
+                targetSchool?.organization_id || request.organization_id,
                 fullName,
                 request.phone || 'N/A',
                 request.email,
@@ -420,6 +514,7 @@ accountRequestsRouter.post(
           JSON.stringify({
             requestId: request.id,
             createdUserId,
+            createdStaffId,
             applicantEmail: request.email,
             assignedRole: finalRole,
             assignedSchoolId: finalSchoolId,

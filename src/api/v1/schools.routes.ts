@@ -6,8 +6,9 @@
  */
 
 import { Router } from 'express';
-import { authenticateUser, requirePermission } from '../../auth/middleware';
+import { authenticateUser, requirePermission, requireRole } from '../../auth/middleware';
 import { SchoolRepository } from '../../db/repositories/school.repository';
+import { provisionSchool, ProvisioningError } from '../../auth/provisioning.service';
 import type { AuthenticatedRequest } from '../../auth/types';
 
 export const schoolsRouter = Router();
@@ -118,6 +119,89 @@ schoolsRouter.get(
         success: false,
         error: 'FETCH_SCHOOL_FAILED',
         message: 'Failed to retrieve school details.',
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/schools
+ * Controlled provisioning endpoint for creating an authoritative school under an organization.
+ * Restricted strictly to Super Administrators.
+ */
+schoolsRouter.post(
+  '/',
+  authenticateUser,
+  requireRole('super_admin'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const {
+        organizationId,
+        organization_id,
+        name,
+        code,
+        lga,
+        senatorialZone,
+        senatorial_zone,
+        category,
+        principalName,
+        principal_name,
+        bursarName,
+        bursar_name,
+        vicePrincipalAcademic,
+        vice_principal_academic,
+        phone,
+        email,
+        address,
+        establishedYear,
+        established_year,
+        isActive,
+        is_active,
+      } = req.body || {};
+
+      const created = await provisionSchool(
+        {
+          organizationId: organizationId || organization_id,
+          name,
+          code,
+          lga,
+          senatorialZone: senatorialZone || senatorial_zone,
+          category,
+          principalName: principalName ?? principal_name ?? null,
+          bursarName: bursarName ?? bursar_name ?? null,
+          vicePrincipalAcademic: vicePrincipalAcademic ?? vice_principal_academic ?? null,
+          phone: phone ?? null,
+          email: email ?? null,
+          address: address ?? null,
+          establishedYear: establishedYear ?? established_year ?? null,
+          isActive: isActive ?? is_active ?? true,
+        },
+        {
+          user: req.user,
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'] || null,
+        }
+      );
+
+      res.status(201).json({
+        success: true,
+        message: `School '${created.name}' (${created.code}) provisioned successfully.`,
+        data: created,
+      });
+    } catch (error: any) {
+      if (error instanceof ProvisioningError) {
+        res.status(error.statusCode).json({
+          success: false,
+          error: error.code,
+          message: error.message,
+        });
+        return;
+      }
+      console.error('[SchoolsAPI] Failed to provision school:', error);
+      res.status(500).json({
+        success: false,
+        error: 'PROVISION_SCHOOL_FAILED',
+        message: 'Failed to provision school record.',
       });
     }
   }

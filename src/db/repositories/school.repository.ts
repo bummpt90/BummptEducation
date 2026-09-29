@@ -90,4 +90,84 @@ export class SchoolRepository extends BaseRepository<SchoolDbEntity> {
     );
     return rows.length > 0 ? rows[0] : null;
   }
+
+  /**
+   * Lists all schools belonging to a specific organization
+   */
+  public async findByOrganization(organizationId: string, client?: PoolClient): Promise<SchoolDbEntity[]> {
+    const sql = `
+      SELECT *
+      FROM ${this.tableName}
+      WHERE organization_id = $1
+      ORDER BY lga ASC, name ASC;
+    `;
+    return this.executeQuery<SchoolDbEntity>(sql, [organizationId], client);
+  }
+
+  /**
+   * Creates an authoritative school record under a specified organization.
+   * Never creates students, parents, fees, assessments, attendance, or marks.
+   */
+  public async createSchool(
+    data: {
+      organizationId: string;
+      code: string;
+      name: string;
+      lga: string;
+      senatorialZone: string;
+      category: string;
+      principalName?: string | null;
+      bursarName?: string | null;
+      vicePrincipalAcademic?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      address?: string | null;
+      establishedYear?: number | null;
+      isActive?: boolean;
+    },
+    client?: PoolClient
+  ): Promise<SchoolDbEntity> {
+    const cleanCode = data.code.trim().toUpperCase();
+    const cleanName = data.name.trim();
+    const sql = `
+      INSERT INTO ${this.tableName} (
+        organization_id,
+        code,
+        name,
+        lga,
+        senatorial_zone,
+        category,
+        principal_name,
+        bursar_name,
+        vice_principal_academic,
+        phone,
+        email,
+        address,
+        established_year,
+        is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING *;
+    `;
+    const params = [
+      data.organizationId,
+      cleanCode,
+      cleanName,
+      data.lga.trim(),
+      data.senatorialZone.trim(),
+      data.category.trim(),
+      data.principalName?.trim() || null,
+      data.bursarName?.trim() || null,
+      data.vicePrincipalAcademic?.trim() || null,
+      data.phone?.trim() || null,
+      data.email ? data.email.trim().toLowerCase() : null,
+      data.address?.trim() || null,
+      data.establishedYear ?? null,
+      data.isActive ?? true,
+    ];
+    const rows = await this.executeQuery<SchoolDbEntity>(sql, params, client);
+    return rows[0];
+  }
 }
+
+export const schoolRepository = new SchoolRepository();
+

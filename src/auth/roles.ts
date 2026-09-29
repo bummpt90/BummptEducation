@@ -84,6 +84,189 @@ export function isGlobalRole(role: AuthRole): boolean {
 }
 
 /**
+ * Phase 10C Role Tier Classification
+ * A. PLATFORM_ADMIN: Super Admin, State Officer (may exist without school_id)
+ * B. TENANT_SCHOOL_ADMIN: Principal, Vice Principal, Headmistress, Head of Kindergarten (must belong to a school + organization)
+ * C. SCHOOL_OPERATIONAL: Exam Officer, Bursar, Admissions Officer, Teacher, Parent, Student (must belong to a school + organization)
+ */
+export type RoleProvisioningTier =
+  | 'PLATFORM_ADMIN'
+  | 'TENANT_SCHOOL_ADMIN'
+  | 'SCHOOL_OPERATIONAL';
+
+export const PLATFORM_ADMIN_ROLES: AuthRole[] = [
+  'super_admin',
+  'state_officer',
+];
+
+export const TENANT_SCHOOL_ADMIN_ROLES: AuthRole[] = [
+  'principal',
+  'vice_principal',
+  'headmistress',
+  'head_kindergarten',
+];
+
+export const SCHOOL_OPERATIONAL_ROLES: AuthRole[] = [
+  'exam_officer',
+  'bursar',
+  'admissions_officer',
+  'teacher',
+  'parent',
+  'student',
+];
+
+export const STAFF_BACKED_ROLES: AuthRole[] = [
+  'principal',
+  'vice_principal',
+  'headmistress',
+  'head_kindergarten',
+  'exam_officer',
+  'bursar',
+  'admissions_officer',
+  'teacher',
+];
+
+export function getRoleProvisioningTier(role: AuthRole): RoleProvisioningTier {
+  if (PLATFORM_ADMIN_ROLES.includes(role)) {
+    return 'PLATFORM_ADMIN';
+  }
+  if (TENANT_SCHOOL_ADMIN_ROLES.includes(role)) {
+    return 'TENANT_SCHOOL_ADMIN';
+  }
+  return 'SCHOOL_OPERATIONAL';
+}
+
+/**
+ * Returns true if the role may exist without a school_id (Platform-level administration)
+ */
+export function roleMayExistWithoutSchool(role: AuthRole): boolean {
+  return PLATFORM_ADMIN_ROLES.includes(role);
+}
+
+/**
+ * Returns true if the role MUST belong to a specific school_id
+ */
+export function roleRequiresSchoolScope(role: AuthRole): boolean {
+  return !PLATFORM_ADMIN_ROLES.includes(role);
+}
+
+/**
+ * Returns true if provisioning this school role requires an authoritative staff record
+ */
+export function roleRequiresStaffIdentity(role: AuthRole): boolean {
+  return STAFF_BACKED_ROLES.includes(role);
+}
+
+/**
+ * Validates that the role and schoolId combination satisfies the Phase 10C provisioning boundary
+ */
+export function validateRoleTenantScope(
+  role: string,
+  schoolId?: string | null
+): { valid: boolean; error?: string; reason?: string } {
+  if (!isValidRole(role)) {
+    return {
+      valid: false,
+      error: 'INVALID_ROLE',
+      reason: `Role '${role}' is not a valid BummptEducation system role.`,
+    };
+  }
+
+  const normalizedSchoolId = schoolId && typeof schoolId === 'string' && schoolId.trim().length > 0
+    ? schoolId.trim()
+    : null;
+
+  if (roleRequiresSchoolScope(role) && !normalizedSchoolId) {
+    return {
+      valid: false,
+      error: 'SCHOOL_SCOPE_REQUIRED',
+      reason: `Role '${role}' (${getRoleProvisioningTier(role)}) must belong to an authoritative school (school_id is required).`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Returns default staff profile metadata when provisioning a staff-backed school role
+ */
+export function getDefaultStaffProfileForRole(role: AuthRole): {
+  staffType: 'Teaching' | 'Non-Teaching';
+  arm: string;
+  designation: string;
+  roleLabel: string;
+  staffCodePrefix: string;
+} {
+  switch (role) {
+    case 'principal':
+      return {
+        staffType: 'Teaching',
+        arm: 'Executive & Secondary',
+        designation: 'School Principal & Chief Accounting Officer',
+        roleLabel: 'Principal',
+        staffCodePrefix: 'PRIN',
+      };
+    case 'vice_principal':
+      return {
+        staffType: 'Teaching',
+        arm: 'Secondary Wing',
+        designation: 'Vice Principal (Academic)',
+        roleLabel: 'Vice Principal',
+        staffCodePrefix: 'VPAC',
+      };
+    case 'headmistress':
+      return {
+        staffType: 'Teaching',
+        arm: 'Primary Wing',
+        designation: 'Headmistress (Primary Basic Education)',
+        roleLabel: 'Headmistress',
+        staffCodePrefix: 'HDMS',
+      };
+    case 'head_kindergarten':
+      return {
+        staffType: 'Teaching',
+        arm: 'Early Years Wing',
+        designation: 'Head of Early Childhood & Kindergarten',
+        roleLabel: 'Head of Kindergarten',
+        staffCodePrefix: 'HDKG',
+      };
+    case 'exam_officer':
+      return {
+        staffType: 'Teaching',
+        arm: 'Academic Registry',
+        designation: 'Examination & Broadsheet Records Officer',
+        roleLabel: 'Exam Officer',
+        staffCodePrefix: 'EXAM',
+      };
+    case 'bursar':
+      return {
+        staffType: 'Non-Teaching',
+        arm: 'Bursary & Finance',
+        designation: 'Chief Bursar & Head of School Finance',
+        roleLabel: 'Bursar',
+        staffCodePrefix: 'BURS',
+      };
+    case 'admissions_officer':
+      return {
+        staffType: 'Non-Teaching',
+        arm: 'Admissions Registry',
+        designation: 'Registrar & Admissions Officer',
+        roleLabel: 'Admissions Officer',
+        staffCodePrefix: 'ADMS',
+      };
+    case 'teacher':
+    default:
+      return {
+        staffType: 'Teaching',
+        arm: 'Academic Faculty',
+        designation: 'Subject Teacher & Form Tutor',
+        roleLabel: 'Teacher',
+        staffCodePrefix: 'TCHR',
+      };
+  }
+}
+
+/**
  * Role display label helper
  */
 export function getRoleDisplayName(role: AuthRole): string {

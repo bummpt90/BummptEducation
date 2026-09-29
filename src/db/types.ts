@@ -115,6 +115,14 @@ export interface AuthAuditLogDbEntity extends QueryResultRow {
 }
 
 /**
+ * Organization Tenant Entity in PostgreSQL
+ */
+export interface OrganizationDbEntity extends BaseDbEntity {
+  name: string;
+  code: string;
+}
+
+/**
  * School Entity in PostgreSQL
  */
 export interface SchoolDbEntity extends BaseDbEntity {

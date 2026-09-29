@@ -5,6 +5,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { checkDatabaseHealth, closeDatabasePool, runMigrations, getDatabaseConfig, query } from './src/db';
 import { authRouter } from './src/auth/auth.routes';
+import { provisioningRouter } from './src/api/v1/provisioning.routes';
 import { schoolsRouter } from './src/api/v1/schools.routes';
 import { classesRouter } from './src/api/v1/classes.routes';
 import { staffRouter } from './src/api/v1/staff.routes';
@@ -78,6 +79,9 @@ async function startServer() {
 
   // Production Authentication & RBAC API (v1)
   app.use('/api/v1/auth', authRouter);
+
+  // Institutional Organization, School & Administrator Provisioning API (v1 - Phase 10C)
+  app.use('/api/v1/provisioning', provisioningRouter);
 
   // Operational Data Foundations API (v1)
   app.use('/api/v1/schools', schoolsRouter);

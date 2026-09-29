@@ -4,6 +4,7 @@
  * Records security-sensitive identity events to the PostgreSQL auth_audit_logs ledger.
  */
 
+import type { PoolClient } from 'pg';
 import { query } from '../db';
 
 export type AuthAuditAction =
@@ -19,7 +20,12 @@ export type AuthAuditAction =
   | 'PRIVILEGED_ROLE_REQUEST_BLOCKED'
   | 'ACCOUNT_APPROVED'
   | 'ACCOUNT_REJECTED'
-  | 'PASSWORD_RESET_REQUESTED';
+  | 'PASSWORD_RESET_REQUESTED'
+  | 'ORGANIZATION_PROVISIONED'
+  | 'SCHOOL_PROVISIONED'
+  | 'ADMIN_PROVISIONED'
+  | 'BOOTSTRAP_PROVISIONED'
+  | 'PROVISIONING_BLOCKED';
 
 export interface AuditLogParams {
   action: AuthAuditAction;
@@ -31,14 +37,14 @@ export interface AuditLogParams {
   details?: Record<string, any>;
 }
 
-export async function logAuthEvent(params: AuditLogParams): Promise<void> {
+export async function logAuthEvent(params: AuditLogParams, client?: PoolClient): Promise<void> {
   try {
     const sql = `
       INSERT INTO auth_audit_logs (
         user_id, email, action, status, ip_address, user_agent, details
       ) VALUES ($1, $2, $3, $4, $5, $6, $7);
     `;
-    await query(sql, [
+    const values = [
       params.userId || null,
       params.email || null,
       params.action,
@@ -46,7 +52,12 @@ export async function logAuthEvent(params: AuditLogParams): Promise<void> {
       params.ipAddress || null,
       params.userAgent || null,
       params.details ? JSON.stringify(params.details) : null,
-    ]);
+    ];
+    if (client) {
+      await client.query(sql, values);
+    } else {
+      await query(sql, values);
+    }
   } catch (error) {
     // Audit log failure must not crash main operation, but log to server console
     console.error('[AuthAudit] Failed to persist audit record:', error);

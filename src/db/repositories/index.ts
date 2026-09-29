@@ -3,6 +3,7 @@
  */
 
 export * from './base.repository';
+export * from './organization.repository';
 export * from './academicSession.repository';
 export * from './user.repository';
 export * from './school.repository';

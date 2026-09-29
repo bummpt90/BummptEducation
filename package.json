@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "db:migrate": "tsx src/db/cli/migrate.ts",
     "db:migrate:verify": "tsx src/db/cli/migrate-verify.ts",
+    "provision:bootstrap": "tsx src/db/cli/provision-bootstrap.ts",
+    "provision:verify": "tsx src/db/cli/provision-verify.ts",
     "db:seed:reference": "tsx src/db/seed/seed.ts",
     "db:seed:verify": "tsx src/db/seed/verify.ts",
     "db:seed:operational": "tsx src/db/seed/operational.seed.ts",
@@ -28,6 +30,7 @@
     "test:phase9": "tsx tests/phase9.production-readiness.test.ts",
     "test:phase10a": "tsx tests/phase10a.production-deployment.test.ts",
     "test:phase10b": "tsx tests/phase10b.production-database.test.ts",
+    "test:phase10c": "tsx tests/phase10c.provisioning.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
