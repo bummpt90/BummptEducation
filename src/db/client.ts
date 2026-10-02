@@ -13,6 +13,17 @@ import type { DatabaseHealthStatus } from './types';
 let pool: Pool | null = null;
 let isPoolInitialized = false;
 
+const SAFE_SEARCH_PATH_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*)*$/;
+
+function getConfiguredSearchPath(): string | null {
+  const raw = process.env.DATABASE_SEARCH_PATH?.trim();
+  if (!raw) return null;
+  if (!SAFE_SEARCH_PATH_REGEX.test(raw)) {
+    throw new DatabaseConnectionError(`Invalid DATABASE_SEARCH_PATH format: '${raw}'`);
+  }
+  return raw;
+}
+
 /**
  * Scrubs any database connection string, password, or credential URI from error messages
  */
@@ -77,8 +88,23 @@ export async function query<T extends QueryResultRow = any>(
   }
 
   const start = Date.now();
+  const searchPath = !client ? getConfiguredSearchPath() : null;
+  const isSchemaBootstrapStmt = /^\s*(DROP\s+SCHEMA|CREATE\s+SCHEMA|SET\s+search_path)/i.test(text);
+
   try {
-    const res = await executor.query<T>(text, params);
+    let res: QueryResult<T>;
+    if (!client && searchPath && !isSchemaBootstrapStmt) {
+      const activePool = getDatabasePool()!;
+      const acquired = await activePool.connect();
+      try {
+        await acquired.query(`SET search_path TO ${searchPath};`);
+        res = await acquired.query<T>(text, params);
+      } finally {
+        acquired.release();
+      }
+    } else {
+      res = await executor.query<T>(text, params);
+    }
     const duration = Date.now() - start;
 
     if (process.env.DEBUG_SQL === 'true') {
@@ -120,6 +146,10 @@ export async function withTransaction<T>(
 
   try {
     await client.query('BEGIN');
+    const searchPath = getConfiguredSearchPath();
+    if (searchPath) {
+      await client.query(`SET LOCAL search_path TO ${searchPath};`);
+    }
     const result = await callback(client);
     await client.query('COMMIT');
     return result;

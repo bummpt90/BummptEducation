@@ -1,17 +1,25 @@
 /**
  * BummptEducation — Phase 10C First Organization & Administrator Provisioning Verification Suite
+ * (Including Security Closure Patch Verification)
  *
- * Meaningfully verifies the Phase 10C provisioning contract against real PostgreSQL:
+ * Meaningfully verifies the Phase 10C provisioning & security closure contract against real PostgreSQL:
  * 1. Three-tier Role & Tenant Scope Model (PLATFORM_ADMIN, TENANT_SCHOOL_ADMIN, SCHOOL_OPERATIONAL)
  * 2. Controlled CLI scripts (provision:bootstrap, provision:verify) & strict zero-seeder boundary
- * 3. Empty-database pre-provisioning verification (verifyProvisioningState().ready === false)
- * 4. Controlled First-Deployment Bootstrap (Organization + First School + Super Admin + School Principal + Staff linkage)
- * 5. One-time bootstrap guard (second bootstrap attempt fails closed with BOOTSTRAP_ALREADY_COMPLETED)
- * 6. Zero operational/student/parent/fee/attendance/assessment records created during provisioning
- * 7. Real Argon2id authentication & session establishment for provisioned administrators
- * 8. Authorized API provisioning (Super Admin creates second LGA school & distinct Principal)
- * 9. Privilege escalation & tenant isolation guards (Principal blocked from org/school creation, executive role escalation, or cross-school provisioning)
- * 10. Account request workflow integration (atomic user + staff creation on approval, cross-school Principal rejection)
+ * 3. Simulation/Reference Leadership Wording & UI Preference Boundary (`bummpt_ActiveSchoolId_v1`)
+ * 4. Isolated Test Schema Guard (destructive test setup cannot target `public` or production schema)
+ * 5. Role-Agnostic One-Time Bootstrap Guard:
+ *    - Bootstrap using `super_admin` followed by second attempt -> rejected (409 BOOTSTRAP_ALREADY_COMPLETED)
+ *    - Bootstrap using `state_officer` followed by second attempt -> rejected (409 BOOTSTRAP_ALREADY_COMPLETED)
+ *    - Bootstrap using `principal` followed by second attempt -> rejected (409 BOOTSTRAP_ALREADY_COMPLETED)
+ * 6. Concurrent Bootstrap Race Safety (`pg_advisory_xact_lock` across pooled PostgreSQL connections):
+ *    - Two concurrent bootstrap attempts -> at most one succeeds; competing attempt fails closed
+ * 7. Transaction Rollback Atomicity:
+ *    - Failed bootstrap leaves zero partial organization, school, administrator, or staff records
+ * 8. RBAC, Tenant Isolation & Privilege Escalation Guards:
+ *    - Organization/school mismatch rejected
+ *    - Principals blocked from creating orgs/schools, escalating roles, or provisioning outside their school
+ *    - Browser-supplied school/org IDs never override server-authoritative JWT session scope
+ *    - Account request approval atomically creates users + staff records
  */
 
 import 'dotenv/config';
@@ -23,6 +31,7 @@ import cookieParser from 'cookie-parser';
 import {
   runMigrations,
   query,
+  getDatabasePool,
   closeDatabasePool,
 } from '../src/db';
 import { authRouter } from '../src/auth/auth.routes';
@@ -37,8 +46,6 @@ import {
 } from '../src/auth/roles';
 import {
   bootstrapFirstTenantAndAdmin,
-  provisionOrganization,
-  provisionSchool,
   provisionAdministrator,
   verifyProvisioningState,
   ProvisioningError,
@@ -65,6 +72,51 @@ function record(category: string, test: string, passed: boolean, details?: strin
   console.log(`${icon} [${category}] ${test} ${details ? `(${details})` : ''}`);
 }
 
+const ISOLATED_TEST_SCHEMA_REGEX = /^phase10c_[a-z0-9_]+_test$/;
+
+/**
+ * Verifies that destructive test setup can ONLY target an explicitly isolated test schema
+ * and never `public`, `production`, or any live production environment.
+ */
+function assertSafeIsolatedTestSchema(schemaName: string, nodeEnv = process.env.NODE_ENV): void {
+  if (nodeEnv === 'production') {
+    throw new Error(
+      'REFUSED_PRODUCTION_TEST_EXECUTION: Destructive test schema setup is strictly prohibited when NODE_ENV=production.'
+    );
+  }
+  if (!schemaName || !ISOLATED_TEST_SCHEMA_REGEX.test(schemaName)) {
+    throw new Error(
+      `UNSAFE_TEST_SCHEMA_NAME: '${schemaName}' does not match required isolated test schema pattern ${ISOLATED_TEST_SCHEMA_REGEX}.`
+    );
+  }
+}
+
+/**
+ * Resets an isolated test schema cleanly and ensures all connections in the pool use its search_path.
+ */
+async function resetIsolatedTestSchema(schemaName: string, poolSize = 2): Promise<void> {
+  assertSafeIsolatedTestSchema(schemaName);
+
+  await closeDatabasePool();
+  process.env.DATABASE_POOL_SIZE = String(poolSize);
+  process.env.DATABASE_SEARCH_PATH = `${schemaName}, public`;
+
+  await query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE;`);
+  await query(`CREATE SCHEMA ${schemaName};`);
+
+  const currentSchemaRes = await query<{ current_schema: string }>('SELECT current_schema();');
+  if (currentSchemaRes.rows[0]?.current_schema !== schemaName) {
+    throw new Error(
+      `Expected active schema '${schemaName}', got '${currentSchemaRes.rows[0]?.current_schema}'`
+    );
+  }
+
+  const migRes = await runMigrations();
+  if (!migRes.success) {
+    throw new Error(`Migrations failed on isolated schema ${schemaName}: ${migRes.error}`);
+  }
+}
+
 async function runPhase10cSuite() {
   console.log('======================================================================');
   console.log('BummptEducation — Phase 10C Organization & Admin Provisioning Verification');
@@ -85,6 +137,8 @@ async function runPhase10cSuite() {
       }
     }
   }
+
+  const ISOLATED_SCHEMA = 'phase10c_provisioning_test';
 
   try {
     // =========================================================================
@@ -204,11 +258,107 @@ async function runPhase10cSuite() {
     );
 
     // =========================================================================
-    // 3. End-to-End Behavioral Provisioning on Isolated Empty PostgreSQL Schema
+    // 3. Simulation/Reference Leadership Wording & UI Preference Boundary
     // =========================================================================
-    await closeDatabasePool();
-    process.env.DATABASE_POOL_SIZE = '1';
+    const benueDataSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/data/benueStateData.ts'),
+      'utf-8'
+    );
+    const modalSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/SchoolLeadershipSimulationModal.tsx'),
+      'utf-8'
+    );
+    const contextBarSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/ActiveSchoolContextBar.tsx'),
+      'utf-8'
+    );
+    const hqPageSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/pages/BenueStateHQPage.tsx'),
+      'utf-8'
+    );
+    const organogramPageSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/pages/OrganogramPage.tsx'),
+      'utf-8'
+    );
+    const combinedSimulationSources = [
+      benueDataSrc,
+      modalSrc,
+      contextBarSrc,
+      hqPageSrc,
+      organogramPageSrc,
+    ].join('\n');
 
+    const prohibitedClaims = [
+      'school-authentic',
+      'Selected School Official Roster',
+      'authentic Principal / Headmaster',
+      'registered to the selected school',
+      'Official School Roster vs. Simulation Presets',
+      'Restore School Official Leaders',
+    ];
+
+    const hasNoProhibitedClaims = prohibitedClaims.every(
+      (claim) => !combinedSimulationSources.includes(claim)
+    );
+    const hasAccurateSimulationDescriptions =
+      benueDataSrc.includes('Selected School Simulation/Reference Leadership Roster (Default)') &&
+      benueDataSrc.includes('simulation/reference leadership roster') &&
+      modalSrc.includes('Simulation/Reference Leadership Roster') &&
+      contextBarSrc.includes('Simulation/Reference Leadership Roster') &&
+      hqPageSrc.includes('Simulation/Reference Leadership Roster') &&
+      organogramPageSrc.includes('Simulation/Reference Leadership Roster');
+
+    // Verify bummpt_ActiveSchoolId_v1 is never referenced in any backend/auth/API files
+    const authMiddlewareSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/auth/middleware.ts'),
+      'utf-8'
+    );
+    const provRoutesSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/api/v1/provisioning.routes.ts'),
+      'utf-8'
+    );
+    const uiPrefNeverUsedOnServer =
+      !serviceSource.includes('bummpt_ActiveSchoolId_v1') &&
+      !authMiddlewareSrc.includes('bummpt_ActiveSchoolId_v1') &&
+      !provRoutesSrc.includes('bummpt_ActiveSchoolId_v1');
+
+    record(
+      '3. Simulation Data Boundary',
+      'Simulation/reference leadership wording accurately describes UI simulation/reference roster and never claims verified registered personnel; bummpt_ActiveSchoolId_v1 is strictly a UI preference',
+      hasNoProhibitedClaims && hasAccurateSimulationDescriptions && uiPrefNeverUsedOnServer
+    );
+
+    // =========================================================================
+    // 4. Isolated Test Schema Safety Guard Verification
+    // =========================================================================
+    let publicSchemaBlocked = false;
+    let prodSchemaBlocked = false;
+    let prodEnvBlocked = false;
+    try {
+      assertSafeIsolatedTestSchema('public');
+    } catch {
+      publicSchemaBlocked = true;
+    }
+    try {
+      assertSafeIsolatedTestSchema('production_schema');
+    } catch {
+      prodSchemaBlocked = true;
+    }
+    try {
+      assertSafeIsolatedTestSchema('phase10c_provisioning_test', 'production');
+    } catch {
+      prodEnvBlocked = true;
+    }
+
+    record(
+      '4. Test Schema Safety Guard',
+      'Destructive test setup guard refuses public schema, non-test schemas, and NODE_ENV=production',
+      publicSchemaBlocked && prodSchemaBlocked && prodEnvBlocked
+    );
+
+    // =========================================================================
+    // 5. Role-Agnostic One-Time Bootstrap Guard & Rollback Atomicity
+    // =========================================================================
     const app = express();
     app.use(cookieParser());
     app.use(express.json());
@@ -222,27 +372,247 @@ async function runPhase10cSuite() {
     const baseUrl = `http://127.0.0.1:${port}`;
 
     try {
-      await query('DROP SCHEMA IF EXISTS phase10c_provisioning_test CASCADE;');
-      await query('CREATE SCHEMA phase10c_provisioning_test;');
-      await query('SET search_path TO phase10c_provisioning_test, public;');
-
-      // Apply all 11 production migrations onto the clean isolated schema
-      const migRes = await runMigrations();
+      // -----------------------------------------------------------------------
+      // 5A. Empty DB pre-state & Transaction Rollback on Failed Bootstrap
+      // -----------------------------------------------------------------------
+      await resetIsolatedTestSchema(ISOLATED_SCHEMA, 1);
       const preVerify = await verifyProvisioningState();
 
       record(
-        '3. Empty DB Pre-State',
+        '5. Empty DB Pre-State',
         'On a freshly migrated empty database, verifyProvisioningState() reports ready=false with 0 organizations, 0 schools, and 0 admins',
-        migRes.success === true &&
-          preVerify.ready === false &&
+        preVerify.ready === false &&
           preVerify.organizationsCount === 0 &&
           preVerify.schoolsCount === 0 &&
           preVerify.activeAdminsCount === 0
       );
 
-      // =========================================================================
-      // 4. Controlled First-Deployment Bootstrap
-      // =========================================================================
+      // Trigger a failed bootstrap AFTER org & school parameters are valid:
+      // Case 1: principal bootstrap without a school
+      let failedBootstrap1Caught = false;
+      try {
+        await bootstrapFirstTenantAndAdmin({
+          organization: { name: 'Rollback Org One', code: 'ROLLBACK-ORG-01' },
+          admin: {
+            email: 'principal.noschool@moe.benuestate.gov.ng',
+            password: 'StrongPassword#2026!',
+            fullName: 'Principal Without School',
+            role: 'principal',
+          },
+        });
+      } catch (err: any) {
+        if (err instanceof ProvisioningError && err.code === 'SCHOOL_SCOPE_REQUIRED') {
+          failedBootstrap1Caught = true;
+        }
+      }
+
+      // Case 2: bootstrap where organization & school are created inside the transaction,
+      // then schoolPrincipal fails mid-transaction due to duplicate email with primary admin
+      let failedBootstrap2Caught = false;
+      try {
+        await bootstrapFirstTenantAndAdmin({
+          organization: { name: 'Rollback Org Two', code: 'ROLLBACK-ORG-02' },
+          school: {
+            name: 'Rollback Model School Makurdi',
+            code: 'BNS-RBK-101',
+            lga: 'Makurdi',
+            senatorialZone: 'Zone B',
+            category: 'Secondary',
+          },
+          admin: {
+            email: 'collision@moe.benuestate.gov.ng',
+            password: 'StrongPassword#2026!',
+            fullName: 'Collision Super Admin',
+            role: 'super_admin',
+          },
+          schoolPrincipal: {
+            // Same email as primary admin causes EMAIL_ALREADY_EXISTS after org, school, and primary admin were inserted!
+            email: 'collision@moe.benuestate.gov.ng',
+            password: 'StrongPassword#2026!',
+            fullName: 'Collision Principal',
+          },
+        });
+      } catch (err: any) {
+        if (err instanceof ProvisioningError && err.code === 'EMAIL_ALREADY_EXISTS') {
+          failedBootstrap2Caught = true;
+        }
+      }
+
+      const postRollbackCounts = await query<{
+        orgs: string;
+        schools: string;
+        users: string;
+        staff: string;
+      }>(`
+        SELECT
+          (SELECT COUNT(*) FROM organizations) AS orgs,
+          (SELECT COUNT(*) FROM schools) AS schools,
+          (SELECT COUNT(*) FROM users) AS users,
+          (SELECT COUNT(*) FROM staff) AS staff;
+      `);
+      const countsRow = postRollbackCounts.rows[0];
+      const zeroPartialRecords =
+        parseInt(countsRow.orgs, 10) === 0 &&
+        parseInt(countsRow.schools, 10) === 0 &&
+        parseInt(countsRow.users, 10) === 0 &&
+        parseInt(countsRow.staff, 10) === 0;
+
+      record(
+        '6. Transaction Rollback Atomicity',
+        'Failed bootstrap rolls back completely: zero partial organization, school, administrator, or staff records remain',
+        failedBootstrap1Caught && failedBootstrap2Caught && zeroPartialRecords
+      );
+
+      // -----------------------------------------------------------------------
+      // 5B. Bootstrap with `state_officer`, followed by a second attempt -> rejected
+      // -----------------------------------------------------------------------
+      const stateOfficerBootstrap = await bootstrapFirstTenantAndAdmin({
+        organization: {
+          name: 'Benue State Ministry Directorate',
+          code: 'BNS-MOE-DIR',
+        },
+        admin: {
+          email: 'state.officer@moe.benuestate.gov.ng',
+          password: 'StateOfficerPass#2026!',
+          fullName: 'Hon. State Officer Administrator',
+          role: 'state_officer',
+        },
+      });
+
+      let secondAfterStateOfficerRejected = false;
+      try {
+        await bootstrapFirstTenantAndAdmin({
+          organization: { name: 'Bypass Attempt Org', code: 'BYPASS-ORG-01' },
+          admin: {
+            email: 'bypass.super@moe.benuestate.gov.ng',
+            password: 'BypassPassword#2026!',
+            fullName: 'Bypass Super Admin',
+            role: 'super_admin',
+          },
+        });
+      } catch (err: any) {
+        if (err instanceof ProvisioningError && err.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
+          secondAfterStateOfficerRejected = true;
+        }
+      }
+
+      record(
+        '7. One-Time Bootstrap Guard',
+        'Bootstrap using state_officer succeeds once, and a second bootstrap attempt (even with super_admin) is rejected with BOOTSTRAP_ALREADY_COMPLETED',
+        stateOfficerBootstrap.admin.user.role === 'state_officer' &&
+          stateOfficerBootstrap.admin.user.schoolId === null &&
+          secondAfterStateOfficerRejected
+      );
+
+      // -----------------------------------------------------------------------
+      // 5C. Bootstrap with `principal`, followed by a second attempt -> rejected
+      // -----------------------------------------------------------------------
+      await resetIsolatedTestSchema(ISOLATED_SCHEMA, 1);
+
+      const principalBootstrap = await bootstrapFirstTenantAndAdmin({
+        organization: {
+          name: 'Benue SUBEB Autonomous School Board',
+          code: 'BNS-SUBEB-BRD',
+        },
+        school: {
+          name: 'Government College Katsina-Ala',
+          code: 'BNS-KTA-101',
+          lga: 'Katsina-Ala',
+          senatorialZone: 'Zone A (Benue North-East)',
+          category: 'Secondary',
+        },
+        admin: {
+          email: 'principal.kta@bns-kta-101.edu.ng',
+          password: 'PrincipalBootstrap#2026!',
+          fullName: 'Dr. Terver Akaa (Bootstrap Principal)',
+          role: 'principal',
+          staffIdNumber: 'BNS-KTA-101-PRIN-001',
+        },
+      });
+
+      let secondAfterPrincipalRejected = false;
+      try {
+        await bootstrapFirstTenantAndAdmin({
+          organization: { name: 'Second Org After Principal', code: 'SECOND-ORG-02' },
+          admin: {
+            email: 'second.admin@moe.benuestate.gov.ng',
+            password: 'SecondPassword#2026!',
+            fullName: 'Second Admin',
+            role: 'super_admin',
+          },
+        });
+      } catch (err: any) {
+        if (err instanceof ProvisioningError && err.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
+          secondAfterPrincipalRejected = true;
+        }
+      }
+
+      record(
+        '7. One-Time Bootstrap Guard',
+        'Bootstrap using principal (with valid school) succeeds once with linked staff record, and a second bootstrap attempt is rejected with BOOTSTRAP_ALREADY_COMPLETED',
+        principalBootstrap.admin.user.role === 'principal' &&
+          principalBootstrap.admin.user.schoolId === principalBootstrap.school?.id &&
+          principalBootstrap.admin.staff?.user_id === principalBootstrap.admin.user.id &&
+          secondAfterPrincipalRejected
+      );
+
+      // -----------------------------------------------------------------------
+      // 5D. Concurrent Bootstrap Race Test (2 pooled connections racing simultaneously)
+      // -----------------------------------------------------------------------
+      await resetIsolatedTestSchema(ISOLATED_SCHEMA, 2);
+
+      const [raceResultA, raceResultB] = await Promise.allSettled([
+        bootstrapFirstTenantAndAdmin({
+          organization: {
+            name: 'Concurrent Bootstrap Org Alpha',
+            code: 'BNS-RACE-ALPHA',
+          },
+          admin: {
+            email: 'alpha.admin@moe.benuestate.gov.ng',
+            password: 'AlphaStrongPass#2026!',
+            fullName: 'Alpha Bootstrap Admin',
+            role: 'super_admin',
+          },
+        }),
+        bootstrapFirstTenantAndAdmin({
+          organization: {
+            name: 'Concurrent Bootstrap Org Beta',
+            code: 'BNS-RACE-BETA',
+          },
+          admin: {
+            email: 'beta.admin@moe.benuestate.gov.ng',
+            password: 'BetaStrongPass#2026!',
+            fullName: 'Beta Bootstrap Admin',
+            role: 'state_officer',
+          },
+        }),
+      ]);
+
+      const fulfilledList = [raceResultA, raceResultB].filter((r) => r.status === 'fulfilled');
+      const rejectedList = [raceResultA, raceResultB].filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected'
+      );
+
+      const racePostVerify = await verifyProvisioningState();
+      const singleWinnerAndCleanReject =
+        fulfilledList.length === 1 &&
+        rejectedList.length === 1 &&
+        rejectedList[0].reason instanceof ProvisioningError &&
+        rejectedList[0].reason.code === 'BOOTSTRAP_ALREADY_COMPLETED' &&
+        racePostVerify.organizationsCount === 1 &&
+        racePostVerify.activeAdminsCount === 1;
+
+      record(
+        '8. Concurrent Bootstrap Race Safety',
+        'When two bootstrap requests execute concurrently across pooled PostgreSQL connections, pg_advisory_xact_lock serializes them so exactly 1 succeeds and 1 fails closed (409)',
+        singleWinnerAndCleanReject
+      );
+
+      // -----------------------------------------------------------------------
+      // 5E. Primary Bootstrap with `super_admin` + Full Multi-LGA API & RBAC Verification
+      // -----------------------------------------------------------------------
+      await resetIsolatedTestSchema(ISOLATED_SCHEMA, 1);
+
       const bootstrapRes = await bootstrapFirstTenantAndAdmin({
         organization: {
           name: 'Benue State Ministry of Education & SUBEB',
@@ -278,8 +648,8 @@ async function runPhase10cSuite() {
       const postVerify = await verifyProvisioningState();
 
       record(
-        '4. First Bootstrap',
-        'bootstrapFirstTenantAndAdmin() atomically provisions Organization, First School, Super Admin, and School Principal + linked Staff identity',
+        '7. One-Time Bootstrap Guard',
+        'Bootstrap using super_admin atomically provisions Organization, First School, Super Admin, and School Principal + linked Staff identity',
         bootstrapRes.organization.code === 'BNS-MOE-STATE' &&
           bootstrapRes.school?.code === 'BNS-MKD-101' &&
           bootstrapRes.school?.organization_id === bootstrapRes.organization.id &&
@@ -296,6 +666,30 @@ async function runPhase10cSuite() {
           postVerify.activeSuperAdminsCount === 1 &&
           postVerify.activeAdminsCount === 2 &&
           postVerify.staffLinkedUsersCount === 1
+      );
+
+      // Verify second bootstrap attempt after super_admin fails closed with BOOTSTRAP_ALREADY_COMPLETED
+      let secondBootstrapBlocked = false;
+      try {
+        await bootstrapFirstTenantAndAdmin({
+          organization: { name: 'Rogue Org', code: 'ROGUE-ORG' },
+          admin: {
+            email: 'rogue@example.com',
+            password: 'RoguePassword123!',
+            fullName: 'Rogue Admin',
+            role: 'super_admin',
+          },
+        });
+      } catch (err: any) {
+        if (err instanceof ProvisioningError && err.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
+          secondBootstrapBlocked = true;
+        }
+      }
+
+      record(
+        '7. One-Time Bootstrap Guard',
+        'Bootstrap using super_admin followed by a second attempt fails closed with BOOTSTRAP_ALREADY_COMPLETED (409)',
+        secondBootstrapBlocked
       );
 
       // Verify school's principal_name was synchronized and password hashes are Argon2id (never plaintext)
@@ -316,7 +710,7 @@ async function runPhase10cSuite() {
         );
 
       record(
-        '4. First Bootstrap',
+        '9. Argon2id & Operational Boundary',
         'Provisioned passwords use Argon2id hashing (zero plaintext) and school principal_name is synchronized',
         allArgon2id &&
           schoolRowRes.rows[0]?.principal_name === 'Dr. (Mrs.) Dooshima Vember (Principal Makurdi)'
@@ -341,36 +735,13 @@ async function runPhase10cSuite() {
       }
 
       record(
-        '4. First Bootstrap',
+        '9. Argon2id & Operational Boundary',
         'Provisioning creates zero student, parent, fee, invoice, payment, attendance, or assessment records',
         operationalRowSum === 0
       );
 
-      // Verify second bootstrap attempt fails closed with BOOTSTRAP_ALREADY_COMPLETED
-      let secondBootstrapBlocked = false;
-      try {
-        await bootstrapFirstTenantAndAdmin({
-          organization: { name: 'Rogue Org', code: 'ROGUE-ORG' },
-          admin: {
-            email: 'rogue@example.com',
-            password: 'RoguePassword123!',
-            fullName: 'Rogue Admin',
-          },
-        });
-      } catch (err: any) {
-        if (err instanceof ProvisioningError && err.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
-          secondBootstrapBlocked = true;
-        }
-      }
-
-      record(
-        '4. First Bootstrap',
-        'Second bootstrap attempt fails closed with BOOTSTRAP_ALREADY_COMPLETED (409)',
-        secondBootstrapBlocked
-      );
-
       // =========================================================================
-      // 5. Real Authentication & Authorized API Provisioning Across Multiple LGAs
+      // 10. Real Authentication, RBAC & Tenant Isolation Verification
       // =========================================================================
       const superAdminLoginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
         method: 'POST',
@@ -395,7 +766,7 @@ async function runPhase10cSuite() {
       const principalToken = principalLoginJson.token as string;
 
       record(
-        '5. Auth & Session Integration',
+        '10. Auth & Session Integration',
         'Provisioned Super Admin and School Principal authenticate via POST /api/v1/auth/login with accurate RBAC & school scope',
         superAdminLoginRes.status === 200 &&
           superAdminLoginJson.user?.role === 'super_admin' &&
@@ -457,7 +828,7 @@ async function runPhase10cSuite() {
       });
 
       record(
-        '6. Security & Privilege Guards',
+        '11. Security & Privilege Guards',
         'Unauthenticated requests return 401; Principal is blocked (403) from creating organizations, creating schools, or escalating roles',
         unauthOrgRes.status === 401 &&
           principalCreateOrgRes.status === 403 &&
@@ -465,7 +836,21 @@ async function runPhase10cSuite() {
           principalEscalateRes.status === 403
       );
 
-      // Super Admin provisions a second school in Gboko LGA and its own distinct Principal
+      // Super Admin provisions a second organization + second school in Gboko LGA and its own distinct Principal
+      const org2CreateRes = await fetch(`${baseUrl}/api/v1/provisioning/organizations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${superAdminToken}`,
+        },
+        body: JSON.stringify({
+          name: 'Benue Science & Technical Education Board',
+          code: 'BNS-STEB-ORG',
+        }),
+      });
+      const org2CreateJson = await org2CreateRes.json();
+      const org2Id = org2CreateJson.data?.id as string;
+
       const school2CreateRes = await fetch(`${baseUrl}/api/v1/provisioning/schools`, {
         method: 'POST',
         headers: {
@@ -486,6 +871,26 @@ async function runPhase10cSuite() {
       const school2CreateJson = await school2CreateRes.json();
       const school2Id = school2CreateJson.data?.id as string;
 
+      // Verify supplied organizationId must match selected school's actual organization_id
+      let orgSchoolMismatchBlocked = false;
+      try {
+        await provisionAdministrator(
+          {
+            email: 'mismatch.principal@bns-gbk-202.edu.ng',
+            password: 'MismatchPassword#2026!',
+            fullName: 'Mismatched Org Principal',
+            role: 'principal',
+            organizationId: org2Id, // school2 belongs to bootstrapRes.organization.id, NOT org2Id!
+            schoolId: school2Id,
+          },
+          { user: bootstrapRes.admin.user }
+        );
+      } catch (err: any) {
+        if (err instanceof ProvisioningError && err.code === 'ORGANIZATION_SCHOOL_MISMATCH') {
+          orgSchoolMismatchBlocked = true;
+        }
+      }
+
       const principal2CreateRes = await fetch(`${baseUrl}/api/v1/provisioning/administrators`, {
         method: 'POST',
         headers: {
@@ -504,10 +909,12 @@ async function runPhase10cSuite() {
       const principal2CreateJson = await principal2CreateRes.json();
 
       record(
-        '7. Multi-LGA School & Admin Provisioning',
-        'Super Admin provisions a second school in Gboko LGA and its distinct Principal + Staff record via API',
-        school2CreateRes.status === 201 &&
+        '12. Multi-LGA School & Admin Provisioning',
+        'Super Admin provisions a second school in Gboko LGA and its distinct Principal + Staff record; mismatched organization/school is rejected with ORGANIZATION_SCHOOL_MISMATCH',
+        org2CreateRes.status === 201 &&
+          school2CreateRes.status === 201 &&
           school2CreateJson.data?.code === 'BNS-GBK-202' &&
+          orgSchoolMismatchBlocked &&
           principal2CreateRes.status === 201 &&
           principal2CreateJson.data?.user?.schoolId === school2Id &&
           principal2CreateJson.data?.staff?.school_id === school2Id &&
@@ -569,7 +976,7 @@ async function runPhase10cSuite() {
       );
 
       record(
-        '7. Multi-LGA School & Admin Provisioning',
+        '12. Multi-LGA School & Admin Provisioning',
         'Duplicate school codes return 409, unscoped school roles return 400, and cross-school Principal provisioning returns 403',
         dupSchoolRes.status === 409 &&
           missingSchoolScopeAdminRes.status === 400 &&
@@ -577,7 +984,7 @@ async function runPhase10cSuite() {
       );
 
       // =========================================================================
-      // 8. Account Request Workflow Integration & Atomic Staff Linkage
+      // 13. Account Request Workflow Integration & Atomic Staff Linkage
       // =========================================================================
       const privReqRes = await fetch(`${baseUrl}/api/v1/auth/account-requests`, {
         method: 'POST',
@@ -642,7 +1049,7 @@ async function runPhase10cSuite() {
       );
 
       record(
-        '8. Account Request Workflow',
+        '13. Account Request Workflow',
         'Public super_admin request is blocked (403); Principal approval of teacher request atomically creates both users and staff rows',
         privReqRes.status === 403 &&
           teacherReqRes.status === 201 &&
@@ -664,17 +1071,19 @@ async function runPhase10cSuite() {
         recordedActions.has('ADMIN_PROVISIONED') &&
         recordedActions.has('BOOTSTRAP_PROVISIONED') &&
         recordedActions.has('PROVISIONING_BLOCKED') &&
+        recordedActions.has('TENANT_VIOLATION_ATTEMPT') &&
         recordedActions.has('ACCOUNT_APPROVED');
 
       record(
-        '9. Audit Trail & Final Integrity',
-        'All provisioning, bootstrap, approval, and blocked privilege escalation events are recorded in auth_audit_logs',
+        '14. Audit Trail & Final Integrity',
+        'All provisioning, bootstrap, approval, tenant violation, and blocked privilege escalation events are recorded in auth_audit_logs',
         hasAllExpectedAudits
       );
     } finally {
       try {
+        assertSafeIsolatedTestSchema(ISOLATED_SCHEMA);
         await query('SET search_path TO public;');
-        await query('DROP SCHEMA IF EXISTS phase10c_provisioning_test CASCADE;');
+        await query(`DROP SCHEMA IF EXISTS ${ISOLATED_SCHEMA} CASCADE;`);
       } catch {
         // ignore cleanup error
       }

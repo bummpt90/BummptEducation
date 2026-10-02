@@ -80,7 +80,7 @@ export const SchoolLeadershipSimulationModal: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  Statewide Multi-LGA School & Leadership Configurator
+                  Statewide Multi-LGA School & Simulation/Reference Leadership Configurator
                 </span>
                 {hasCustomOverride && (
                   <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30">
@@ -171,7 +171,7 @@ export const SchoolLeadershipSimulationModal: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-emerald-700" />
                 <h3 className="text-xs font-black uppercase tracking-wider text-emerald-950">
-                  2. School Simulation Leadership Mode (Official School Roster vs. Simulation Presets)
+                  2. School Simulation Leadership Mode (Simulation/Reference Leadership Roster & Presets)
                 </h3>
               </div>
               {hasCustomOverride && (
@@ -181,7 +181,7 @@ export const SchoolLeadershipSimulationModal: React.FC = () => {
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 hover:text-emerald-950 bg-white px-2.5 py-1 rounded-md border border-emerald-300 shadow-xs"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  Restore School Official Leaders
+                  Restore Default Reference Roster
                 </button>
               )}
             </div>
@@ -217,13 +217,13 @@ export const SchoolLeadershipSimulationModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Step 3: Custom Leadership Roster Editor for Real School Simulation */}
+          {/* Step 3: Custom Simulation/Reference Leadership Roster Editor */}
           <form onSubmit={handleSaveCustomRoster} className="bg-white rounded-xl p-4 border border-slate-200 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-slate-700" />
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
-                  3. Active Leadership Roster for {activeSchool.name} (Editable for Simulation)
+                  3. Simulation/Reference Leadership Roster for {activeSchool.name} (Editable for UI Preview)
                 </h3>
               </div>
               <span className="text-[11px] text-slate-500">
@@ -322,7 +322,7 @@ export const SchoolLeadershipSimulationModal: React.FC = () => {
               <div className="flex items-center gap-2 text-xs text-slate-600">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>
-                  Every school selected across Benue&apos;s 23 LGAs loads its own distinct leadership by default.
+                  Every school selected across Benue&apos;s 23 LGAs loads its own distinct simulation/reference leadership roster for UI preview.
                 </span>
               </div>
 

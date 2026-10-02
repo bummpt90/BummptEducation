@@ -784,11 +784,72 @@ export async function provisionAdministrator(
 }
 
 /**
+ * PostgreSQL transaction-level advisory lock keys for serializing first-deployment bootstrap.
+ * Prevents concurrent bootstrap race conditions across multiple connections or server processes.
+ */
+const BOOTSTRAP_ADVISORY_LOCK_KEY_1 = 10010;
+const BOOTSTRAP_ADVISORY_LOCK_KEY_2 = 1003;
+
+export interface BootstrapCompletionState {
+  alreadyBootstrapped: boolean;
+  organizationsCount: number;
+  schoolsCount: number;
+  usersCount: number;
+  bootstrapAuditCount: number;
+}
+
+/**
+ * Evaluates whether first-deployment bootstrap has already occurred on the current database/schema.
+ * Bootstrap is strictly one-time: if any organization, school, user, or successful BOOTSTRAP_PROVISIONED
+ * audit record exists, bootstrap is considered complete regardless of which initial admin role was used.
+ */
+export async function checkBootstrapCompletionState(
+  client: PoolClient
+): Promise<BootstrapCompletionState> {
+  const stateRes = await client.query<{
+    organizations_count: string;
+    schools_count: string;
+    users_count: string;
+    bootstrap_audit_count: string;
+  }>(`
+    SELECT
+      (SELECT COUNT(*) FROM organizations) AS organizations_count,
+      (SELECT COUNT(*) FROM schools) AS schools_count,
+      (SELECT COUNT(*) FROM users) AS users_count,
+      (SELECT COUNT(*) FROM auth_audit_logs WHERE action = 'BOOTSTRAP_PROVISIONED' AND status = 'SUCCESS') AS bootstrap_audit_count;
+  `);
+
+  const row = stateRes.rows[0];
+  const organizationsCount = parseInt(row?.organizations_count || '0', 10);
+  const schoolsCount = parseInt(row?.schools_count || '0', 10);
+  const usersCount = parseInt(row?.users_count || '0', 10);
+  const bootstrapAuditCount = parseInt(row?.bootstrap_audit_count || '0', 10);
+
+  return {
+    alreadyBootstrapped:
+      organizationsCount > 0 ||
+      schoolsCount > 0 ||
+      usersCount > 0 ||
+      bootstrapAuditCount > 0,
+    organizationsCount,
+    schoolsCount,
+    usersCount,
+    bootstrapAuditCount,
+  };
+}
+
+/**
  * 4. Controlled First-Deployment Bootstrap (Organization + Optional First School + First Admin)
  *
- * FAIL-CLOSED GUARANTEE:
- * - Refuses to execute if any super_admin user already exists in PostgreSQL.
- * - Executes inside a single atomic PostgreSQL transaction.
+ * FAIL-CLOSED & CONCURRENCY GUARANTEES:
+ * - Acquires a PostgreSQL transaction-level advisory lock (pg_advisory_xact_lock) BEFORE checking
+ *   whether bootstrap is permitted, serializing competing bootstrap attempts across processes.
+ * - Enforces a role-agnostic one-time completion rule: refuses to execute if any organization,
+ *   school, user, or BOOTSTRAP_PROVISIONED audit record already exists (cannot be bypassed by
+ *   choosing super_admin, state_officer, or principal).
+ * - Executes organization, optional school, administrator, staff linkage, and success audit logging
+ *   within a single atomic PostgreSQL transaction. Any failure rolls back all created records.
+ * - Durably logs PROVISIONING_BLOCKED when a duplicate/competing bootstrap attempt is rejected.
  */
 export async function bootstrapFirstTenantAndAdmin(
   input: FirstBootstrapInput
@@ -801,161 +862,163 @@ export async function bootstrapFirstTenantAndAdmin(
     );
   }
 
-  // Pre-check before opening transaction so PROVISIONING_BLOCKED audit log is durably committed
-  const preCheckRes = await query<{ count: string }>(
-    "SELECT COUNT(*) as count FROM users WHERE role = 'super_admin';"
-  );
-  const preCheckCount = parseInt(preCheckRes.rows[0]?.count || '0', 10);
-  if (preCheckCount > 0) {
-    await logAuthEvent({
-      action: 'PROVISIONING_BLOCKED',
-      status: 'BLOCKED',
-      email: input.admin.email || null,
-      ipAddress: input.ipAddress || null,
-      userAgent: input.userAgent || null,
-      details: {
-        operation: 'BOOTSTRAP_FIRST_TENANT_AND_ADMIN',
-        reason: 'BOOTSTRAP_ALREADY_COMPLETED',
-        existingSuperAdminCount: preCheckCount,
-      },
-    });
-    throw new ProvisioningError(
-      'BOOTSTRAP_ALREADY_COMPLETED',
-      'First-deployment bootstrap has already been completed. Use an authenticated Super Administrator session for subsequent provisioning.',
-      409
-    );
-  }
+  let blockedCompletionState: BootstrapCompletionState | null = null;
 
-  return runProvisioningTransaction(async (client) => {
-    // Fail closed if bootstrap was already performed (any super_admin user exists)
-    const existingSuperAdminRes = await client.query<{ count: string }>(
-      "SELECT COUNT(*) as count FROM users WHERE role = 'super_admin';"
-    );
-    const existingSuperAdminCount = parseInt(existingSuperAdminRes.rows[0]?.count || '0', 10);
-    if (existingSuperAdminCount > 0) {
+  try {
+    return await runProvisioningTransaction(async (client) => {
+      // 1. Acquire transaction-level exclusive advisory lock before checking completion state
+      await client.query('SELECT pg_advisory_xact_lock($1, $2);', [
+        BOOTSTRAP_ADVISORY_LOCK_KEY_1,
+        BOOTSTRAP_ADVISORY_LOCK_KEY_2,
+      ]);
+
+      // 2. Check role-agnostic bootstrap completion state while holding the lock
+      const completionState = await checkBootstrapCompletionState(client);
+      if (completionState.alreadyBootstrapped) {
+        blockedCompletionState = completionState;
+        throw new ProvisioningError(
+          'BOOTSTRAP_ALREADY_COMPLETED',
+          'First-deployment bootstrap has already been completed. Use an authenticated Super Administrator session for subsequent provisioning.',
+          409
+        );
+      }
+
+      // 3. Validate bootstrap administrator role before creating any records
+      const primaryAdminRole = input.admin.role || 'super_admin';
+      if (
+        primaryAdminRole !== 'super_admin' &&
+        primaryAdminRole !== 'state_officer' &&
+        primaryAdminRole !== 'principal'
+      ) {
+        throw new ProvisioningError(
+          'INVALID_BOOTSTRAP_ADMIN_ROLE',
+          'Bootstrap administrator role must be super_admin, state_officer, or principal.',
+          400
+        );
+      }
+
+      if (primaryAdminRole === 'principal' && !input.school) {
+        throw new ProvisioningError(
+          'SCHOOL_SCOPE_REQUIRED',
+          'Bootstrapping with a principal administrator requires provisioning the first school in the same bootstrap operation.',
+          400
+        );
+      }
+
+      if (primaryAdminRole === 'principal' && input.schoolPrincipal) {
+        throw new ProvisioningError(
+          'DUPLICATE_BOOTSTRAP_PRINCIPAL',
+          'Cannot specify a separate schoolPrincipal when the primary bootstrap admin role is already principal.',
+          400
+        );
+      }
+
+      const bootstrapActor: ProvisioningActorContext = {
+        isBootstrap: true,
+        ipAddress: input.ipAddress || null,
+        userAgent: input.userAgent || null,
+      };
+
+      // 4. Provision first organization
+      const organization = await provisionOrganization(input.organization, bootstrapActor, client);
+
+      // 5. Provision first school if provided
+      let school: SchoolDbEntity | null = null;
+      if (input.school) {
+        school = await provisionSchool(
+          {
+            ...input.school,
+            organizationId: organization.id,
+          },
+          bootstrapActor,
+          client
+        );
+      }
+
+      // 6. Provision first administrator
+      const adminSchoolId = primaryAdminRole === 'principal' ? school?.id || null : null;
+      const admin = await provisionAdministrator(
+        {
+          email: input.admin.email,
+          password: input.admin.password,
+          fullName: input.admin.fullName,
+          phone: input.admin.phone || null,
+          role: primaryAdminRole,
+          organizationId: organization.id,
+          schoolId: adminSchoolId,
+          staffIdNumber: input.admin.staffIdNumber || null,
+        },
+        bootstrapActor,
+        client
+      );
+
+      // 7. Optional: provision dedicated first School Principal if school was created and admin is platform-level
+      let schoolPrincipal: ProvisionAdministratorResult | null = null;
+      if (input.schoolPrincipal && school) {
+        schoolPrincipal = await provisionAdministrator(
+          {
+            email: input.schoolPrincipal.email,
+            password: input.schoolPrincipal.password,
+            fullName: input.schoolPrincipal.fullName,
+            phone: input.schoolPrincipal.phone || null,
+            role: 'principal',
+            organizationId: organization.id,
+            schoolId: school.id,
+            staffIdNumber: input.schoolPrincipal.staffIdNumber || null,
+            qualifications: input.schoolPrincipal.qualifications || null,
+            trcnNumber: input.schoolPrincipal.trcnNumber || null,
+          },
+          bootstrapActor,
+          client
+        );
+      }
+
+      // 8. Record BOOTSTRAP_PROVISIONED inside the same atomic transaction
       await logAuthEvent(
         {
-          action: 'PROVISIONING_BLOCKED',
-          status: 'BLOCKED',
-          email: input.admin.email || null,
+          action: 'BOOTSTRAP_PROVISIONED',
+          status: 'SUCCESS',
+          userId: admin.user.id,
+          email: admin.user.email,
           ipAddress: input.ipAddress || null,
           userAgent: input.userAgent || null,
           details: {
-            operation: 'BOOTSTRAP_FIRST_TENANT_AND_ADMIN',
-            reason: 'BOOTSTRAP_ALREADY_COMPLETED',
-            existingSuperAdminCount,
+            organizationId: organization.id,
+            organizationCode: organization.code,
+            schoolId: school?.id || null,
+            schoolCode: school?.code || null,
+            adminUserId: admin.user.id,
+            adminRole: admin.user.role,
+            schoolPrincipalUserId: schoolPrincipal?.user.id || null,
           },
         },
         client
       );
-      throw new ProvisioningError(
-        'BOOTSTRAP_ALREADY_COMPLETED',
-        'First-deployment bootstrap has already been completed. Use an authenticated Super Administrator session for subsequent provisioning.',
-        409
-      );
-    }
 
-    const bootstrapActor: ProvisioningActorContext = {
-      isBootstrap: true,
-      ipAddress: input.ipAddress || null,
-      userAgent: input.userAgent || null,
-    };
-
-    // 1. Provision first organization
-    const organization = await provisionOrganization(input.organization, bootstrapActor, client);
-
-    // 2. Provision first school if provided
-    let school: SchoolDbEntity | null = null;
-    if (input.school) {
-      school = await provisionSchool(
-        {
-          ...input.school,
-          organizationId: organization.id,
-        },
-        bootstrapActor,
-        client
-      );
-    }
-
-    // 3. Provision first administrator
-    const primaryAdminRole = input.admin.role || 'super_admin';
-    if (
-      primaryAdminRole !== 'super_admin' &&
-      primaryAdminRole !== 'state_officer' &&
-      primaryAdminRole !== 'principal'
-    ) {
-      throw new ProvisioningError(
-        'INVALID_BOOTSTRAP_ADMIN_ROLE',
-        'Bootstrap administrator role must be super_admin, state_officer, or principal.',
-        400
-      );
-    }
-
-    const adminSchoolId = primaryAdminRole === 'principal' ? school?.id || null : null;
-    const admin = await provisionAdministrator(
-      {
-        email: input.admin.email,
-        password: input.admin.password,
-        fullName: input.admin.fullName,
-        phone: input.admin.phone || null,
-        role: primaryAdminRole,
-        organizationId: organization.id,
-        schoolId: adminSchoolId,
-        staffIdNumber: input.admin.staffIdNumber || null,
-      },
-      bootstrapActor,
-      client
-    );
-
-    // 4. Optional: provision dedicated first School Principal if school was created and admin is platform-level
-    let schoolPrincipal: ProvisionAdministratorResult | null = null;
-    if (input.schoolPrincipal && school) {
-      schoolPrincipal = await provisionAdministrator(
-        {
-          email: input.schoolPrincipal.email,
-          password: input.schoolPrincipal.password,
-          fullName: input.schoolPrincipal.fullName,
-          phone: input.schoolPrincipal.phone || null,
-          role: 'principal',
-          organizationId: organization.id,
-          schoolId: school.id,
-          staffIdNumber: input.schoolPrincipal.staffIdNumber || null,
-          qualifications: input.schoolPrincipal.qualifications || null,
-          trcnNumber: input.schoolPrincipal.trcnNumber || null,
-        },
-        bootstrapActor,
-        client
-      );
-    }
-
-    await logAuthEvent(
-      {
-        action: 'BOOTSTRAP_PROVISIONED',
-        status: 'SUCCESS',
-        userId: admin.user.id,
-        email: admin.user.email,
+      return {
+        organization,
+        school,
+        admin,
+        schoolPrincipal,
+      };
+    });
+  } catch (err: any) {
+    if (err instanceof ProvisioningError && err.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
+      await logAuthEvent({
+        action: 'PROVISIONING_BLOCKED',
+        status: 'BLOCKED',
+        email: input.admin?.email || null,
         ipAddress: input.ipAddress || null,
         userAgent: input.userAgent || null,
         details: {
-          organizationId: organization.id,
-          organizationCode: organization.code,
-          schoolId: school?.id || null,
-          schoolCode: school?.code || null,
-          adminUserId: admin.user.id,
-          adminRole: admin.user.role,
-          schoolPrincipalUserId: schoolPrincipal?.user.id || null,
+          operation: 'BOOTSTRAP_FIRST_TENANT_AND_ADMIN',
+          reason: 'BOOTSTRAP_ALREADY_COMPLETED',
+          ...(blockedCompletionState || {}),
         },
-      },
-      client
-    );
-
-    return {
-      organization,
-      school,
-      admin,
-      schoolPrincipal,
-    };
-  });
+      });
+    }
+    throw err;
+  }
 }
 
 /**

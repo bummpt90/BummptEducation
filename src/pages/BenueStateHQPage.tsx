@@ -366,7 +366,7 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
     };
   }, [lgaSchools, selectedSchoolId, schoolOverrides]);
 
-  // Authoritative school with active simulation leadership resolved
+  // Selected school with active simulation/reference leadership roster resolved
   const activeSchool = useMemo(() => {
     if (globalActiveSchool && globalActiveSchool.id === baseSelectedSchool.id) {
       return {
@@ -1110,10 +1110,10 @@ export function BenueStateHQPage({ onNavigate, onSelectActiveSchool }: BenueStat
                       <button
                         onClick={() => setIsLeadershipModalOpen(true)}
                         className="px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
-                        title="Configure school leadership or simulation options for this institution"
+                        title="Configure simulation/reference leadership roster options for this institution"
                       >
                         <Sliders className="h-4 w-4" />
-                        <span>Simulation Leadership Options</span>
+                        <span>Simulation/Reference Leadership Roster</span>
                       </button>
 
                       <button

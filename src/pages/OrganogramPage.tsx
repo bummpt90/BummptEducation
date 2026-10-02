@@ -113,7 +113,7 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
             {activeSchool.name} — Leadership Hierarchy
           </h1>
           <p className="text-xs text-slate-600 max-w-3xl leading-relaxed mt-1">
-            Displaying the active institutional leadership structure for <strong>{activeSchool.name}</strong> in <strong>{activeSchool.lga} Local Government Area</strong> ({activeSchool.zone}). Select any school across the 23 LGAs or configure simulation leadership options.
+            Displaying the simulation/reference leadership roster and institutional hierarchy for <strong>{activeSchool.name}</strong> in <strong>{activeSchool.lga} Local Government Area</strong> ({activeSchool.zone}). Select any school across the 23 LGAs or configure simulation/reference leadership roster options.
           </p>
         </div>
         <button
@@ -121,7 +121,7 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs transition cursor-pointer shrink-0"
         >
           <Sliders className="h-4 w-4" />
-          <span>Switch School / Simulation Leaders</span>
+          <span>Switch School / Simulation Roster</span>
         </button>
       </div>
 
@@ -133,7 +133,7 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
           </span>
           <h2 className="text-xl font-bold">{activeSchool.name} Administrative Nexus</h2>
           <p className="text-xs text-slate-400">
-            LGA Supervisory Authority & School-Level Leadership Roster
+            LGA Supervisory Authority & Simulation/Reference Leadership Roster
           </p>
         </div>
 
@@ -151,7 +151,7 @@ export const OrganogramPage: React.FC<OrganogramPageProps> = ({ onNavigate }) =>
               onClick={() => setIsLeadershipModalOpen(true)}
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-amber-300 hover:text-amber-200 transition cursor-pointer"
             >
-              <span>Configure Simulation Leadership Options</span>
+              <span>Configure Simulation/Reference Leadership Roster</span>
               <ArrowRight className="h-3 w-3" />
             </button>
           </div>

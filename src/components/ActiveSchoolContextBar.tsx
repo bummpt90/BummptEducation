@@ -97,7 +97,7 @@ export const ActiveSchoolContextBar: React.FC = () => {
                 ? 'bg-amber-400 text-slate-950 hover:bg-amber-300 shadow-xs'
                 : 'bg-emerald-700/90 hover:bg-emerald-600 text-white border border-emerald-500/40'
             }`}
-            title="Switch LGA School or configure real school simulation leadership options"
+            title="Switch LGA School or configure simulation/reference leadership roster options"
           >
             {hasCustomOverride ? (
               <Sparkles className="w-3.5 h-3.5" />
@@ -105,7 +105,7 @@ export const ActiveSchoolContextBar: React.FC = () => {
               <Sliders className="w-3.5 h-3.5" />
             )}
             <span>
-              {hasCustomOverride ? 'Simulation Leaders Active' : 'School Leadership Options'}
+              {hasCustomOverride ? 'Simulation Roster Override Active' : 'Simulation/Reference Leadership Roster'}
             </span>
           </button>
         </div>

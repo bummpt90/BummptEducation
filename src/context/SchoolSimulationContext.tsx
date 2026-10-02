@@ -99,7 +99,7 @@ export const SchoolSimulationProvider: React.FC<SchoolSimulationProviderProps> =
   );
 
   const selectedPresetId = useMemo(
-    () => selectedPresetBySchool[activeSchool.id] || 'school-authentic',
+    () => selectedPresetBySchool[activeSchool.id] || 'school-reference-roster',
     [selectedPresetBySchool, activeSchool.id]
   );
 
@@ -123,7 +123,7 @@ export const SchoolSimulationProvider: React.FC<SchoolSimulationProviderProps> =
       const targetId = schoolId || activeSchool.id;
       setSelectedPresetBySchool((prev) => ({ ...prev, [targetId]: presetId }));
 
-      if (presetId === 'school-authentic') {
+      if (presetId === 'school-reference-roster' || presetId === 'school-authentic') {
         setOverridesBySchool((prev) => {
           const next = { ...prev };
           delete next[targetId];
@@ -169,7 +169,7 @@ export const SchoolSimulationProvider: React.FC<SchoolSimulationProviderProps> =
   const resetSchoolLeadership = useCallback(
     (schoolId?: string) => {
       const targetId = schoolId || activeSchool.id;
-      setSelectedPresetBySchool((prev) => ({ ...prev, [targetId]: 'school-authentic' }));
+      setSelectedPresetBySchool((prev) => ({ ...prev, [targetId]: 'school-reference-roster' }));
       setOverridesBySchool((prev) => {
         const next = { ...prev };
         delete next[targetId];
@@ -241,7 +241,7 @@ export function useSchoolSimulation(): SchoolSimulationContextType {
       allStateSchools: getAllBenueGovSchools(),
       leadershipRoster: defaultRoster,
       dynamicOrganogram: buildDynamicOrganogramForSchool(defaultSchool, null),
-      selectedPresetId: 'school-authentic',
+      selectedPresetId: 'school-reference-roster',
       presets: SIMULATION_LEADERSHIP_PRESETS,
       hasCustomOverride: false,
       applySimulationPreset: () => {},

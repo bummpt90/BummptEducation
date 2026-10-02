@@ -2492,9 +2492,9 @@ export interface SimulationLeadershipPreset {
 
 export const SIMULATION_LEADERSHIP_PRESETS: SimulationLeadershipPreset[] = [
   {
-    id: 'school-authentic',
-    label: 'Selected School Official Roster (Default)',
-    description: 'Uses the authentic Principal / Headmaster, Vice Principal, and Bursar registered to the selected school in its Local Government Area.',
+    id: 'school-reference-roster',
+    label: 'Selected School Simulation/Reference Leadership Roster (Default)',
+    description: 'Uses the default simulation/reference leadership roster (Principal / Headmaster, Vice Principal, and Bursar) associated with the selected school in its Local Government Area for UI preview.',
     principalTitle: 'Auto (Based on School Category)',
     principalName: '',
     vicePrincipalAcademic: '',
