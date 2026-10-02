@@ -9,7 +9,8 @@
  * - Requires DATABASE_URL and enforces DATABASE_SSL='require'|'true' in production.
  * - Requires all 11 migrations (0001..0011) to be applied and checksum-verified first.
  * - Requires explicit BOOTSTRAP_* environment variables (never uses demo/hardcoded defaults).
- * - Fails closed if a super_admin account already exists (one-time bootstrap guard).
+ * - Fails closed if any organization, school, user, or successful BOOTSTRAP_PROVISIONED
+ *   audit record already exists, independent of initial administrator role (one-time bootstrap guard).
  * - NEVER imports or executes development/demo seeders.
  * - NEVER logs plaintext passwords or DATABASE_URL credentials.
  */

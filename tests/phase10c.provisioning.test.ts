@@ -73,13 +73,92 @@ function record(category: string, test: string, passed: boolean, details?: strin
 }
 
 const ISOLATED_TEST_SCHEMA_REGEX = /^phase10c_[a-z0-9_]+_test$/;
+const SAFE_TEST_DB_NAME_REGEX = /^(?:test_[a-z0-9_]+|[a-z0-9_]+_test(?:_[a-z0-9_]+)?)$/i;
+const FORBIDDEN_TEST_DB_NAMES = new Set([
+  'postgres',
+  'neondb',
+  'defaultdb',
+  'main',
+  'master',
+  'template0',
+  'template1',
+  'production',
+  'prod',
+  'staging',
+  'live',
+  'bummpt',
+  'bummpt_education',
+  'bummpt_prod',
+  'bummpt_production',
+]);
+
+interface DedicatedTestDbGuardInput {
+  testDatabaseUrl?: string;
+  ordinaryDatabaseUrl?: string;
+  allowDestructiveOptIn?: string;
+  nodeEnv?: string;
+  schemaName: string;
+}
+
+interface VerifiedDedicatedTestDatabase {
+  testDatabaseUrl: string;
+  expectedDbName: string;
+  actualDbName: string;
+  schemaName: string;
+}
+
+let activeVerifiedTestDb: VerifiedDedicatedTestDatabase | null = null;
+
+/**
+ * Extracts the PostgreSQL database name from a connection URL without logging credentials.
+ */
+function extractDatabaseNameFromUrl(connectionString: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(connectionString);
+  } catch {
+    throw new Error('INVALID_TEST_DATABASE_URL: PHASE10C_TEST_DATABASE_URL is not a valid URL.');
+  }
+  const dbName = decodeURIComponent(parsed.pathname.replace(/^\/+/, '').trim());
+  if (!dbName) {
+    throw new Error(
+      'INVALID_TEST_DATABASE_URL: PHASE10C_TEST_DATABASE_URL does not specify a database name in pathname.'
+    );
+  }
+  return dbName;
+}
+
+/**
+ * Verifies that a database name is explicitly designated as a test database
+ * and is never a default, production, or live database name.
+ */
+function assertSafeTestDatabaseName(dbName: string): void {
+  const trimmed = (dbName || '').trim();
+  if (!trimmed) {
+    throw new Error('UNSAFE_TEST_DATABASE_NAME: Database name is empty.');
+  }
+  const normalized = trimmed.toLowerCase();
+  if (
+    FORBIDDEN_TEST_DB_NAMES.has(normalized) ||
+    /(?:^|[_-])(?:prod|production|live|staging)(?:$|[_-])/i.test(normalized)
+  ) {
+    throw new Error(
+      `UNSAFE_TEST_DATABASE_NAME: '${trimmed}' is a forbidden default, staging, or production database name.`
+    );
+  }
+  if (!SAFE_TEST_DB_NAME_REGEX.test(normalized)) {
+    throw new Error(
+      `UNSAFE_TEST_DATABASE_NAME: '${trimmed}' is not clearly designated as a test database (must match ${SAFE_TEST_DB_NAME_REGEX}).`
+    );
+  }
+}
 
 /**
  * Verifies that destructive test setup can ONLY target an explicitly isolated test schema
  * and never `public`, `production`, or any live production environment.
  */
 function assertSafeIsolatedTestSchema(schemaName: string, nodeEnv = process.env.NODE_ENV): void {
-  if (nodeEnv === 'production') {
+  if ((nodeEnv || '').trim().toLowerCase() === 'production') {
     throw new Error(
       'REFUSED_PRODUCTION_TEST_EXECUTION: Destructive test schema setup is strictly prohibited when NODE_ENV=production.'
     );
@@ -92,14 +171,133 @@ function assertSafeIsolatedTestSchema(schemaName: string, nodeEnv = process.env.
 }
 
 /**
- * Resets an isolated test schema cleanly and ensures all connections in the pool use its search_path.
+ * Validates all environment-level fail-closed prerequisites before connecting to the dedicated test database.
+ * Never falls back to ordinary DATABASE_URL.
  */
-async function resetIsolatedTestSchema(schemaName: string, poolSize = 2): Promise<void> {
-  assertSafeIsolatedTestSchema(schemaName);
+function assertSafeDedicatedTestDatabaseConfig(input: DedicatedTestDbGuardInput): {
+  testDatabaseUrl: string;
+  expectedDbName: string;
+  schemaName: string;
+} {
+  const effectiveNodeEnv = (input.nodeEnv ?? process.env.NODE_ENV ?? '').trim().toLowerCase();
+  if (effectiveNodeEnv === 'production') {
+    throw new Error(
+      'REFUSED_PRODUCTION_TEST_EXECUTION: Destructive Phase 10C tests are strictly prohibited when NODE_ENV=production.'
+    );
+  }
+
+  assertSafeIsolatedTestSchema(input.schemaName, effectiveNodeEnv);
+
+  const optIn = (input.allowDestructiveOptIn ?? '').trim();
+  if (optIn !== 'true') {
+    throw new Error(
+      'MISSING_DESTRUCTIVE_TEST_OPT_IN: Explicit opt-in ALLOW_DESTRUCTIVE_PHASE10C_TESTS=true is required to run destructive Phase 10C tests.'
+    );
+  }
+
+  const rawTestUrl = (input.testDatabaseUrl ?? '').trim();
+  if (!rawTestUrl) {
+    throw new Error(
+      'MISSING_TEST_DATABASE_URL: Explicit PHASE10C_TEST_DATABASE_URL is required for destructive Phase 10C tests; refusing to fall back to DATABASE_URL.'
+    );
+  }
+
+  const expectedDbName = extractDatabaseNameFromUrl(rawTestUrl);
+  assertSafeTestDatabaseName(expectedDbName);
+
+  const rawOrdinaryUrl = (input.ordinaryDatabaseUrl ?? '').trim();
+  if (rawOrdinaryUrl) {
+    let ordinaryDbName = '';
+    try {
+      ordinaryDbName = extractDatabaseNameFromUrl(rawOrdinaryUrl);
+    } catch {
+      ordinaryDbName = '';
+    }
+    if (ordinaryDbName && ordinaryDbName.toLowerCase() === expectedDbName.toLowerCase()) {
+      throw new Error(
+        `UNSAFE_TEST_DATABASE_NAME: PHASE10C_TEST_DATABASE_URL must target a dedicated test database distinct from ordinary DATABASE_URL database '${ordinaryDbName}'.`
+      );
+    }
+  }
+
+  return {
+    testDatabaseUrl: rawTestUrl,
+    expectedDbName,
+    schemaName: input.schemaName,
+  };
+}
+
+/**
+ * Verifies the live connected PostgreSQL database name returned by `SELECT current_database()`.
+ */
+function assertSafeConnectedTestDatabase(
+  actualConnectedDbName: string,
+  expectedDbName: string
+): void {
+  assertSafeTestDatabaseName(actualConnectedDbName);
+  if (actualConnectedDbName.trim().toLowerCase() !== expectedDbName.trim().toLowerCase()) {
+    throw new Error(
+      `TEST_DATABASE_NAME_MISMATCH: Connected database '${actualConnectedDbName}' does not match expected dedicated test database '${expectedDbName}'.`
+    );
+  }
+}
+
+/**
+ * Connects strictly via PHASE10C_TEST_DATABASE_URL (never DATABASE_URL), inspects `SELECT current_database()`,
+ * and verifies all fail-closed test database and schema guards before any destructive setup can occur.
+ */
+async function verifyAndBindDedicatedTestDatabase(
+  input: DedicatedTestDbGuardInput
+): Promise<VerifiedDedicatedTestDatabase> {
+  const validated = assertSafeDedicatedTestDatabaseConfig(input);
 
   await closeDatabasePool();
+  process.env.DATABASE_URL = validated.testDatabaseUrl;
+  delete process.env.DATABASE_SEARCH_PATH;
+
+  const dbNameRes = await query<{ current_database: string }>(
+    'SELECT current_database() AS current_database;'
+  );
+  const actualDbName = dbNameRes.rows[0]?.current_database || '';
+  assertSafeConnectedTestDatabase(actualDbName, validated.expectedDbName);
+
+  const verified: VerifiedDedicatedTestDatabase = {
+    testDatabaseUrl: validated.testDatabaseUrl,
+    expectedDbName: validated.expectedDbName,
+    actualDbName,
+    schemaName: validated.schemaName,
+  };
+  activeVerifiedTestDb = verified;
+  return verified;
+}
+
+/**
+ * Resets an isolated test schema cleanly inside the verified dedicated test database
+ * and ensures all connections in the pool use its search_path.
+ */
+async function resetIsolatedTestSchema(schemaName: string, poolSize = 2): Promise<void> {
+  if (!activeVerifiedTestDb) {
+    throw new Error(
+      'UNVERIFIED_TEST_DATABASE: Cannot reset isolated schema before verifyAndBindDedicatedTestDatabase() succeeds.'
+    );
+  }
+  assertSafeIsolatedTestSchema(schemaName);
+  if (schemaName !== activeVerifiedTestDb.schemaName) {
+    throw new Error(
+      `UNSAFE_TEST_SCHEMA_NAME: Schema '${schemaName}' does not match verified test schema '${activeVerifiedTestDb.schemaName}'.`
+    );
+  }
+
+  await closeDatabasePool();
+  process.env.DATABASE_URL = activeVerifiedTestDb.testDatabaseUrl;
   process.env.DATABASE_POOL_SIZE = String(poolSize);
   process.env.DATABASE_SEARCH_PATH = `${schemaName}, public`;
+
+  const dbCheckRes = await query<{ current_database: string }>(
+    'SELECT current_database() AS current_database;'
+  );
+  const actualDbName = dbCheckRes.rows[0]?.current_database || '';
+  assertSafeConnectedTestDatabase(actualDbName, activeVerifiedTestDb.expectedDbName);
 
   await query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE;`);
   await query(`CREATE SCHEMA ${schemaName};`);
@@ -195,14 +393,31 @@ async function runPhase10cSuite() {
       pkgJson.scripts?.['provision:verify'] === 'tsx src/db/cli/provision-verify.ts' &&
       pkgJson.scripts?.['test:phase10c'] === 'tsx tests/phase10c.provisioning.test.ts';
 
-    const docExists = fs.existsSync(
-      path.join(process.cwd(), 'docs/PHASE_10C_FIRST_ORGANIZATION_AND_ADMIN_PROVISIONING.md')
+    const docPath = path.join(
+      process.cwd(),
+      'docs/PHASE_10C_FIRST_ORGANIZATION_AND_ADMIN_PROVISIONING.md'
     );
+    const docExists = fs.existsSync(docPath);
+    const docContent = docExists ? fs.readFileSync(docPath, 'utf-8') : '';
+    const envExampleContent = fs.readFileSync(path.join(process.cwd(), '.env.example'), 'utf-8');
+
+    const docMatchesContract =
+      docContent.includes('BOOTSTRAP_PROVISIONED') &&
+      docContent.includes('super_admin') &&
+      docContent.includes('state_officer') &&
+      docContent.includes('principal') &&
+      docContent.includes('one-time controlled operation') &&
+      docContent.includes('PHASE10C_TEST_DATABASE_URL') &&
+      docContent.includes('ALLOW_DESTRUCTIVE_PHASE10C_TESTS') &&
+      docContent.includes('admin@example.invalid') &&
+      !docContent.includes('admin@moe.benuestate.gov.ng') &&
+      envExampleContent.includes('PHASE10C_TEST_DATABASE_URL') &&
+      envExampleContent.includes('ALLOW_DESTRUCTIVE_PHASE10C_TESTS');
 
     record(
       '2. CLI & Documentation',
-      'package.json defines provision:bootstrap, provision:verify, and test:phase10c scripts and Phase 10C documentation exists',
-      hasCliScripts && docExists
+      'package.json defines provision:bootstrap, provision:verify, and test:phase10c scripts; Phase 10C docs & .env.example accurately document role-agnostic bootstrap, dedicated test DB variables, and illustrative credentials',
+      hasCliScripts && docExists && docMatchesContract
     );
 
     const serviceSource = fs.readFileSync(
@@ -329,31 +544,224 @@ async function runPhase10cSuite() {
     );
 
     // =========================================================================
-    // 4. Isolated Test Schema Safety Guard Verification
+    // 4. Dedicated Test-Database & Isolated Test-Schema Safety Guard Verification
     // =========================================================================
-    let publicSchemaBlocked = false;
-    let prodSchemaBlocked = false;
-    let prodEnvBlocked = false;
+    // 4A. Missing test URL (must never silently fall back to ordinary DATABASE_URL)
+    let missingTestUrlBlocked = false;
     try {
-      assertSafeIsolatedTestSchema('public');
-    } catch {
-      publicSchemaBlocked = true;
-    }
-    try {
-      assertSafeIsolatedTestSchema('production_schema');
-    } catch {
-      prodSchemaBlocked = true;
-    }
-    try {
-      assertSafeIsolatedTestSchema('phase10c_provisioning_test', 'production');
-    } catch {
-      prodEnvBlocked = true;
+      assertSafeDedicatedTestDatabaseConfig({
+        testDatabaseUrl: '',
+        ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/neondb',
+        allowDestructiveOptIn: 'true',
+        nodeEnv: 'test',
+        schemaName: ISOLATED_SCHEMA,
+      });
+    } catch (err: any) {
+      missingTestUrlBlocked = Boolean(err?.message?.includes('MISSING_TEST_DATABASE_URL'));
     }
 
     record(
-      '4. Test Schema Safety Guard',
-      'Destructive test setup guard refuses public schema, non-test schemas, and NODE_ENV=production',
-      publicSchemaBlocked && prodSchemaBlocked && prodEnvBlocked
+      '4. Test Database Safety Guard',
+      'Guard refuses execution when PHASE10C_TEST_DATABASE_URL is missing and never falls back to DATABASE_URL',
+      missingTestUrlBlocked
+    );
+
+    // 4B. Missing explicit destructive opt-in
+    let missingOptInBlocked = false;
+    let falseOptInBlocked = false;
+    try {
+      assertSafeDedicatedTestDatabaseConfig({
+        testDatabaseUrl: 'postgresql://user:pass@localhost:5432/bummpt_phase10c_test',
+        ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/neondb',
+        allowDestructiveOptIn: '',
+        nodeEnv: 'test',
+        schemaName: ISOLATED_SCHEMA,
+      });
+    } catch (err: any) {
+      missingOptInBlocked = Boolean(err?.message?.includes('MISSING_DESTRUCTIVE_TEST_OPT_IN'));
+    }
+    try {
+      assertSafeDedicatedTestDatabaseConfig({
+        testDatabaseUrl: 'postgresql://user:pass@localhost:5432/bummpt_phase10c_test',
+        ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/neondb',
+        allowDestructiveOptIn: 'false',
+        nodeEnv: 'test',
+        schemaName: ISOLATED_SCHEMA,
+      });
+    } catch (err: any) {
+      falseOptInBlocked = Boolean(err?.message?.includes('MISSING_DESTRUCTIVE_TEST_OPT_IN'));
+    }
+
+    record(
+      '4. Test Database Safety Guard',
+      'Guard refuses execution when ALLOW_DESTRUCTIVE_PHASE10C_TESTS=true opt-in is missing or false',
+      missingOptInBlocked && falseOptInBlocked
+    );
+
+    // 4C. Production mode (NODE_ENV=production)
+    let prodEnvConfigBlocked = false;
+    let prodEnvSchemaBlocked = false;
+    try {
+      assertSafeDedicatedTestDatabaseConfig({
+        testDatabaseUrl: 'postgresql://user:pass@localhost:5432/bummpt_phase10c_test',
+        ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/neondb',
+        allowDestructiveOptIn: 'true',
+        nodeEnv: 'production',
+        schemaName: ISOLATED_SCHEMA,
+      });
+    } catch (err: any) {
+      prodEnvConfigBlocked = Boolean(err?.message?.includes('REFUSED_PRODUCTION_TEST_EXECUTION'));
+    }
+    try {
+      assertSafeIsolatedTestSchema(ISOLATED_SCHEMA, 'production');
+    } catch (err: any) {
+      prodEnvSchemaBlocked = Boolean(err?.message?.includes('REFUSED_PRODUCTION_TEST_EXECUTION'));
+    }
+
+    record(
+      '4. Test Database Safety Guard',
+      'Guard refuses execution when NODE_ENV=production even if test URL and opt-in are supplied',
+      prodEnvConfigBlocked && prodEnvSchemaBlocked
+    );
+
+    // 4D. Unsafe database name (URL pathname, connected current_database(), or same as DATABASE_URL)
+    const unsafeDbUrls = [
+      'postgresql://user:pass@localhost:5432/neondb',
+      'postgresql://user:pass@localhost:5432/postgres',
+      'postgresql://user:pass@localhost:5432/bummpt_production',
+      'postgresql://user:pass@localhost:5432/bummpt_prod_test',
+      'postgresql://user:pass@localhost:5432/live_school_db',
+    ];
+    const allUnsafeUrlsBlocked = unsafeDbUrls.every((unsafeUrl) => {
+      try {
+        assertSafeDedicatedTestDatabaseConfig({
+          testDatabaseUrl: unsafeUrl,
+          ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/other_db',
+          allowDestructiveOptIn: 'true',
+          nodeEnv: 'test',
+          schemaName: ISOLATED_SCHEMA,
+        });
+        return false;
+      } catch (err: any) {
+        return Boolean(err?.message?.includes('UNSAFE_TEST_DATABASE_NAME'));
+      }
+    });
+
+    let sameAsOrdinaryDbBlocked = false;
+    try {
+      assertSafeDedicatedTestDatabaseConfig({
+        testDatabaseUrl: 'postgresql://user:pass@localhost:5432/bummpt_phase10c_test',
+        ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/bummpt_phase10c_test',
+        allowDestructiveOptIn: 'true',
+        nodeEnv: 'test',
+        schemaName: ISOLATED_SCHEMA,
+      });
+    } catch (err: any) {
+      sameAsOrdinaryDbBlocked = Boolean(err?.message?.includes('UNSAFE_TEST_DATABASE_NAME'));
+    }
+
+    let connectedUnsafeDbBlocked = false;
+    let connectedMismatchDbBlocked = false;
+    try {
+      assertSafeConnectedTestDatabase('neondb', 'bummpt_phase10c_test');
+    } catch (err: any) {
+      connectedUnsafeDbBlocked = Boolean(err?.message?.includes('UNSAFE_TEST_DATABASE_NAME'));
+    }
+    try {
+      assertSafeConnectedTestDatabase('other_unit_test', 'bummpt_phase10c_test');
+    } catch (err: any) {
+      connectedMismatchDbBlocked = Boolean(err?.message?.includes('TEST_DATABASE_NAME_MISMATCH'));
+    }
+
+    record(
+      '4. Test Database Safety Guard',
+      'Guard rejects unsafe database names (neondb, postgres, production, same as DATABASE_URL, or mismatched connected current_database())',
+      allUnsafeUrlsBlocked &&
+        sameAsOrdinaryDbBlocked &&
+        connectedUnsafeDbBlocked &&
+        connectedMismatchDbBlocked
+    );
+
+    // 4E. Unsafe schema name (public, production schemas, unrelated schemas)
+    const unsafeSchemas = [
+      'public',
+      'production',
+      'production_schema',
+      'phase10b_test',
+      'unrelated_schema',
+      'phase10c_test',
+      'phase10c_UPPER_test',
+    ];
+    const allUnsafeSchemasBlocked = unsafeSchemas.every((badSchema) => {
+      try {
+        assertSafeIsolatedTestSchema(badSchema, 'test');
+        return false;
+      } catch (err: any) {
+        return Boolean(err?.message?.includes('UNSAFE_TEST_SCHEMA_NAME'));
+      }
+    });
+
+    const validConfigCheck = assertSafeDedicatedTestDatabaseConfig({
+      testDatabaseUrl: 'postgresql://user:pass@localhost:5432/bummpt_phase10c_test',
+      ordinaryDatabaseUrl: 'postgresql://user:pass@localhost:5432/neondb',
+      allowDestructiveOptIn: 'true',
+      nodeEnv: 'test',
+      schemaName: ISOLATED_SCHEMA,
+    });
+
+    record(
+      '4. Test Database Safety Guard',
+      'Guard rejects public, production, and unrelated schemas while permitting approved isolated test schema on a dedicated test database',
+      allUnsafeSchemasBlocked &&
+        validConfigCheck.expectedDbName === 'bummpt_phase10c_test' &&
+        validConfigCheck.schemaName === ISOLATED_SCHEMA
+    );
+
+    // =========================================================================
+    // Verify Live Dedicated Test Database Before Any Destructive Setup
+    // =========================================================================
+    restoreEnv();
+    let verifiedTestDb: VerifiedDedicatedTestDatabase;
+    try {
+      verifiedTestDb = await verifyAndBindDedicatedTestDatabase({
+        testDatabaseUrl: savedEnv.PHASE10C_TEST_DATABASE_URL,
+        ordinaryDatabaseUrl: savedEnv.DATABASE_URL,
+        allowDestructiveOptIn: savedEnv.ALLOW_DESTRUCTIVE_PHASE10C_TESTS,
+        nodeEnv: savedEnv.NODE_ENV,
+        schemaName: ISOLATED_SCHEMA,
+      });
+    } catch (guardErr: any) {
+      const reason = guardErr?.message || String(guardErr);
+      console.warn('\n----------------------------------------------------------------------');
+      console.warn(
+        `⚠️  [SAFE STOP] Destructive Phase 10C database suite halted by fail-closed test-database guard:`
+      );
+      console.warn(`   ${reason}`);
+      console.warn(
+        '   No schema drops, migrations, or writes were executed against DATABASE_URL or any other database.'
+      );
+      console.warn('----------------------------------------------------------------------\n');
+      record(
+        '4. Test Database Safety Guard (Live Connection)',
+        'Dedicated test database connection verified before destructive Phase 10C tests',
+        false,
+        `Stopped safely before destructive setup: ${reason}`
+      );
+      restoreEnv();
+      await closeDatabasePool();
+      const passedOnStop = results.filter((r) => r.status === 'PASSED').length;
+      const failedOnStop = results.filter((r) => r.status === 'FAILED').length;
+      console.log('======================================================================');
+      console.log('PHASE 10C TEST RESULTS SUMMARY (SAFE STOP BEFORE DESTRUCTIVE DB SETUP):');
+      console.log(`Total: ${results.length} | Passed: ${passedOnStop} | Failed: ${failedOnStop}`);
+      console.log('======================================================================\n');
+      process.exit(1);
+    }
+
+    record(
+      '4. Test Database Safety Guard (Live Connection)',
+      `Connected to verified dedicated test database '${verifiedTestDb.actualDbName}' using isolated schema '${verifiedTestDb.schemaName}'`,
+      verifiedTestDb.actualDbName === verifiedTestDb.expectedDbName
     );
 
     // =========================================================================
@@ -1081,9 +1489,18 @@ async function runPhase10cSuite() {
       );
     } finally {
       try {
-        assertSafeIsolatedTestSchema(ISOLATED_SCHEMA);
-        await query('SET search_path TO public;');
-        await query(`DROP SCHEMA IF EXISTS ${ISOLATED_SCHEMA} CASCADE;`);
+        if (activeVerifiedTestDb && activeVerifiedTestDb.schemaName === ISOLATED_SCHEMA) {
+          assertSafeIsolatedTestSchema(ISOLATED_SCHEMA);
+          process.env.DATABASE_URL = activeVerifiedTestDb.testDatabaseUrl;
+          delete process.env.DATABASE_SEARCH_PATH;
+          const cleanupDbRes = await query<{ current_database: string }>(
+            'SELECT current_database() AS current_database;'
+          );
+          const cleanupDbName = cleanupDbRes.rows[0]?.current_database || '';
+          assertSafeConnectedTestDatabase(cleanupDbName, activeVerifiedTestDb.expectedDbName);
+          await query('SET search_path TO public;');
+          await query(`DROP SCHEMA IF EXISTS ${ISOLATED_SCHEMA} CASCADE;`);
+        }
       } catch {
         // ignore cleanup error
       }
