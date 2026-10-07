@@ -9,10 +9,15 @@ import { Router } from 'express';
 import { authenticateUser, requirePermission, requireRole } from '../../auth/middleware';
 import { SchoolRepository } from '../../db/repositories/school.repository';
 import { provisionSchool, ProvisioningError } from '../../auth/provisioning.service';
+import { onboardingRouter } from './onboarding.routes';
 import type { AuthenticatedRequest } from '../../auth/types';
 
 export const schoolsRouter = Router();
 const schoolRepo = new SchoolRepository();
+
+// Mount Phase 10D school onboarding sub-router
+schoolsRouter.use('/:schoolId/onboarding', onboardingRouter);
+schoolsRouter.use('/:id/onboarding', onboardingRouter);
 
 /**
  * GET /api/v1/schools/public

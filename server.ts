@@ -7,6 +7,7 @@ import { checkDatabaseHealth, closeDatabasePool, runMigrations, getDatabaseConfi
 import { authRouter } from './src/auth/auth.routes';
 import { provisioningRouter } from './src/api/v1/provisioning.routes';
 import { schoolsRouter } from './src/api/v1/schools.routes';
+import { onboardingRouter } from './src/api/v1/onboarding.routes';
 import { classesRouter } from './src/api/v1/classes.routes';
 import { staffRouter } from './src/api/v1/staff.routes';
 import { studentsRouter } from './src/api/v1/students.routes';
@@ -85,6 +86,7 @@ async function startServer() {
 
   // Operational Data Foundations API (v1)
   app.use('/api/v1/schools', schoolsRouter);
+  app.use('/api/v1/onboarding', onboardingRouter);
   app.use('/api/v1/classes', classesRouter);
   app.use('/api/v1/staff', staffRouter);
   app.use('/api/v1/students', studentsRouter);

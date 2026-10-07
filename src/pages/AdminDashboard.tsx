@@ -49,13 +49,14 @@ import {
 import { NavigationPage } from '../types';
 import { WingAccessGatekeeper } from '../components/WingAccessGatekeeper';
 import { AccountRequestsManager } from '../components/AccountRequestsManager';
+import { SchoolOnboardingChecklist } from '../components/SchoolOnboardingChecklist';
 import { isUserAuthorizedForWingDisplay } from '../utils/wingClearance';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 
 interface AdminDashboardProps {
   students: Student[];
-  initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests';
+  initialTab?: 'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests' | 'onboarding';
   onNavigate?: (page: NavigationPage, subTab?: string, param?: any) => void;
   onOpenReceiptModal: (payment: FeePayment, student?: Student) => void;
   onOpenAuthModal?: () => void;
@@ -68,7 +69,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenReceiptModal,
   onOpenAuthModal,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests'>(initialTab || 'fees');
+  const [activeSubTab, setActiveSubTab] = useState<'fees' | 'admissions' | 'attendance' | 'hr' | 'transfers' | 'security' | 'account-requests' | 'onboarding'>(initialTab || 'fees');
   
   React.useEffect(() => {
     if (initialTab) {
@@ -449,6 +450,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <UserCheck className="h-3.5 w-3.5 text-blue-700" />
             <span>Account Requests</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('onboarding')}
+            id="admin-onboarding-subtab-btn"
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              activeSubTab === 'onboarding' ? 'bg-emerald-600 text-white shadow-xs' : 'text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 font-bold'
+            }`}
+          >
+            <ClipboardCheck className="h-3.5 w-3.5 text-emerald-700" />
+            <span>School Onboarding (Phase 10D)</span>
           </button>
         </div>
       </div>
@@ -1248,6 +1260,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeSubTab === 'account-requests' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           <AccountRequestsManager />
+        </div>
+      )}
+
+      {/* ==================== 8. SCHOOL ONBOARDING & INSTITUTIONAL READINESS (PHASE 10D) ==================== */}
+      {activeSubTab === 'onboarding' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <SchoolOnboardingChecklist />
         </div>
       )}
     </div>
