@@ -297,6 +297,7 @@ async function runPhase5TestSuite() {
         class_id: classB.id, // Class in School B
         subject_id: subject2.id,
         academic_term_id: testTerm.id,
+        periods_per_week: 4,
       },
     });
 
@@ -355,6 +356,7 @@ async function runPhase5TestSuite() {
         subject_id: subject2.id,
         teacher_id: teacherBStaff?.id, // Teacher from School B!
         academic_term_id: testTerm.id,
+        periods_per_week: 4,
       },
     });
 
@@ -374,6 +376,7 @@ async function runPhase5TestSuite() {
         subject_id: subject2.id,
         teacher_id: teacherAStaff?.id,
         academic_term_id: testTerm.id,
+        periods_per_week: 4,
       },
     });
 

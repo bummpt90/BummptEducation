@@ -249,6 +249,52 @@ export function requirePermission(...requiredPermissions: Permission[]) {
 }
 
 /**
+ * Any-Permission Authorization Middleware
+ * Enforces that the user has at least one of the specified permissions.
+ */
+export function requireAnyPermission(...allowedPermissions: Permission[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Authentication required.',
+      });
+      return;
+    }
+
+    if (req.user.isSuperAdmin) {
+      return next();
+    }
+
+    const hasAny = allowedPermissions.some((perm) => hasPermission(req.user!.role, perm));
+    if (hasAny) {
+      return next();
+    }
+
+    logAuthEvent({
+      action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
+      status: 'BLOCKED',
+      userId: req.user.id,
+      email: req.user.email,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      details: {
+        attemptedPath: req.originalUrl,
+        allowedPermissions,
+        userPermissions: req.user.permissions,
+      },
+    });
+
+    res.status(403).json({
+      success: false,
+      error: 'FORBIDDEN_PERMISSION',
+      message: `Access denied. Requires at least one of: [${allowedPermissions.join(', ')}]`,
+    });
+  };
+}
+
+/**
  * Multi-School Tenant Isolation Middleware
  * Prevents school-level users from accessing or passing another school's school_id.
  * State Officers and Super Admins are permitted global cross-school inspection.
@@ -281,7 +327,8 @@ export function requireSchoolScope() {
       req.body?.schoolId ||
       req.query?.school_id ||
       req.query?.schoolId ||
-      req.params?.schoolId;
+      req.params?.schoolId ||
+      req.params?.id;
 
     if (clientSuppliedSchoolId && clientSuppliedSchoolId !== trustedSchoolId) {
       logAuthEvent({

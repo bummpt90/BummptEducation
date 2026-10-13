@@ -124,6 +124,15 @@ export class ClassRepository extends BaseRepository<ClassDbEntity> {
       if (staffCheck[0].is_active === false) {
         throw new Error('INACTIVE_STAFF_VIOLATION: Cannot assign an inactive staff member as form master.');
       }
+
+      const existingFm = await this.executeQuery<{ id: string; name: string }>(
+        `SELECT id, name FROM ${this.tableName} WHERE school_id = $1 AND form_master_id = $2 LIMIT 1;`,
+        [data.schoolId, data.formMasterId],
+        client
+      );
+      if (existingFm[0]) {
+        throw new Error(`DUPLICATE_FORM_MASTER_VIOLATION: Staff member is already assigned as form master to class '${existingFm[0].name}'.`);
+      }
     }
 
     const sql = `
@@ -177,6 +186,15 @@ export class ClassRepository extends BaseRepository<ClassDbEntity> {
       }
       if (staffCheck[0].is_active === false) {
         throw new Error('INACTIVE_STAFF_VIOLATION: Cannot assign an inactive staff member as form master.');
+      }
+
+      const existingFm = await this.executeQuery<{ id: string; name: string }>(
+        `SELECT id, name FROM ${this.tableName} WHERE school_id = $1 AND form_master_id = $2 AND id != $3 LIMIT 1;`,
+        [schoolId, updates.formMasterId, classId],
+        client
+      );
+      if (existingFm[0]) {
+        throw new Error(`DUPLICATE_FORM_MASTER_VIOLATION: Staff member is already assigned as form master to class '${existingFm[0].name}'.`);
       }
     }
 

@@ -6,7 +6,7 @@
  */
 
 import { Router } from 'express';
-import { authenticateUser, requirePermission, requireSchoolScope } from '../../auth/middleware';
+import { authenticateUser, requirePermission, requireAnyPermission, requireSchoolScope } from '../../auth/middleware';
 import { ClassRepository } from '../../db/repositories/class.repository';
 import type { AuthenticatedRequest } from '../../auth/types';
 
@@ -21,7 +21,7 @@ const classRepo = new ClassRepository();
 classesRouter.get(
   '/',
   authenticateUser,
-  requirePermission('schools.view'),
+  requireAnyPermission('schools.view', 'students.view', 'attendance.view'),
   requireSchoolScope(),
   async (req: AuthenticatedRequest, res) => {
     try {

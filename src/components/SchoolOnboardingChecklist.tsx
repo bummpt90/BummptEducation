@@ -13,7 +13,6 @@ import {
   ArrowRight,
   RefreshCw,
   Edit3,
-  Sparkles,
   Save,
   X,
   FileCheck2,
@@ -44,7 +43,6 @@ export const SchoolOnboardingChecklist: React.FC<SchoolOnboardingChecklistProps>
   const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
 
   // Action States
-  const [isInitStructureLoading, setIsInitStructureLoading] = useState(false);
   const [isVerifyingLoading, setIsVerifyingLoading] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{
     type: 'success' | 'error';
@@ -95,9 +93,6 @@ export const SchoolOnboardingChecklist: React.FC<SchoolOnboardingChecklistProps>
       email: report.institutionalProfile.email,
       address: report.institutionalProfile.address,
       establishedYear: report.institutionalProfile.establishedYear,
-      principalName: report.institutionalProfile.principalName,
-      vicePrincipalAcademic: report.institutionalProfile.vicePrincipalAcademic,
-      bursarName: report.institutionalProfile.bursarName,
     });
     setProfileSuccessMsg(null);
     setIsEditModalOpen(true);
@@ -136,48 +131,6 @@ export const SchoolOnboardingChecklist: React.FC<SchoolOnboardingChecklistProps>
       alert(`Error updating profile: ${err.message}`);
     } finally {
       setIsSavingProfile(false);
-    }
-  };
-
-  const handleInitStructure = async () => {
-    if (!effectiveSchoolId) return;
-    const confirmInit = window.confirm(
-      'Initialize standard canonical classroom structure (e.g. JSS 1–3, SSS 1–3 or Basic 1–6) and assign core subjects for this school?'
-    );
-    if (!confirmInit) return;
-
-    try {
-      setIsInitStructureLoading(true);
-      setActionFeedback(null);
-
-      const res = await fetch(
-        `/api/v1/schools/${effectiveSchoolId}/onboarding/academic-structure`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        }
-      );
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Failed to initialize academic structure.');
-      }
-
-      setReport(json.data);
-      setActionFeedback({
-        type: 'success',
-        message: json.message || 'Academic classes and curriculum subjects established.',
-      });
-
-      if (onRefreshParentMetrics) onRefreshParentMetrics();
-    } catch (err: any) {
-      setActionFeedback({
-        type: 'error',
-        message: err.message || 'Failed to initialize academic structure.',
-      });
-    } finally {
-      setIsInitStructureLoading(false);
     }
   };
 
@@ -435,15 +388,10 @@ export const SchoolOnboardingChecklist: React.FC<SchoolOnboardingChecklistProps>
                       Edit Profile
                     </button>
                   )}
-                  {step.id === 'classes_and_subjects' && step.items[0]?.isComplete === false && (
-                    <button
-                      onClick={handleInitStructure}
-                      disabled={isInitStructureLoading}
-                      className="text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition inline-flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      {isInitStructureLoading ? 'Initializing...' : 'Initialize Standard Classes'}
-                    </button>
+                  {step.id === 'classes_and_subjects' && !step.isComplete && (
+                    <div className="text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5 max-w-sm">
+                      <span className="font-bold text-slate-800">Missing configuration:</span> Classes and curriculum subjects must be configured through standard class (<code className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded">/api/v1/classes</code>) and allocation (<code className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded">/api/v1/academic/allocations</code>) API routes. Onboarding verifies persisted records; it does not automatically generate or create configuration. Administrative management screens are planned for a later phase.
+                    </div>
                   )}
                   {step.id === 'review_completeness' && (
                     <button

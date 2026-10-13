@@ -55,10 +55,13 @@ export async function scanLegacyStructureReport(schoolId: string): Promise<{
   );
 
   const principalStaffRes = await query<{ id: string; full_name: string }>(
-    `SELECT id, full_name
-     FROM staff
-     WHERE school_id = $1
-       AND (role = 'principal' OR LOWER(role) = 'principal')
+    `SELECT st.id, st.full_name
+     FROM users u
+     INNER JOIN staff st ON st.user_id = u.id AND st.school_id = u.school_id
+     WHERE u.school_id = $1
+       AND u.role = 'principal'
+       AND u.is_active = TRUE
+       AND st.is_active = TRUE
      LIMIT 1;`,
     [schoolId]
   );
@@ -101,30 +104,7 @@ export async function executeOnboardingVerifyCli(): Promise<{
   message: string;
 }> {
   try {
-    const rawUrl = process.env.DATABASE_URL?.trim() || '';
-    if (!rawUrl) {
-      const msg = 'FATAL: DATABASE_URL is required to verify school onboarding state.';
-      console.error(`[onboarding:verify] ${msg}`);
-      return { exitCode: 1, message: msg };
-    }
-
-    const config = getDatabaseConfig();
-    if (!config.isConfigured || !config.connectionString) {
-      const msg = 'FATAL: Database configuration is incomplete.';
-      console.error(`[onboarding:verify] ${msg}`);
-      return { exitCode: 1, message: msg };
-    }
-
-    const migrationReport = await verifyMigrations();
-    if (!migrationReport.ready) {
-      const safeErr = sanitizeDatabaseErrorMessage(
-        migrationReport.error || 'Database migrations are not ready.'
-      );
-      console.error(`[onboarding:verify] MIGRATIONS NOT READY: ${safeErr}`);
-      return { exitCode: 1, message: safeErr };
-    }
-
-    // Resolve target school via env or CLI arg
+    // 1. Resolve target school via env or CLI arg BEFORE ANY DB ACCESS OR CONFIG CHECK
     const checkLegacyFlag =
       process.argv.includes('--scan-legacy') ||
       process.argv.includes('--report-legacy') ||
@@ -154,6 +134,30 @@ export async function executeOnboardingVerifyCli(): Promise<{
         '  npm run onboarding:verify -- <SCHOOL_CODE> --scan-legacy';
       console.error(`[onboarding:verify] ${usageMsg}`);
       return { exitCode: 1, message: usageMsg };
+    }
+
+    // 2. Database URL and configuration checks
+    const rawUrl = process.env.DATABASE_URL?.trim() || '';
+    if (!rawUrl) {
+      const msg = 'FATAL: DATABASE_URL is required to verify school onboarding state.';
+      console.error(`[onboarding:verify] ${msg}`);
+      return { exitCode: 1, message: msg };
+    }
+
+    const config = getDatabaseConfig();
+    if (!config.isConfigured || !config.connectionString) {
+      const msg = 'FATAL: Database configuration is incomplete.';
+      console.error(`[onboarding:verify] ${msg}`);
+      return { exitCode: 1, message: msg };
+    }
+
+    const migrationReport = await verifyMigrations();
+    if (!migrationReport.ready) {
+      const safeErr = sanitizeDatabaseErrorMessage(
+        migrationReport.error || 'Database migrations are not ready.'
+      );
+      console.error(`[onboarding:verify] MIGRATIONS NOT READY: ${safeErr}`);
+      return { exitCode: 1, message: safeErr };
     }
 
     let schoolId = inputId;

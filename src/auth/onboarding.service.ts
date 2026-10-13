@@ -23,7 +23,8 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction, sanitizeDatabaseErrorMessage } from '../db/client';
 import { logAuthEvent } from './audit';
-import type { SafeUser } from './types';
+import { hasPermission, type Permission } from './permissions';
+import type { SafeUser, AuthRole } from './types';
 
 export interface AuthenticatedCaller {
   user?: (Partial<SafeUser> & {
@@ -87,10 +88,17 @@ export interface SchoolOnboardingStatusReport {
     email: string | null;
     address: string | null;
     establishedYear: number | null;
-    principalName: string | null;
-    bursarName: string | null;
-    vicePrincipalAcademic: string | null;
+    principalName?: string | null;
+    bursarName?: string | null;
+    vicePrincipalAcademic?: string | null;
     isActive: boolean;
+  };
+  authoritativeLeadership?: {
+    principal: string;
+    principalUserId: string | null;
+    principalStaffId: string | null;
+    teachingStaffCount: number;
+    totalStaffCount: number;
   };
   metrics: {
     teachingStaffCount: number;
@@ -164,27 +172,51 @@ async function runOnboardingTransaction<T>(
 
 /**
  * Validates that an authenticated caller is authorized to view or manage onboarding for a specific school.
+ * Requires BOTH legitimate permission and valid tenant scope.
  */
 export function assertCallerSchoolAuthority(
   schoolId: string,
   caller: AuthenticatedCaller,
-  actionDescription = 'access school onboarding'
+  actionDescription = 'access school onboarding',
+  requiredPermission: Permission = 'schools.view'
 ): void {
   const user = caller.user;
   if (!user) {
     throw new OnboardingError('UNAUTHENTICATED', 'Authentication required.', 401);
   }
 
-  // Super Admin and State Officer possess multi-school state-wide authority
-  if (user.isSuperAdmin || user.role === 'super_admin' || user.isStateOfficer || user.role === 'state_officer') {
+  // Super Admin possesses universal platform-wide authority
+  if (user.isSuperAdmin || user.role === 'super_admin') {
     return;
   }
 
-  // School-scoped users (Principal, Vice Principal, Headmistress) can only manage their own school
+  // State Officer: platform-level role that has schools.view, but NOT schools.manage
+  if (user.isStateOfficer || user.role === 'state_officer') {
+    if (!hasPermission('state_officer', requiredPermission)) {
+      throw new OnboardingError(
+        'FORBIDDEN',
+        `Access denied: State officers do not possess '${requiredPermission}' authority to ${actionDescription}.`,
+        403
+      );
+    }
+    return;
+  }
+
+  // Non-platform callers: must possess required school scope
   if (!user.schoolId || user.schoolId !== schoolId) {
     throw new OnboardingError(
       'TENANT_ISOLATION_VIOLATION',
       `Access denied: You are not authorized to ${actionDescription} for another school.`,
+      403
+    );
+  }
+
+  // Non-platform callers: must possess required permission via role permission matrix
+  const role = (user.role || 'student') as AuthRole;
+  if (!hasPermission(role, requiredPermission)) {
+    throw new OnboardingError(
+      'FORBIDDEN',
+      `Access denied: Role '${user.role}' lacks '${requiredPermission}' permission to ${actionDescription}.`,
       403
     );
   }
@@ -275,14 +307,16 @@ function validateProfileUpdates(updates: SchoolProfileUpdates): SchoolProfileUpd
     }
   }
 
-  if (updates.principalName !== undefined) {
-    clean.principalName = updates.principalName ? updates.principalName.trim() : null;
-  }
-  if (updates.vicePrincipalAcademic !== undefined) {
-    clean.vicePrincipalAcademic = updates.vicePrincipalAcademic ? updates.vicePrincipalAcademic.trim() : null;
-  }
-  if (updates.bursarName !== undefined) {
-    clean.bursarName = updates.bursarName ? updates.bursarName.trim() : null;
+  if (
+    updates.principalName !== undefined ||
+    updates.vicePrincipalAcademic !== undefined ||
+    updates.bursarName !== undefined
+  ) {
+    throw new OnboardingError(
+      'LEGACY_LEADERSHIP_FIELDS_PROHIBITED',
+      'Direct updates to principalName, vicePrincipalAcademic, or bursarName text fields are prohibited. Authoritative school leadership must be assigned through verified user accounts and linked staff registry records.',
+      400
+    );
   }
 
   return clean;
@@ -296,7 +330,7 @@ export async function getSchoolOnboardingStatus(
   caller: AuthenticatedCaller,
   client?: PoolClient
 ): Promise<SchoolOnboardingStatusReport> {
-  assertCallerSchoolAuthority(schoolId, caller, 'retrieve onboarding checklist');
+  assertCallerSchoolAuthority(schoolId, caller, 'retrieve onboarding checklist', 'schools.view');
 
   // 1. Fetch Authoritative School and Organization Records
   const schoolRes = await query<{
@@ -333,40 +367,64 @@ export async function getSchoolOnboardingStatus(
   }
 
   // 2. Fetch Authoritative Leadership & Staff Records
-  const staffRes = await query<{
+  const staffCountsRes = await query<{
     staff_count: string;
     teaching_staff_count: string;
     non_teaching_staff_count: string;
-    active_principal_count: string;
-    principal_full_name: string | null;
-    principal_user_email: string | null;
   }>(
     `SELECT 
        COUNT(*)::text AS staff_count,
        COUNT(*) FILTER (WHERE staff_type = 'Teaching')::text AS teaching_staff_count,
-       COUNT(*) FILTER (WHERE staff_type = 'Non-Teaching')::text AS non_teaching_staff_count,
-       COUNT(*) FILTER (WHERE LOWER(role) = 'principal' AND is_active = TRUE)::text AS active_principal_count,
-       (SELECT full_name FROM staff WHERE school_id = $1 AND LOWER(role) = 'principal' AND is_active = TRUE LIMIT 1) AS principal_full_name,
-       (SELECT u.email FROM users u INNER JOIN staff st ON st.user_id = u.id WHERE st.school_id = $1 AND LOWER(st.role) = 'principal' AND st.is_active = TRUE LIMIT 1) AS principal_user_email
+       COUNT(*) FILTER (WHERE staff_type = 'Non-Teaching')::text AS non_teaching_staff_count
      FROM staff
      WHERE school_id = $1 AND is_active = TRUE;`,
     [schoolId],
     client
   );
 
-  const staffStats = staffRes.rows[0] || {
+  const staffStats = staffCountsRes.rows[0] || {
     staff_count: '0',
     teaching_staff_count: '0',
     non_teaching_staff_count: '0',
-    active_principal_count: '0',
-    principal_full_name: null,
-    principal_user_email: null,
   };
 
   const totalStaffCount = parseInt(staffStats.staff_count, 10) || 0;
   const teachingStaffCount = parseInt(staffStats.teaching_staff_count, 10) || 0;
   const nonTeachingStaffCount = parseInt(staffStats.non_teaching_staff_count, 10) || 0;
-  const activePrincipalCount = parseInt(staffStats.active_principal_count, 10) || 0;
+
+  // Authoritative Principal: verified strictly through users.role = 'principal' + staff.user_id + same school/org + active
+  const principalRes = await query<{
+    staff_id: string;
+    staff_number: string | null;
+    full_name: string;
+    user_id: string;
+    user_email: string;
+  }>(
+    `SELECT 
+       st.id AS staff_id,
+       st.staff_number,
+       st.full_name,
+       u.id AS user_id,
+       u.email AS user_email
+     FROM users u
+     INNER JOIN staff st ON st.user_id = u.id AND st.school_id = u.school_id
+     INNER JOIN schools s ON s.id = u.school_id AND s.organization_id = u.organization_id
+     WHERE u.school_id = $1
+       AND u.role = 'principal'
+       AND u.is_active = TRUE
+       AND st.is_active = TRUE
+     LIMIT 1;`,
+    [schoolId],
+    client
+  );
+
+  const principalRecord = principalRes.rows[0] || null;
+  const activePrincipalCount = principalRecord ? 1 : 0;
+  const principalFullName = principalRecord?.full_name || null;
+  const principalUserEmail = principalRecord?.user_email || null;
+  const principalStaffDisplay = principalRecord
+    ? `${principalRecord.full_name} — Staff ID ${principalRecord.staff_number || principalRecord.staff_id}`
+    : null;
 
   // 3. Fetch Academic Calendar State
   const calendarRes = await query<{
@@ -547,15 +605,15 @@ export async function getSchoolOnboardingStatus(
       label: 'Authorized School Principal Account',
       description: 'Server-authoritative user account with role="principal" scoped to this school',
       isComplete: activePrincipalCount > 0,
-      value: staffStats.principal_user_email || null,
+      value: principalUserEmail || null,
       required: true,
     },
     {
       id: 'leadership_principal_staff',
       label: 'Linked Principal Staff Record',
       description: 'Relational staff registry entry linked to the principal user account',
-      isComplete: Boolean(staffStats.principal_full_name),
-      value: staffStats.principal_full_name,
+      isComplete: Boolean(principalRecord),
+      value: principalStaffDisplay ? `${principalStaffDisplay} (From staff registry)` : null,
       required: true,
     },
     {
@@ -821,10 +879,14 @@ export async function getSchoolOnboardingStatus(
       email: school.email,
       address: school.address,
       establishedYear: school.established_year,
-      principalName: school.principal_name,
-      bursarName: school.bursar_name,
-      vicePrincipalAcademic: school.vice_principal_academic,
       isActive: school.is_active,
+    },
+    authoritativeLeadership: {
+      principal: principalStaffDisplay ? `${principalStaffDisplay} (From staff registry)` : 'Unassigned',
+      principalUserId: principalRecord?.user_id || null,
+      principalStaffId: principalRecord?.staff_id || null,
+      teachingStaffCount,
+      totalStaffCount,
     },
     metrics: {
       teachingStaffCount,
@@ -852,7 +914,7 @@ export async function updateSchoolProfile(
   caller: AuthenticatedCaller,
   client?: PoolClient
 ): Promise<SchoolOnboardingStatusReport> {
-  assertCallerSchoolAuthority(schoolId, caller, 'update school institutional profile');
+  assertCallerSchoolAuthority(schoolId, caller, 'update school institutional profile', 'schools.manage');
 
   const clean = validateProfileUpdates(rawUpdates);
 
@@ -902,18 +964,6 @@ export async function updateSchoolProfile(
       params.push(clean.establishedYear);
       setClauses.push(`established_year = $${params.length}`);
     }
-    if (clean.principalName !== undefined) {
-      params.push(clean.principalName);
-      setClauses.push(`principal_name = $${params.length}`);
-    }
-    if (clean.vicePrincipalAcademic !== undefined) {
-      params.push(clean.vicePrincipalAcademic);
-      setClauses.push(`vice_principal_academic = $${params.length}`);
-    }
-    if (clean.bursarName !== undefined) {
-      params.push(clean.bursarName);
-      setClauses.push(`bursar_name = $${params.length}`);
-    }
 
     const sql = `
       UPDATE schools
@@ -926,8 +976,8 @@ export async function updateSchoolProfile(
     // Audit log
     await logAuthEvent(
       {
-        userId: caller.user.id,
-        email: caller.user.email,
+        userId: caller.user?.id || null,
+        email: caller.user?.email || null,
         action: 'SCHOOL_PROFILE_UPDATED',
         status: 'SUCCESS',
         ipAddress: caller.ipAddress,
@@ -952,144 +1002,6 @@ export async function updateSchoolProfile(
 }
 
 /**
- * Initializes canonical institutional class and curriculum structure for a school in PostgreSQL.
- * Used during onboarding to establish standard classroom grades (e.g. JS1–SS3 or Pri 1–6).
- */
-export async function initializeSchoolAcademicStructure(
-  schoolId: string,
-  options: {
-    tier?: 'Secondary' | 'Primary' | 'Basic Education';
-  } = {},
-  caller: AuthenticatedCaller,
-  client?: PoolClient
-): Promise<{ classesCreated: number; allocationsCreated: number }> {
-  assertCallerSchoolAuthority(schoolId, caller, 'initialize school academic structure');
-
-  const executeInit = async (txClient: PoolClient) => {
-    const schoolRes = await txClient.query<{ id: string; organization_id: string; category: string }>(
-      'SELECT id, organization_id, category FROM schools WHERE id = $1 LIMIT 1;',
-      [schoolId]
-    );
-    const school = schoolRes.rows[0];
-    if (!school) {
-      throw new OnboardingError('SCHOOL_NOT_FOUND', `School with ID '${schoolId}' does not exist.`, 404);
-    }
-
-    const category = options.tier || school.category || 'Secondary';
-    const isPrimary = category.toLowerCase().includes('primary');
-
-    // Canonical classes to establish
-    const canonicalClasses = isPrimary
-      ? [
-          { level: 'Basic 1', arm: 'primary', name: 'Primary 1 Gold', category: 'General' },
-          { level: 'Basic 2', arm: 'primary', name: 'Primary 2 Gold', category: 'General' },
-          { level: 'Basic 3', arm: 'primary', name: 'Primary 3 Gold', category: 'General' },
-          { level: 'Basic 4', arm: 'primary', name: 'Primary 4 Gold', category: 'General' },
-          { level: 'Basic 5', arm: 'primary', name: 'Primary 5 Gold', category: 'General' },
-          { level: 'Basic 6', arm: 'primary', name: 'Primary 6 Gold', category: 'General' },
-        ]
-      : [
-          { level: 'JSS 1', arm: 'secondary', name: 'JSS 1 Alpha', category: 'General' },
-          { level: 'JSS 2', arm: 'secondary', name: 'JSS 2 Alpha', category: 'General' },
-          { level: 'JSS 3', arm: 'secondary', name: 'JSS 3 Alpha', category: 'General' },
-          { level: 'SSS 1', arm: 'secondary', name: 'SSS 1 Science', category: 'Science' },
-          { level: 'SSS 2', arm: 'secondary', name: 'SSS 2 Science', category: 'Science' },
-          { level: 'SSS 3', arm: 'secondary', name: 'SSS 3 Science', category: 'Science' },
-        ];
-
-    let classesCreated = 0;
-    const createdClassIds: string[] = [];
-
-    // Assign principal as temporary form master if exists
-    const principalStaffRes = await txClient.query<{ id: string }>(
-      "SELECT id FROM staff WHERE school_id = $1 AND LOWER(role) = 'principal' AND is_active = TRUE LIMIT 1;",
-      [schoolId]
-    );
-    const formMasterId = principalStaffRes.rows[0]?.id || null;
-
-    for (const c of canonicalClasses) {
-      const inserted = await txClient.query<{ id: string }>(
-        `INSERT INTO classes (school_id, level, arm, name, category, capacity, form_master_id)
-         VALUES ($1, $2, $3, $4, $5, 40, $6)
-         ON CONFLICT (school_id, level, name) DO NOTHING
-         RETURNING id;`,
-        [schoolId, c.level, c.arm, c.name, c.category, formMasterId]
-      );
-      if (inserted.rows[0]) {
-        classesCreated++;
-        createdClassIds.push(inserted.rows[0].id);
-      }
-    }
-
-    // Allocate core subjects if current session & term exist
-    let allocationsCreated = 0;
-    const termRes = await txClient.query<{ session_id: string; term_id: string }>(
-      `SELECT s.id AS session_id, t.id AS term_id
-       FROM academic_sessions s
-       INNER JOIN academic_terms t ON t.session_id = s.id
-       WHERE s.is_current = TRUE
-       LIMIT 1;`
-    );
-
-    if (termRes.rows[0] && formMasterId) {
-      const { session_id, term_id } = termRes.rows[0];
-
-      // Fetch top 3 subjects
-      const subjectsRes = await txClient.query<{ id: string }>(
-        'SELECT id FROM subjects ORDER BY code ASC LIMIT 3;'
-      );
-
-      // Fetch all classes of the school
-      const schoolClasses = await txClient.query<{ id: string }>(
-        'SELECT id FROM classes WHERE school_id = $1 LIMIT 6;',
-        [schoolId]
-      );
-
-      for (const cls of schoolClasses.rows) {
-        for (const subj of subjectsRes.rows) {
-          const allocRes = await txClient.query(
-            `INSERT INTO class_subject_allocations (
-               school_id, class_id, subject_id, teacher_id, academic_session_id, academic_term_id, periods_per_week
-             ) VALUES ($1, $2, $3, $4, $5, $6, 4)
-             ON CONFLICT (class_id, subject_id, academic_term_id) DO NOTHING
-             RETURNING id;`,
-            [schoolId, cls.id, subj.id, formMasterId, session_id, term_id]
-          );
-          if (allocRes.rowCount && allocRes.rowCount > 0) {
-            allocationsCreated++;
-          }
-        }
-      }
-    }
-
-    await logAuthEvent(
-      {
-        userId: caller.user.id,
-        email: caller.user.email,
-        action: 'SCHOOL_ACADEMIC_STRUCTURE_INITIALIZED',
-        status: 'SUCCESS',
-        ipAddress: caller.ipAddress,
-        userAgent: caller.userAgent,
-        details: {
-          schoolId,
-          organizationId: school.organization_id,
-          classesCreated,
-          allocationsCreated,
-        },
-      },
-      txClient
-    );
-
-    return { classesCreated, allocationsCreated };
-  };
-
-  if (client) {
-    return executeInit(client);
-  }
-  return runOnboardingTransaction(executeInit);
-}
-
-/**
  * Formally verifies and signs off on onboarding completeness for an authoritative school in PostgreSQL.
  * Fails closed if any prerequisite is unsatisfied.
  */
@@ -1098,7 +1010,7 @@ export async function verifySchoolOnboarding(
   caller: AuthenticatedCaller,
   client?: PoolClient
 ): Promise<SchoolOnboardingStatusReport> {
-  assertCallerSchoolAuthority(schoolId, caller, 'verify onboarding completeness');
+  assertCallerSchoolAuthority(schoolId, caller, 'verify onboarding completeness', 'schools.manage');
 
   // 1. Evaluate current state before entering transaction to determine readiness
   const initialCheck = await getSchoolOnboardingStatus(schoolId, caller, client);

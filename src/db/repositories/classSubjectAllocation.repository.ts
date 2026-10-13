@@ -178,8 +178,18 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
     const resolvedSessionId = data.academicSessionId || termCheck.rows[0].session_id;
 
     // Verify session integrity if session provided
-    if (data.academicSessionId && termCheck.rows[0].session_id !== data.academicSessionId) {
-      throw new Error('SESSION_TERM_MISMATCH: The specified term does not belong to the specified academic session.');
+    if (data.academicSessionId) {
+      const sessionCheck = await query<{ id: string }>(
+        'SELECT id FROM academic_sessions WHERE id = $1 LIMIT 1;',
+        [data.academicSessionId],
+        client
+      );
+      if (!sessionCheck.rows[0]) {
+        throw new Error('SESSION_NOT_FOUND: Specified academic session does not exist.');
+      }
+      if (termCheck.rows[0].session_id !== data.academicSessionId) {
+        throw new Error('SESSION_TERM_MISMATCH: The specified term does not belong to the specified academic session.');
+      }
     }
 
     // 5. Check for duplicate allocation
