@@ -28,6 +28,74 @@ import {
 } from '../index';
 import { getSchoolOnboardingStatus } from '../../auth/onboarding.service';
 
+/**
+ * Read-only advisory inspection that flags records matching obsolete Phase 10D initializer artifacts:
+ * - Canonical pattern class names ("Primary N Gold", "JSS N Alpha", "SSS N Science")
+ * - Principal-as-teacher / principal-as-form-master allocations
+ * - Default 4 periods_per_week allocations
+ */
+export async function scanLegacyStructureReport(schoolId: string): Promise<{
+  suspiciousClassesCount: number;
+  suspiciousAllocationsCount: number;
+}> {
+  console.log('\n----------------------------------------------------------------------');
+  console.log('[ADVISORY REPORT] Scanning for legacy auto-initializer patterns (read-only)...');
+  console.log('----------------------------------------------------------------------');
+
+  const legacyClassesRes = await query<{ id: string; name: string; level: string; form_master_id: string | null }>(
+    `SELECT c.id, c.name, c.level, c.form_master_id
+     FROM classes c
+     WHERE c.school_id = $1
+       AND (
+         c.name ILIKE '%Gold' OR
+         c.name ILIKE '%Alpha' OR
+         c.name ILIKE '%Science'
+       );`,
+    [schoolId]
+  );
+
+  const principalStaffRes = await query<{ id: string; full_name: string }>(
+    `SELECT id, full_name
+     FROM staff
+     WHERE school_id = $1
+       AND (role = 'principal' OR LOWER(role) = 'principal')
+     LIMIT 1;`,
+    [schoolId]
+  );
+  const principalStaffId = principalStaffRes.rows[0]?.id || null;
+
+  const legacyAllocRes = await query<{ id: string; class_name: string; subject_code: string; periods_per_week: number; teacher_id: string | null }>(
+    `SELECT a.id, c.name as class_name, s.code as subject_code, a.periods_per_week, a.teacher_id
+     FROM class_subject_allocations a
+     INNER JOIN classes c ON c.id = a.class_id
+     INNER JOIN subjects s ON s.id = a.subject_id
+     WHERE a.school_id = $1
+       AND (
+         ($2::uuid IS NOT NULL AND a.teacher_id = $2::uuid)
+         OR a.periods_per_week = 4
+       );`,
+    [schoolId, principalStaffId]
+  );
+
+  console.log(`Found ${legacyClassesRes.rows.length} class(es) matching old auto-generated naming conventions:`);
+  for (const c of legacyClassesRes.rows) {
+    console.log(`  - Class: "${c.name}" (${c.level}), ID: ${c.id}`);
+  }
+
+  console.log(`Found ${legacyAllocRes.rows.length} allocation(s) matching old defaults (principal-assigned or 4 periods/week):`);
+  for (const a of legacyAllocRes.rows) {
+    const isPrincipal = principalStaffId && a.teacher_id === principalStaffId ? ' [Principal as Teacher]' : '';
+    console.log(`  - Allocation: ${a.class_name} -> ${a.subject_code} (${a.periods_per_week} periods/wk)${isPrincipal}`);
+  }
+  console.log('NOTE: This report is purely informational. Existing data is never altered automatically.');
+  console.log('----------------------------------------------------------------------\n');
+
+  return {
+    suspiciousClassesCount: legacyClassesRes.rows.length,
+    suspiciousAllocationsCount: legacyAllocRes.rows.length,
+  };
+}
+
 export async function executeOnboardingVerifyCli(): Promise<{
   exitCode: number;
   message: string;
@@ -56,11 +124,16 @@ export async function executeOnboardingVerifyCli(): Promise<{
       return { exitCode: 1, message: safeErr };
     }
 
-    // Resolve target school via env or CLI arg or first school
+    // Resolve target school via env or CLI arg
+    const checkLegacyFlag =
+      process.argv.includes('--scan-legacy') ||
+      process.argv.includes('--report-legacy') ||
+      process.env.SCAN_LEGACY_STRUCTURE === 'true';
+
     const inputCode = (
       process.env.SCHOOL_CODE ||
       process.env.ONBOARDING_SCHOOL_CODE ||
-      process.argv[2] ||
+      (process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : '') ||
       ''
     ).trim();
 
@@ -69,6 +142,19 @@ export async function executeOnboardingVerifyCli(): Promise<{
       process.env.ONBOARDING_SCHOOL_ID ||
       ''
     ).trim();
+
+    if (!inputCode && !inputId) {
+      const usageMsg =
+        'SAFE STOP: Neither SCHOOL_CODE nor SCHOOL_ID was provided.\n' +
+        'Usage:\n' +
+        '  npm run onboarding:verify -- <SCHOOL_CODE>\n' +
+        '  SCHOOL_CODE=BNS-MKD-001 npm run onboarding:verify\n' +
+        '  SCHOOL_ID=<uuid> npm run onboarding:verify\n' +
+        'Optional advisory check:\n' +
+        '  npm run onboarding:verify -- <SCHOOL_CODE> --scan-legacy';
+      console.error(`[onboarding:verify] ${usageMsg}`);
+      return { exitCode: 1, message: usageMsg };
+    }
 
     let schoolId = inputId;
     if (!schoolId && inputCode) {
@@ -85,16 +171,9 @@ export async function executeOnboardingVerifyCli(): Promise<{
     }
 
     if (!schoolId) {
-      // Pick the first authoritative school in the registry
-      const firstSchoolRes = await query<{ id: string; code: string; name: string }>(
-        'SELECT id, code, name FROM schools ORDER BY created_at ASC LIMIT 1;'
-      );
-      if (!firstSchoolRes.rows[0]) {
-        const msg = 'No authoritative schools found in database. Run provision:bootstrap first.';
-        console.error(`[onboarding:verify] ${msg}`);
-        return { exitCode: 1, message: msg };
-      }
-      schoolId = firstSchoolRes.rows[0].id;
+      const msg = 'Unable to resolve target school identifier.';
+      console.error(`[onboarding:verify] ${msg}`);
+      return { exitCode: 1, message: msg };
     }
 
     // Evaluate onboarding status using internal CLI system caller
@@ -141,6 +220,11 @@ export async function executeOnboardingVerifyCli(): Promise<{
       }
     }
     console.log('======================================================================');
+
+    // Optional advisory check for legacy auto-generated structure artifacts
+    if (checkLegacyFlag) {
+      await scanLegacyStructureReport(schoolId);
+    }
 
     if (report.overallStatus === 'ONBOARDING_READY') {
       const summary = `School '${report.schoolName}' (${report.schoolCode}) is ONBOARDING_READY. Operational launch remains ${report.operationalLaunchStatus}.`;

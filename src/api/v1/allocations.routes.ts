@@ -100,13 +100,22 @@ allocationsRouter.post(
       const targetTermId = academic_term_id || academicTermId;
       const targetSessionId = academic_session_id || academicSessionId;
       const targetTeacherId = teacher_id || teacherId;
-      const targetPeriods = periods_per_week || periodsPerWeek;
+      const targetPeriods = periods_per_week !== undefined ? periods_per_week : periodsPerWeek;
 
       if (!targetSchoolId || !targetClassId || !targetSubjectId || !targetTermId) {
         res.status(400).json({
           success: false,
           error: 'MISSING_REQUIRED_FIELDS',
           message: 'class_id, subject_id, and academic_term_id are required fields.',
+        });
+        return;
+      }
+
+      if (targetPeriods === undefined || targetPeriods === null || targetPeriods === '') {
+        res.status(400).json({
+          success: false,
+          error: 'VALIDATION_FAILED',
+          message: 'periods_per_week must be explicitly supplied.',
         });
         return;
       }
@@ -118,7 +127,7 @@ allocationsRouter.post(
         teacherId: targetTeacherId || null,
         academicSessionId: targetSessionId || null,
         academicTermId: targetTermId,
-        periodsPerWeek: targetPeriods ? Number(targetPeriods) : 4,
+        periodsPerWeek: Number(targetPeriods),
       });
 
       res.status(201).json({

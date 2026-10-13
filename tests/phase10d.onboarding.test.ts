@@ -584,6 +584,7 @@ async function runPhase10dSuite() {
         body: JSON.stringify({ email: 'principal.makurdi@example.invalid', password: 'MakurdiPrincipalPass#2026!' }),
       });
       const principal1Json = await principal1LoginRes.json();
+      console.log('DEBUG PRINCIPAL LOGIN:', principal1LoginRes.status, principal1Json);
       const principal1Token = principal1Json.token || principal1Json.data?.token;
 
       const principal2LoginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {

@@ -147,7 +147,7 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       throw new Error('SUBJECT_NOT_FOUND: Specified subject does not exist.');
     }
 
-    // 3. Verify teacher belongs to the same school if assigned
+    // 3. Verify teacher belongs to the same school and is active if assigned
     if (data.teacherId) {
       const teacherCheck = await query<{ id: string; school_id: string; is_active: boolean }>(
         'SELECT id, school_id, is_active FROM staff WHERE id = $1 LIMIT 1;',
@@ -159,6 +159,9 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       }
       if (teacherCheck.rows[0].school_id !== data.schoolId) {
         throw new Error('CROSS_SCHOOL_TEACHER_VIOLATION: Teacher staff member does not belong to this school.');
+      }
+      if (teacherCheck.rows[0].is_active === false) {
+        throw new Error('INACTIVE_STAFF_VIOLATION: Cannot allocate subject to an inactive staff member.');
       }
     }
 
@@ -185,7 +188,14 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       throw new Error('DUPLICATE_ALLOCATION: An allocation for this class, subject, and term already exists.');
     }
 
-    const periods = data.periodsPerWeek && data.periodsPerWeek > 0 ? data.periodsPerWeek : 4;
+    // 6. Explicit periods_per_week validation (No implicit default)
+    if (data.periodsPerWeek === undefined || data.periodsPerWeek === null) {
+      throw new Error('INVALID_PERIODS: periods_per_week must be explicitly supplied.');
+    }
+    const periods = Number(data.periodsPerWeek);
+    if (!Number.isInteger(periods) || periods < 1 || periods > 30) {
+      throw new Error('INVALID_PERIODS: periods_per_week must be an integer between 1 and 30.');
+    }
 
     const insertSql = `
       INSERT INTO class_subject_allocations (
@@ -230,8 +240,8 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
     }
 
     if (data.teacherId !== undefined && data.teacherId !== null) {
-      const teacherCheck = await query<{ id: string; school_id: string }>(
-        'SELECT id, school_id FROM staff WHERE id = $1 LIMIT 1;',
+      const teacherCheck = await query<{ id: string; school_id: string; is_active: boolean }>(
+        'SELECT id, school_id, is_active FROM staff WHERE id = $1 LIMIT 1;',
         [data.teacherId],
         client
       );
@@ -240,6 +250,9 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       }
       if (teacherCheck.rows[0].school_id !== existing.school_id) {
         throw new Error('CROSS_SCHOOL_TEACHER_VIOLATION: Teacher staff member belongs to another school.');
+      }
+      if (teacherCheck.rows[0].is_active === false) {
+        throw new Error('INACTIVE_STAFF_VIOLATION: Cannot assign an inactive staff member.');
       }
     }
 
@@ -252,10 +265,11 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
     }
 
     if (data.periodsPerWeek !== undefined) {
-      if (data.periodsPerWeek <= 0) {
-        throw new Error('INVALID_PERIODS: Periods per week must be greater than zero.');
+      const periods = Number(data.periodsPerWeek);
+      if (!Number.isInteger(periods) || periods < 1 || periods > 30) {
+        throw new Error('INVALID_PERIODS: periods_per_week must be an integer between 1 and 30.');
       }
-      params.push(data.periodsPerWeek);
+      params.push(periods);
       updates.push(`periods_per_week = $${params.length}`);
     }
 
