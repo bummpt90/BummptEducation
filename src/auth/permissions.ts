@@ -6,6 +6,7 @@
  */
 
 import { AuthRole, Permission } from './types';
+export type { Permission, AuthRole };
 
 const ALL_SYSTEM_PERMISSIONS: Permission[] = [
   'users.view',

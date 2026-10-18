@@ -675,7 +675,6 @@ async function runPhase5TestSuite() {
     const resultRes = await apiRequest(`/api/v1/results/student/${studentA.id}?term_id=${testTerm.id}`, {
       token: principalAToken,
     });
-
     const studentResult = resultRes.data.data;
     const hasSubjects = studentResult?.subjects?.length > 0;
     const hasSummary = Boolean(studentResult?.summary?.averageScore !== undefined);

@@ -566,34 +566,8 @@ export const SchoolOnboardingChecklist: React.FC<SchoolOnboardingChecklistProps>
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Principal Name</label>
-                  <input
-                    type="text"
-                    value={editFormData.principalName || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, principalName: e.target.value })}
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">VP Academic</label>
-                  <input
-                    type="text"
-                    value={editFormData.vicePrincipalAcademic || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, vicePrincipalAcademic: e.target.value })}
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Bursar Name</label>
-                  <input
-                    type="text"
-                    value={editFormData.bursarName || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, bursarName: e.target.value })}
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-600"
-                  />
-                </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">
+                <span className="font-bold text-slate-800">Authoritative School Leadership:</span> Principal and administrative leadership are derived directly from verified user accounts and linked staff registry records in PostgreSQL, not editable profile text.
               </div>
 
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">

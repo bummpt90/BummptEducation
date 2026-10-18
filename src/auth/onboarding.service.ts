@@ -23,8 +23,8 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction, sanitizeDatabaseErrorMessage } from '../db/client';
 import { logAuthEvent } from './audit';
-import { hasPermission, type Permission } from './permissions';
-import type { SafeUser, AuthRole } from './types';
+import { hasPermission } from './permissions';
+import type { SafeUser, AuthRole, Permission } from './types';
 
 export interface AuthenticatedCaller {
   user?: (Partial<SafeUser> & {
@@ -402,13 +402,13 @@ export async function getSchoolOnboardingStatus(
   }>(
     `SELECT 
        st.id AS staff_id,
-       st.staff_number,
+       st.staff_id_number AS staff_number,
        st.full_name,
        u.id AS user_id,
        u.email AS user_email
      FROM users u
      INNER JOIN staff st ON st.user_id = u.id AND st.school_id = u.school_id
-     INNER JOIN schools s ON s.id = u.school_id AND s.organization_id = u.organization_id
+     INNER JOIN schools s ON s.id = u.school_id
      WHERE u.school_id = $1
        AND u.role = 'principal'
        AND u.is_active = TRUE

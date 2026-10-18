@@ -321,14 +321,14 @@ export function requireSchoolScope() {
       return;
     }
 
-    // Inspect if client attempted to explicitly specify school_id in body, query, or params
+    const isSchoolsRoute = req.baseUrl?.startsWith('/api/v1/schools');
     const clientSuppliedSchoolId =
       req.body?.school_id ||
       req.body?.schoolId ||
       req.query?.school_id ||
       req.query?.schoolId ||
       req.params?.schoolId ||
-      req.params?.id;
+      (isSchoolsRoute ? req.params?.id : undefined);
 
     if (clientSuppliedSchoolId && clientSuppliedSchoolId !== trustedSchoolId) {
       logAuthEvent({
