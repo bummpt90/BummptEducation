@@ -41,6 +41,9 @@ import {
 import { authRouter } from '../src/auth/auth.routes';
 import { schoolsRouter } from '../src/api/v1/schools.routes';
 import { onboardingRouter } from '../src/api/v1/onboarding.routes';
+import { classesRouter } from '../src/api/v1/classes.routes';
+import { allocationsRouter } from '../src/api/v1/allocations.routes';
+import { resultsRouter } from '../src/api/v1/results.routes';
 import {
   bootstrapFirstTenantAndAdmin,
   provisionSchool,
@@ -53,7 +56,8 @@ import {
   assertCallerSchoolAuthority,
   OnboardingError,
 } from '../src/auth/onboarding.service';
-import { executeOnboardingVerifyCli } from '../src/db/cli/onboarding-verify';
+import { scanLegacyStructureReport, executeOnboardingVerifyCli } from '../src/db/cli/onboarding-verify';
+import { signAuthToken } from '../src/auth/token';
 
 interface TestResult {
   category: string;
@@ -500,6 +504,9 @@ async function runPhase10dSuite() {
     app.use('/api/v1/auth', authRouter);
     app.use('/api/v1/schools', schoolsRouter);
     app.use('/api/v1/onboarding', onboardingRouter);
+    app.use('/api/v1/classes', classesRouter);
+    app.use('/api/v1/academic/allocations', allocationsRouter);
+    app.use('/api/v1/results', resultsRouter);
 
     const testServer = http.createServer(app);
     await new Promise<void>((resolve) => testServer.listen(0, '127.0.0.1', () => resolve()));
@@ -720,6 +727,8 @@ async function runPhase10dSuite() {
       // 3E. Academic Calendar & Structure Initialization
       // -----------------------------------------------------------------------
       // Configure an active academic session and term in PostgreSQL
+      const cur = await query('SELECT current_database(), current_schema(), current_setting(\'search_path\');');
+      console.log('DEBUG DB STATE BEFORE INSERT:', cur.rows[0]);
       const sessionRes = await query<{ id: string }>(
         `INSERT INTO academic_sessions (session_name, is_current, start_date, end_date)
          VALUES ('2025/2026', TRUE, '2025-09-08', '2026-07-24')

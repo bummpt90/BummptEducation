@@ -39,18 +39,14 @@ export async function scanLegacyStructureReport(schoolId: string): Promise<{
   suspiciousAllocationsCount: number;
 }> {
   console.log('\n----------------------------------------------------------------------');
-  console.log('[ADVISORY REPORT] Scanning for legacy auto-initializer patterns (read-only)...');
+  console.log('[ADVISORY REPORT — REVIEW MANUALLY] Scanning for legacy auto-initializer patterns (read-only)...');
   console.log('----------------------------------------------------------------------');
 
   const legacyClassesRes = await query<{ id: string; name: string; level: string; form_master_id: string | null }>(
     `SELECT c.id, c.name, c.level, c.form_master_id
      FROM classes c
      WHERE c.school_id = $1
-       AND (
-         c.name ILIKE '%Gold' OR
-         c.name ILIKE '%Alpha' OR
-         c.name ILIKE '%Science'
-       );`,
+       AND c.name ~* '^(Primary [0-9]+ Gold|JSS [0-9]+ Alpha|SSS [0-9]+ Science)$';`,
     [schoolId]
   );
 
@@ -75,7 +71,10 @@ export async function scanLegacyStructureReport(schoolId: string): Promise<{
      WHERE a.school_id = $1
        AND (
          ($2::uuid IS NOT NULL AND a.teacher_id = $2::uuid)
-         OR a.periods_per_week = 4
+         OR (
+           a.periods_per_week = 4
+           AND c.name ~* '^(Primary [0-9]+ Gold|JSS [0-9]+ Alpha|SSS [0-9]+ Science)$'
+         )
        );`,
     [schoolId, principalStaffId]
   );
@@ -85,12 +84,12 @@ export async function scanLegacyStructureReport(schoolId: string): Promise<{
     console.log(`  - Class: "${c.name}" (${c.level}), ID: ${c.id}`);
   }
 
-  console.log(`Found ${legacyAllocRes.rows.length} allocation(s) matching old defaults (principal-assigned or 4 periods/week):`);
+  console.log(`Found ${legacyAllocRes.rows.length} allocation(s) matching old defaults (principal-assigned or 4 periods/week on flagged classes):`);
   for (const a of legacyAllocRes.rows) {
     const isPrincipal = principalStaffId && a.teacher_id === principalStaffId ? ' [Principal as Teacher]' : '';
     console.log(`  - Allocation: ${a.class_name} -> ${a.subject_code} (${a.periods_per_week} periods/wk)${isPrincipal}`);
   }
-  console.log('NOTE: This report is purely informational. Existing data is never altered automatically.');
+  console.log('NOTE: Output is advisory — review manually. Existing data is never altered automatically.');
   console.log('----------------------------------------------------------------------\n');
 
   return {

@@ -88,9 +88,6 @@ export interface SchoolOnboardingStatusReport {
     email: string | null;
     address: string | null;
     establishedYear: number | null;
-    principalName?: string | null;
-    bursarName?: string | null;
-    vicePrincipalAcademic?: string | null;
     isActive: boolean;
   };
   authoritativeLeadership?: {
@@ -434,6 +431,7 @@ export async function getSchoolOnboardingStatus(
     current_term_name: string | null;
     resumption_date: string | null;
     vacation_date: string | null;
+    term_session_mismatch: boolean;
   }>(
     `SELECT 
        s.id AS current_session_id,
@@ -441,9 +439,10 @@ export async function getSchoolOnboardingStatus(
        t.id AS current_term_id,
        t.term_name AS current_term_name,
        t.resumption_date::text AS resumption_date,
-       t.vacation_date::text AS vacation_date
+       t.vacation_date::text AS vacation_date,
+       CASE WHEN t.id IS NOT NULL AND t.session_id != s.id THEN TRUE ELSE FALSE END AS term_session_mismatch
      FROM academic_sessions s
-     LEFT JOIN academic_terms t ON t.session_id = s.id AND t.is_current = TRUE
+     LEFT JOIN academic_terms t ON t.is_current = TRUE
      WHERE s.is_current = TRUE
      LIMIT 1;`,
     [],
@@ -456,20 +455,34 @@ export async function getSchoolOnboardingStatus(
     current_term_name: null,
     resumption_date: null,
     vacation_date: null,
+    term_session_mismatch: false,
   };
 
   // 4. Fetch Classes & Subjects State
-  const classesRes = await query<{ class_count: string; classes_with_form_master: string }>(
+  const classesRes = await query<{
+    class_count: string;
+    classes_with_form_master: string;
+    invalid_form_masters_count: string;
+  }>(
     `SELECT 
        COUNT(*)::text AS class_count,
-       COUNT(*) FILTER (WHERE form_master_id IS NOT NULL)::text AS classes_with_form_master
-     FROM classes
-     WHERE school_id = $1;`,
+       COUNT(c.form_master_id)::text AS classes_with_form_master,
+       COUNT(*) FILTER (
+         WHERE c.form_master_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM staff st 
+           WHERE st.id = c.form_master_id 
+             AND st.school_id = c.school_id 
+             AND st.is_active = TRUE
+         )
+       )::text AS invalid_form_masters_count
+     FROM classes c
+     WHERE c.school_id = $1;`,
     [schoolId],
     client
   );
   const classesCount = parseInt(classesRes.rows[0]?.class_count || '0', 10);
   const formMastersCount = parseInt(classesRes.rows[0]?.classes_with_form_master || '0', 10);
+  const invalidFormMastersCount = parseInt(classesRes.rows[0]?.invalid_form_masters_count || '0', 10);
 
   const subjectsRes = await query<{ subject_count: string }>(
     'SELECT COUNT(*)::text AS subject_count FROM subjects;',
@@ -482,17 +495,38 @@ export async function getSchoolOnboardingStatus(
   const allocationsRes = await query<{
     allocation_count: string;
     allocations_with_teachers: string;
+    invalid_class_allocations_count: string;
+    invalid_teacher_allocations_count: string;
+    invalid_term_session_allocations_count: string;
   }>(
     `SELECT 
        COUNT(*)::text AS allocation_count,
-       COUNT(*) FILTER (WHERE teacher_id IS NOT NULL)::text AS allocations_with_teachers
-     FROM class_subject_allocations
-     WHERE school_id = $1;`,
+       COUNT(a.teacher_id)::text AS allocations_with_teachers,
+       COUNT(*) FILTER (
+         WHERE NOT EXISTS (
+           SELECT 1 FROM classes c WHERE c.id = a.class_id AND c.school_id = $1
+         )
+       )::text AS invalid_class_allocations_count,
+       COUNT(*) FILTER (
+         WHERE a.teacher_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM staff st WHERE st.id = a.teacher_id AND st.school_id = $1 AND st.is_active = TRUE
+         )
+       )::text AS invalid_teacher_allocations_count,
+       COUNT(*) FILTER (
+         WHERE a.academic_term_id IS NOT NULL AND a.academic_session_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM academic_terms term WHERE term.id = a.academic_term_id AND term.session_id = a.academic_session_id
+         )
+       )::text AS invalid_term_session_allocations_count
+     FROM class_subject_allocations a
+     WHERE a.school_id = $1;`,
     [schoolId],
     client
   );
   const allocationsCount = parseInt(allocationsRes.rows[0]?.allocation_count || '0', 10);
   const allocationsWithTeachers = parseInt(allocationsRes.rows[0]?.allocations_with_teachers || '0', 10);
+  const invalidClassAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_class_allocations_count || '0', 10);
+  const invalidTeacherAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_teacher_allocations_count || '0', 10);
+  const invalidTermSessionAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_term_session_allocations_count || '0', 10);
 
   // 6. Fetch Student Records (Must be strictly 0 in Phase 10D)
   const studentsRes = await query<{ student_count: string }>(
@@ -649,9 +683,11 @@ export async function getSchoolOnboardingStatus(
     {
       id: 'calendar_term',
       label: 'Active Academic Term',
-      description: 'Active statutory term (e.g. 1st Term, 2nd Term, 3rd Term)',
-      isComplete: Boolean(calendar.current_term_id),
-      value: calendar.current_term_name,
+      description: 'Active statutory term belonging to the current session',
+      isComplete: Boolean(calendar.current_term_id) && !calendar.term_session_mismatch,
+      value: calendar.term_session_mismatch
+        ? 'Active term does not belong to active session'
+        : calendar.current_term_name || 'No active term',
       required: true,
     },
     {
@@ -677,6 +713,21 @@ export async function getSchoolOnboardingStatus(
       details: { classesCount },
     },
     {
+      id: 'classes_form_masters',
+      label: 'Class Form Master Assignment',
+      description: 'All classes must have active form masters from this school assigned',
+      isComplete: classesCount > 0 && formMastersCount === classesCount && invalidFormMastersCount === 0,
+      value: invalidFormMastersCount > 0
+        ? `Invalid: ${invalidFormMastersCount} form master(s) inactive or outside school`
+        : classesCount === 0
+        ? 'No classes configured'
+        : formMastersCount < classesCount
+        ? `Incomplete: ${classesCount - formMastersCount} of ${classesCount} classes lack form masters`
+        : `All ${classesCount} classes have active same-school form masters assigned`,
+      required: true,
+      details: { formMastersCount, classesCount, invalidFormMastersCount },
+    },
+    {
       id: 'subjects_available',
       label: 'Curriculum Subjects Available',
       description: 'Approved state curriculum subjects available in registry',
@@ -694,30 +745,43 @@ export async function getSchoolOnboardingStatus(
       id: 'allocations_present',
       label: 'Class-Subject Allocations',
       description: 'Subject allocations assigned to school classes',
-      isComplete: allocationsCount > 0,
-      value: `${allocationsCount} Allocations configured`,
+      isComplete: allocationsCount > 0 && invalidClassAllocationsCount === 0,
+      value: invalidClassAllocationsCount > 0
+        ? `Invalid: ${invalidClassAllocationsCount} allocation(s) reference classes outside school`
+        : `${allocationsCount} Allocations configured`,
       required: true,
-      details: { allocationsCount },
+      details: { allocationsCount, invalidClassAllocationsCount },
     },
     {
       id: 'allocations_teachers_assigned',
       label: 'Teacher Responsibility Assignments',
       description: 'Allocations have qualified teaching staff assigned',
-      isComplete: allocationsWithTeachers > 0,
-      value: `${allocationsWithTeachers} Allocations assigned to teachers`,
+      isComplete: allocationsCount > 0 && allocationsWithTeachers === allocationsCount && invalidTeacherAllocationsCount === 0,
+      value: invalidTeacherAllocationsCount > 0
+        ? `Invalid: ${invalidTeacherAllocationsCount} allocation(s) have inactive or outside-school teachers`
+        : allocationsCount === 0
+        ? 'No allocations configured'
+        : allocationsWithTeachers < allocationsCount
+        ? `Incomplete: ${allocationsCount - allocationsWithTeachers} of ${allocationsCount} allocations lack assigned teachers`
+        : `All ${allocationsCount} allocations assigned to active same-school teachers`,
       required: true,
-      details: { allocationsWithTeachers, allocationsCount },
+      details: { allocationsWithTeachers, allocationsCount, invalidTeacherAllocationsCount },
     },
     {
-      id: 'allocations_form_master',
-      label: 'Class Form Master Linkage',
-      description: 'Form masters assigned to oversee classes',
-      isComplete: formMastersCount > 0 || classesCount === 0,
-      value: `${formMastersCount} Classes have assigned form masters`,
-      required: false,
+      id: 'allocations_term_session_integrity',
+      label: 'Allocation Term & Session Integrity',
+      description: 'Allocations must reference terms belonging to the academic session',
+      isComplete: allocationsCount > 0 && invalidTermSessionAllocationsCount === 0,
+      value: invalidTermSessionAllocationsCount > 0
+        ? `Invalid: ${invalidTermSessionAllocationsCount} allocation(s) have term/session mismatch`
+        : allocationsCount === 0
+        ? 'No allocations configured'
+        : 'All allocations have valid session/term integrity',
+      required: true,
+      details: { invalidTermSessionAllocationsCount },
     },
   ];
-  const isAllocationsComplete = allocationItems.filter((i) => i.required).every((item) => item.isComplete);
+  const isAllocationsComplete = allocationItems.every((item) => item.isComplete);
 
   // Step 6: Review of Onboarding Completeness
   const prerequisitesMet =
