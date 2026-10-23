@@ -248,7 +248,9 @@ export async function executeOnboardingVerifyCli(): Promise<{
     console.error(`[onboarding:verify] FATAL ERROR: ${safeErr}`);
     return { exitCode: 1, message: safeErr };
   } finally {
-    await closeDatabasePool();
+    if (isDirectExecution) {
+      await closeDatabasePool();
+    }
   }
 }
 

@@ -63,6 +63,15 @@ export function getDatabasePool(): Pool | null {
         console.error('[PostgreSQL] Unexpected error on idle client:', err.message);
       });
 
+      pool.on('connect', (client: PoolClient) => {
+        const searchPath = getConfiguredSearchPath();
+        if (searchPath) {
+          client.query(`SET search_path TO ${searchPath};`).catch((err) => {
+            console.error('[PostgreSQL] Error setting search_path on connect:', err?.message);
+          });
+        }
+      });
+
       isPoolInitialized = true;
     } catch (err: any) {
       console.warn('[PostgreSQL] Pool initialization warning:', err?.message || 'Unknown error');

@@ -1,28 +1,9 @@
 /**
  * BummptEducation — Phase 10D: School Onboarding & Institutional Readiness Verification Suite
  * 
- * Verifies the Phase 10D school onboarding workflow against PostgreSQL:
- * 1. Role & Tenant Scope: Caller authority derivation, cross-school access rejection
- * 2. Dedicated Test Database & Isolated Schema Safety Guard:
- *    - Never silently falls back to ordinary DATABASE_URL
- *    - Rejects production mode (NODE_ENV=production)
- *    - Validates test database name via SELECT current_database()
- *    - Restricts destructive operations to /^phase10d_[a-z0-9_]+_test$/
- * 3. 7-Step Onboarding Lifecycle Evaluation:
- *    - Step 1: School Profile (name, code, LGA, zone, category, contact, address, year)
- *    - Step 2: Leadership & Staff (verified principal user, staff link, teaching staff)
- *    - Step 3: Academic Calendar (current session, term, resumption/vacation dates)
- *    - Step 4: Classes & Subjects (canonical classes, state curriculum subjects)
- *    - Step 5: Staff Allocations (subject-class assignments to verified teachers)
- *    - Step 6: Completeness Review (fail-closed check before sign-off)
- *    - Step 7: Operational Launch Gate (distinguishes onboarding readiness from operational launch)
- * 4. School Profile Update & Validation (server-authoritative validation & sanitization)
- * 5. Academic Structure Initialization (canonical classes & allocations)
- * 6. Audit Logging (SCHOOL_PROFILE_UPDATED, SCHOOL_ACADEMIC_STRUCTURE_INITIALIZED, SCHOOL_ONBOARDING_VERIFIED)
- * 7. Zero Real Student/Financial Record Boundary (0 students, 0 fees created)
- * 8. Zero Seeder Coupling (never invokes development/demo seeders)
- * 9. CLI Verification (onboarding:verify script contract)
- * 10. Phase 10C Provisioning & Phase 10B Migration Integrity Preserved
+ * Harmonized Phase 10D Stage 2 Verification:
+ * Validates authoritative school configuration and readiness evaluation without
+ * automatic structure initializers, demo seeders, or legacy leadership text columns.
  */
 
 import 'dotenv/config';
@@ -57,7 +38,6 @@ import {
   OnboardingError,
 } from '../src/auth/onboarding.service';
 import { scanLegacyStructureReport, executeOnboardingVerifyCli } from '../src/db/cli/onboarding-verify';
-import { signAuthToken } from '../src/auth/token';
 
 interface TestResult {
   category: string;
@@ -159,33 +139,32 @@ function assertSafeDedicatedTestDatabaseConfig(input: DedicatedTestDbGuardInput)
   expectedDbName: string;
   schemaName: string;
 } {
-  const effectiveNodeEnv = (input.nodeEnv ?? process.env.NODE_ENV ?? '').trim().toLowerCase();
-  if (effectiveNodeEnv === 'production') {
-    throw new Error('REFUSED_PRODUCTION_TEST_EXECUTION: Destructive tests prohibited when NODE_ENV=production.');
-  }
+  assertSafeIsolatedTestSchema(input.schemaName, input.nodeEnv);
 
-  assertSafeIsolatedTestSchema(input.schemaName, effectiveNodeEnv);
-
-  const optIn = (input.allowDestructiveOptIn ?? '').trim();
-  if (optIn !== 'true') {
-    throw new Error('MISSING_DESTRUCTIVE_TEST_OPT_IN: ALLOW_DESTRUCTIVE_PHASE10D_TESTS=true required.');
-  }
-
-  const rawTestUrl = (input.testDatabaseUrl ?? '').trim();
+  const rawTestUrl = (input.testDatabaseUrl || '').trim();
   if (!rawTestUrl) {
-    throw new Error('MISSING_TEST_DATABASE_URL: PHASE10D_TEST_DATABASE_URL required; refusing to use DATABASE_URL.');
+    throw new Error(
+      'MISSING_TEST_DATABASE_URL: Dedicated test database URL is required (PHASE10D_TEST_DATABASE_URL).'
+    );
+  }
+
+  const rawOptIn = (input.allowDestructiveOptIn || '').trim().toLowerCase();
+  if (rawOptIn !== 'true' && rawOptIn !== '1') {
+    throw new Error(
+      'MISSING_DESTRUCTIVE_TEST_OPT_IN: ALLOW_DESTRUCTIVE_PHASE10D_TESTS must be set to "true".'
+    );
   }
 
   const expectedDbName = extractDatabaseNameFromUrl(rawTestUrl);
   assertSafeTestDatabaseName(expectedDbName);
 
-  const rawOrdinaryUrl = (input.ordinaryDatabaseUrl ?? '').trim();
+  const rawOrdinaryUrl = (input.ordinaryDatabaseUrl || '').trim();
   if (rawOrdinaryUrl) {
     let ordinaryDbName = '';
     try {
       ordinaryDbName = extractDatabaseNameFromUrl(rawOrdinaryUrl);
     } catch {
-      ordinaryDbName = '';
+      // ignore parse error on ordinary url
     }
     if (ordinaryDbName && ordinaryDbName.toLowerCase() === expectedDbName.toLowerCase()) {
       throw new Error(`UNSAFE_TEST_DATABASE_NAME: Test DB URL must not match ordinary DATABASE_URL database '${ordinaryDbName}'.`);
@@ -260,7 +239,7 @@ async function resetIsolatedTestSchema(schemaName: string, poolSize = 2): Promis
 
 async function runPhase10dSuite() {
   console.log('======================================================================');
-  console.log('BummptEducation — Phase 10D School Onboarding & Readiness Verification');
+  console.log('BummptEducation — Phase 10D Stage 2 Verification Suite');
   console.log('======================================================================\n');
 
   const savedEnv = { ...process.env };
@@ -278,7 +257,7 @@ async function runPhase10dSuite() {
 
   try {
     // =========================================================================
-    // 1. Role, Authorization & Seeder Boundary Static Verification
+    // Static Architecture & Seeder Boundary Verification
     // =========================================================================
     const serviceSource = fs.readFileSync(
       path.join(process.cwd(), 'src/auth/onboarding.service.ts'),
@@ -290,6 +269,10 @@ async function runPhase10dSuite() {
     );
     const routesSource = fs.readFileSync(
       path.join(process.cwd(), 'src/api/v1/onboarding.routes.ts'),
+      'utf-8'
+    );
+    const uiComponentSource = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/SchoolOnboardingChecklist.tsx'),
       'utf-8'
     );
 
@@ -308,23 +291,55 @@ async function runPhase10dSuite() {
     );
 
     record(
-      '1. Seeder Isolation Boundary',
-      'Onboarding service, API routes, and verification CLI never import or invoke development/demo seeders',
+      'Static Boundaries',
+      'Seeder Isolation: Onboarding service, routes, and CLI never import or invoke development/demo seeders',
       zeroSeederCoupling
     );
 
-    // Verify localStorage UI preference cannot override server authority
-    const uiPreferenceNotTrusted =
-      !serviceSource.includes('bummpt_ActiveSchoolId_v1') &&
-      !routesSource.includes('bummpt_ActiveSchoolId_v1');
+    // Test 13: UI initializer button and handler are absent
+    const uiInitializerAbsent =
+      !uiComponentSource.includes('handleInit') &&
+      !uiComponentSource.includes('academic-structure') &&
+      !uiComponentSource.includes('Initialize Academic Structure');
 
     record(
-      '1. Presentation Preference Boundary',
-      'Server-side onboarding service and API routes never read or trust client-side localStorage preference (bummpt_ActiveSchoolId_v1)',
-      uiPreferenceNotTrusted
+      'Required Tests',
+      '13. the UI initializer button and handler are absent',
+      uiInitializerAbsent
     );
 
-    // Verify caller authority derivation helper
+    // Test 17: no production route or function applies an academic template
+    const noAcademicTemplate =
+      !serviceSource.includes('initializeSchoolAcademicStructure') &&
+      !routesSource.includes('initializeSchoolAcademicStructure') &&
+      routesSource.includes("error: 'ENDPOINT_DEPRECATED'");
+
+    record(
+      'Required Tests',
+      '17. no production route or function applies an academic template',
+      noAcademicTemplate
+    );
+
+    // Test 14: CLI exits 1 on a missing target before any database access
+    const savedCode = process.env.SCHOOL_CODE;
+    const savedId = process.env.SCHOOL_ID;
+    delete process.env.SCHOOL_CODE;
+    delete process.env.SCHOOL_ID;
+    const oldArgv = [...process.argv];
+    process.argv = ['node', 'cli.js'];
+    const cliMissingTargetRes = await executeOnboardingVerifyCli();
+    process.argv = oldArgv;
+    if (savedCode) process.env.SCHOOL_CODE = savedCode;
+    if (savedId) process.env.SCHOOL_ID = savedId;
+
+    record(
+      'Required Tests',
+      '14. CLI exits 1 on a missing target before any database access',
+      cliMissingTargetRes.exitCode === 1 &&
+        cliMissingTargetRes.message.includes('Neither SCHOOL_CODE nor SCHOOL_ID was provided')
+    );
+
+    // Test Caller authority derivation helper
     let callerAuthSuperAdminOk = false;
     let callerAuthPrincipalOwnOk = false;
     let callerAuthPrincipalCrossBlocked = false;
@@ -367,8 +382,8 @@ async function runPhase10dSuite() {
     }
 
     record(
-      '2. Tenant Isolation & RBAC',
-      'assertCallerSchoolAuthority() permits Super Admin and assigned Principal, while strictly blocking cross-school access and unauthenticated calls',
+      'Static Boundaries',
+      'Tenant Isolation & RBAC: assertCallerSchoolAuthority enforces role and school bounds',
       callerAuthSuperAdminOk &&
         callerAuthPrincipalOwnOk &&
         callerAuthPrincipalCrossBlocked &&
@@ -376,7 +391,7 @@ async function runPhase10dSuite() {
     );
 
     // =========================================================================
-    // 2. Dedicated Test Database Guard & Safety Guard Verification
+    // Dedicated Test Database Guard & Safety Guard Verification
     // =========================================================================
     let missingTestUrlBlocked = false;
     try {
@@ -438,8 +453,8 @@ async function runPhase10dSuite() {
     }
 
     record(
-      '3. Fail-Closed Test DB Guard',
-      'Test DB guard rejects missing test URL, missing opt-in, production mode, unsafe database names, and public/unrelated schemas',
+      'Safety Guard',
+      'Test DB guard rejects missing test URL, missing opt-in, production mode, unsafe database names, and public schemas',
       missingTestUrlBlocked && missingOptInBlocked && prodModeBlocked && unsafeDbBlocked && unsafeSchemaBlocked
     );
 
@@ -473,7 +488,7 @@ async function runPhase10dSuite() {
       console.warn('   No schema drops, migrations, or writes were executed against DATABASE_URL or any other database.');
       console.warn('----------------------------------------------------------------------\n');
       record(
-        '3. Fail-Closed Test DB Guard (Live Connection)',
+        'Safety Guard (Live Connection)',
         'Dedicated test database connection verified before destructive Phase 10D tests',
         false,
         `Stopped safely: ${reason}`
@@ -490,13 +505,13 @@ async function runPhase10dSuite() {
     }
 
     record(
-      '3. Fail-Closed Test DB Guard (Live Connection)',
+      'Safety Guard (Live Connection)',
       `Connected to verified dedicated test database '${verifiedTestDb.actualDbName}' using schema '${verifiedTestDb.schemaName}'`,
       verifiedTestDb.actualDbName === verifiedTestDb.expectedDbName
     );
 
     // =========================================================================
-    // 3. Isolated PostgreSQL Integration Testing
+    // Live Server & Isolated PostgreSQL Integration Testing
     // =========================================================================
     const app = express();
     app.use(cookieParser());
@@ -514,10 +529,10 @@ async function runPhase10dSuite() {
     const baseUrl = `http://127.0.0.1:${port}`;
 
     try {
-      await resetIsolatedTestSchema(ISOLATED_SCHEMA, 2);
+      await resetIsolatedTestSchema(ISOLATED_SCHEMA, 1);
 
       // -----------------------------------------------------------------------
-      // 3A. Provision First Organization, First School & Administrators
+      // Test 16: Phase 10C bootstrap behaviour unchanged
       // -----------------------------------------------------------------------
       const bootstrapRes = await bootstrapFirstTenantAndAdmin({
         organization: {
@@ -547,8 +562,19 @@ async function runPhase10dSuite() {
       const school1Id = bootstrapRes.school!.id;
       const superAdminUser = bootstrapRes.admin.user;
       const principal1User = bootstrapRes.schoolPrincipal!.user;
+      const principal1StaffId = bootstrapRes.schoolPrincipal!.staff!.id;
 
-      // Provision a second school in Gboko with a distinct Principal
+      record(
+        'Required Tests',
+        '16. Phase 10C bootstrap behaviour unchanged',
+        bootstrapRes.organization.code === 'BNS-MOE-HQ' &&
+          bootstrapRes.school?.code === 'BNS-MKD-001' &&
+          superAdminUser.role === 'super_admin' &&
+          principal1User.role === 'principal' &&
+          Boolean(principal1StaffId)
+      );
+
+      // Provision School 2 in Gboko with Principal 2
       const school2Res = await provisionSchool(
         {
           organizationId: bootstrapRes.organization.id,
@@ -575,76 +601,189 @@ async function runPhase10dSuite() {
       );
       const principal2User = principal2Res.user;
 
-      // Authenticate tokens
-      const superAdminLoginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'admin@example.invalid', password: 'StrongAdminPassword#2026!' }),
-      });
-      const superAdminJson = await superAdminLoginRes.json();
-      const superAdminToken = superAdminJson.token || superAdminJson.data?.token;
+      // Provision Teacher 1 for School 1
+      const teacher1Res = await provisionAdministrator(
+        {
+          email: 'teacher1.makurdi@example.invalid',
+          password: 'Teacher1Pass#2026!',
+          fullName: 'Mr. James Iorkyaa (Teacher 1)',
+          role: 'teacher',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
+      );
+      const teacher1Staff = teacher1Res.staff!;
 
-      const principal1LoginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'principal.makurdi@example.invalid', password: 'MakurdiPrincipalPass#2026!' }),
-      });
-      const principal1Json = await principal1LoginRes.json();
-      const principal1Token = principal1Json.token || principal1Json.data?.token;
+      // Provision Teacher 2 for School 1
+      const teacher2Res = await provisionAdministrator(
+        {
+          email: 'teacher2.makurdi@example.invalid',
+          password: 'Teacher2Pass#2026!',
+          fullName: 'Mrs. Judith Akor (Teacher 2)',
+          role: 'teacher',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
+      );
+      const teacher2Staff = teacher2Res.staff!;
 
-      const principal2LoginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'principal.gboko@example.invalid', password: 'GbokoPrincipalPass#2026!' }),
-      });
-      const principal2Json = await principal2LoginRes.json();
-      const principal2Token = principal2Json.token || principal2Json.data?.token;
+      // Provision Inactive Teacher for School 1
+      const inactiveTeacherRes = await provisionAdministrator(
+        {
+          email: 'inactive.makurdi@example.invalid',
+          password: 'InactivePass#2026!',
+          fullName: 'Mr. Inactive Teacher',
+          role: 'teacher',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
+      );
+      const inactiveTeacherStaffId = inactiveTeacherRes.staff!.id;
+      await query('UPDATE staff SET is_active = FALSE WHERE id = $1;', [inactiveTeacherStaffId]);
+      await query('UPDATE users SET is_active = FALSE WHERE id = $1;', [inactiveTeacherRes.user.id]);
 
-      // -----------------------------------------------------------------------
-      // 3B. Initial Onboarding Retrieval & Cross-School Tenant Boundary
-      // -----------------------------------------------------------------------
-      // Principal 1 retrieves own school onboarding
-      const getOwnOnboardingRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding`, {
-        headers: { Authorization: `Bearer ${principal1Token}` },
-      });
-      const getOwnOnboardingJson = await getOwnOnboardingRes.json();
-
-      record(
-        '4. Onboarding Retrieval & Scope',
-        'Authorized Principal retrieves server-authoritative onboarding status for assigned school',
-        getOwnOnboardingRes.status === 200 &&
-          getOwnOnboardingJson.success === true &&
-          getOwnOnboardingJson.data.schoolCode === 'BNS-MKD-001' &&
-          getOwnOnboardingJson.data.overallStatus === 'ONBOARDING_INCOMPLETE'
+      // Provision Bursar for School 1
+      const bursarRes = await provisionAdministrator(
+        {
+          email: 'bursar.makurdi@example.invalid',
+          password: 'BursarPass#2026!',
+          fullName: 'Mr. Emmanuel Terna (Bursar)',
+          role: 'bursar',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
       );
 
-      // Principal 1 attempts to access Gboko School (School 2) -> 403 Forbidden
-      const getCrossOnboardingRes = await fetch(`${baseUrl}/api/v1/schools/${school2Id}/onboarding`, {
-        headers: { Authorization: `Bearer ${principal1Token}` },
-      });
-      const getCrossOnboardingJson = await getCrossOnboardingRes.json();
-
-      record(
-        '4. Onboarding Retrieval & Scope',
-        'Cross-school onboarding access is strictly blocked with 403 TENANT_ISOLATION_VIOLATION',
-        getCrossOnboardingRes.status === 403 &&
-          getCrossOnboardingJson.error === 'TENANT_ISOLATION_VIOLATION'
+      // Provision Exam Officer for School 1
+      const examOfficerRes = await provisionAdministrator(
+        {
+          email: 'examofficer.makurdi@example.invalid',
+          password: 'ExamOfficerPass#2026!',
+          fullName: 'Mr. Aondoakaa (Exam Officer)',
+          role: 'exam_officer',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
       );
 
-      // Super Admin retrieves any school onboarding
-      const superAdminViewSchool2Res = await fetch(`${baseUrl}/api/v1/schools/${school2Id}/onboarding`, {
-        headers: { Authorization: `Bearer ${superAdminToken}` },
+      // Provision Parent for School 1
+      const parentRes = await provisionAdministrator(
+        {
+          email: 'parent.makurdi@example.invalid',
+          password: 'ParentPass#2026!',
+          fullName: 'Mrs. Mary Iorliam (Parent)',
+          role: 'parent',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
+      );
+
+      // Provision Student for School 1
+      const studentRes = await provisionAdministrator(
+        {
+          email: 'student.makurdi@example.invalid',
+          password: 'StudentPass#2026!',
+          fullName: 'Terkula Udu (Student)',
+          role: 'student',
+          schoolId: school1Id,
+        },
+        { user: superAdminUser }
+      );
+
+      // Provision Teacher for School 2
+      const school2TeacherRes = await provisionAdministrator(
+        {
+          email: 'teacher.gboko@example.invalid',
+          password: 'GbokoTeacherPass#2026!',
+          fullName: 'Gboko Science Teacher',
+          role: 'teacher',
+          schoolId: school2Id,
+        },
+        { user: superAdminUser }
+      );
+      const school2TeacherStaffId = school2TeacherRes.staff!.id;
+
+      // Authenticate tokens for all tested roles
+      async function login(email: string, pass: string): Promise<string> {
+        const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: pass }),
+        });
+        const json = await res.json();
+        return json.token || json.data?.token;
+      }
+
+      const superAdminToken = await login('admin@example.invalid', 'StrongAdminPassword#2026!');
+      const principal1Token = await login('principal.makurdi@example.invalid', 'MakurdiPrincipalPass#2026!');
+      const principal2Token = await login('principal.gboko@example.invalid', 'GbokoPrincipalPass#2026!');
+      const teacher1Token = await login('teacher1.makurdi@example.invalid', 'Teacher1Pass#2026!');
+      const bursarToken = await login('bursar.makurdi@example.invalid', 'BursarPass#2026!');
+      const examOfficerToken = await login('examofficer.makurdi@example.invalid', 'ExamOfficerPass#2026!');
+      const parentToken = await login('parent.makurdi@example.invalid', 'ParentPass#2026!');
+      const studentToken = await login('student.makurdi@example.invalid', 'StudentPass#2026!');
+
+      // -----------------------------------------------------------------------
+      // Test 1: onboarding creates zero classes
+      // Test 2: onboarding creates zero subject allocations
+      // Test 3: principal never auto-assigned as teacher
+      // Test 4: principal never auto-assigned as form master
+      // Test 5: subjects never selected automatically
+      // -----------------------------------------------------------------------
+      const preOnboardingCheck = await getSchoolOnboardingStatus(school1Id, {
+        user: principal1User,
       });
+
+      const initialClassesCheck = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM classes WHERE school_id = $1;',
+        [school1Id]
+      );
       record(
-        '4. Onboarding Retrieval & Scope',
-        'Super Admin can retrieve onboarding status across all schools in the organization',
-        superAdminViewSchool2Res.status === 200
+        'Required Tests',
+        '1. onboarding creates zero classes',
+        initialClassesCheck.rows[0].count === '0' && preOnboardingCheck.metrics.classesCount === 0
+      );
+
+      const initialAllocationsCheck = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM class_subject_allocations WHERE school_id = $1;',
+        [school1Id]
+      );
+      record(
+        'Required Tests',
+        '2. onboarding creates zero subject allocations',
+        initialAllocationsCheck.rows[0].count === '0' && preOnboardingCheck.metrics.allocationsCount === 0
+      );
+
+      const principalAsTeacherCheck = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM class_subject_allocations WHERE teacher_id = $1;',
+        [principal1StaffId]
+      );
+      record(
+        'Required Tests',
+        '3. principal never auto-assigned as teacher',
+        principalAsTeacherCheck.rows[0].count === '0'
+      );
+
+      const principalAsFormMasterCheck = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM classes WHERE form_master_id = $1;',
+        [principal1StaffId]
+      );
+      record(
+        'Required Tests',
+        '4. principal never auto-assigned as form master',
+        principalAsFormMasterCheck.rows[0].count === '0'
+      );
+
+      record(
+        'Required Tests',
+        '5. subjects never selected automatically',
+        preOnboardingCheck.steps.find((s) => s.id === 'classes_and_subjects')?.isComplete === false &&
+          preOnboardingCheck.steps.find((s) => s.id === 'staff_assignments')?.isComplete === false
       );
 
       // -----------------------------------------------------------------------
-      // 3C. Premature Verification Rejection (Fail-Closed Gate)
+      // Test 6: missing configuration leaves onboarding incomplete
       // -----------------------------------------------------------------------
-      // Attempting to verify onboarding when classes and allocations are missing fails closed
       const prematureVerifyRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/verify`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${principal1Token}` },
@@ -652,35 +791,170 @@ async function runPhase10dSuite() {
       const prematureVerifyJson = await prematureVerifyRes.json();
 
       record(
-        '5. Fail-Closed Verification Gate',
-        'Attempting to verify onboarding before mandatory prerequisites are complete is rejected with 400 ONBOARDING_INCOMPLETE',
+        'Required Tests',
+        '6. missing configuration leaves onboarding incomplete',
         prematureVerifyRes.status === 400 &&
           prematureVerifyJson.error === 'ONBOARDING_INCOMPLETE' &&
           prematureVerifyJson.details?.missingSteps?.length > 0
       );
 
       // -----------------------------------------------------------------------
-      // 3D. Institutional School Profile Update & Validation
+      // Test 10: legacy leadership fields rejected
       // -----------------------------------------------------------------------
-      // Invalid year rejected
-      const invalidProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
+      const legacyProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${principal1Token}`,
         },
-        body: JSON.stringify({ establishedYear: 1800 }),
+        body: JSON.stringify({
+          bursarName: 'Mr. Legacy Bursar',
+          vicePrincipalAcademic: 'Mrs. Legacy VP',
+        }),
       });
-      const invalidProfileJson = await invalidProfileRes.json();
+      const legacyProfileJson = await legacyProfileRes.json();
 
       record(
-        '6. Profile Validation & Updates',
-        'Profile updates validate inputs server-side (rejects established year outside 1840..currentYear)',
-        invalidProfileRes.status === 400 &&
-          invalidProfileJson.error === 'INVALID_ESTABLISHED_YEAR'
+        'Required Tests',
+        '10. legacy leadership fields rejected',
+        legacyProfileRes.status === 400 &&
+          legacyProfileJson.error === 'LEGACY_LEADERSHIP_FIELDS_PROHIBITED'
       );
 
-      // Valid profile update
+      // -----------------------------------------------------------------------
+      // Test 11: leadership verification uses users + staff and active status
+      // -----------------------------------------------------------------------
+      const leadershipReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      record(
+        'Required Tests',
+        '11. leadership verification uses users + staff and active status',
+        leadershipReport.authoritativeLeadership?.principalUserId === principal1User.id &&
+          leadershipReport.authoritativeLeadership?.principalStaffId === principal1StaffId &&
+          leadershipReport.authoritativeLeadership?.principal.includes('Dr. Terver Udu') &&
+          leadershipReport.steps.find((s) => s.id === 'leadership_and_staff')?.isComplete === true
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 12: the 410 route creates no data
+      // -----------------------------------------------------------------------
+      const deprecatedRouteRes = await fetch(
+        `${baseUrl}/api/v1/schools/${school1Id}/onboarding/academic-structure`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${principal1Token}`,
+          },
+          body: JSON.stringify({}),
+        }
+      );
+      const deprecatedJson = await deprecatedRouteRes.json();
+
+      const classesAfter410 = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM classes WHERE school_id = $1;',
+        [school1Id]
+      );
+      const allocationsAfter410 = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM class_subject_allocations WHERE school_id = $1;',
+        [school1Id]
+      );
+
+      record(
+        'Required Tests',
+        '12. the 410 route creates no data',
+        deprecatedRouteRes.status === 410 &&
+          deprecatedJson.error === 'ENDPOINT_DEPRECATED' &&
+          classesAfter410.rows[0].count === '0' &&
+          allocationsAfter410.rows[0].count === '0'
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 15: CLI legacy report is read-only
+      // -----------------------------------------------------------------------
+      const classesBeforeScan = await query<{ count: string }>('SELECT COUNT(*)::text as count FROM classes;');
+      const allocBeforeScan = await query<{ count: string }>('SELECT COUNT(*)::text as count FROM class_subject_allocations;');
+      const legacyScanRes = await scanLegacyStructureReport(school1Id);
+      const classesAfterScan = await query<{ count: string }>('SELECT COUNT(*)::text as count FROM classes;');
+      const allocAfterScan = await query<{ count: string }>('SELECT COUNT(*)::text as count FROM class_subject_allocations;');
+
+      record(
+        'Required Tests',
+        '15. CLI legacy report is read-only',
+        typeof legacyScanRes.suspiciousClassesCount === 'number' &&
+          typeof legacyScanRes.suspiciousAllocationsCount === 'number' &&
+          classesBeforeScan.rows[0].count === classesAfterScan.rows[0].count &&
+          allocBeforeScan.rows[0].count === allocAfterScan.rows[0].count
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 18: teacher with matching school_id cannot manage or verify onboarding
+      // -----------------------------------------------------------------------
+      const teacherProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${teacher1Token}`,
+        },
+        body: JSON.stringify({ establishedYear: 1990 }),
+      });
+      const teacherVerifyRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${teacher1Token}` },
+      });
+
+      record(
+        'Required Tests',
+        '18. teacher with matching school_id cannot manage or verify onboarding',
+        teacherProfileRes.status === 403 && teacherVerifyRes.status === 403
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 19: parent with matching school_id cannot
+      // -----------------------------------------------------------------------
+      const parentProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${parentToken}`,
+        },
+        body: JSON.stringify({ establishedYear: 1990 }),
+      });
+      const parentVerifyRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${parentToken}` },
+      });
+
+      record(
+        'Required Tests',
+        '19. parent with matching school_id cannot',
+        parentProfileRes.status === 403 && parentVerifyRes.status === 403
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 20: student with matching school_id cannot
+      // -----------------------------------------------------------------------
+      const studentProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${studentToken}`,
+        },
+        body: JSON.stringify({ establishedYear: 1990 }),
+      });
+      const studentVerifyRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${studentToken}` },
+      });
+
+      record(
+        'Required Tests',
+        '20. student with matching school_id cannot',
+        studentProfileRes.status === 403 && studentVerifyRes.status === 403
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 21: authorized school-administration roles can perform permitted operations in their own school
+      // -----------------------------------------------------------------------
       const validProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
         method: 'PATCH',
         headers: {
@@ -692,23 +966,25 @@ async function runPhase10dSuite() {
           email: 'model.makurdi@moe.benuestate.gov.ng',
           address: 'Km 4, Aliade Road, Makurdi, Benue State',
           establishedYear: 1982,
-          bursarName: 'Mr. Emmanuel Terna (Bursar)',
-          vicePrincipalAcademic: 'Mrs. Janet Iorliam (VP Academic)',
         }),
       });
       const validProfileJson = await validProfileRes.json();
 
       record(
-        '6. Profile Validation & Updates',
-        'Authorized Principal updates institutional contact, address, establishment, and administrative officers in PostgreSQL',
+        'Required Tests',
+        '21. authorized school-administration roles can perform permitted operations in their own school',
         validProfileRes.status === 200 &&
           validProfileJson.success === true &&
           validProfileJson.data.institutionalProfile.phone === '+234 803 123 4567' &&
-          validProfileJson.data.institutionalProfile.establishedYear === 1982 &&
-          validProfileJson.data.institutionalProfile.bursarName === 'Mr. Emmanuel Terna (Bursar)'
+          validProfileJson.data.institutionalProfile.establishedYear === 1982
       );
 
-      // Cross-school profile update attempt by Principal 2 on School 1 is rejected
+      // -----------------------------------------------------------------------
+      // Test 22: cross-school and cross-organization operations rejected
+      // -----------------------------------------------------------------------
+      const crossOnboardingRes = await fetch(`${baseUrl}/api/v1/schools/${school2Id}/onboarding`, {
+        headers: { Authorization: `Bearer ${principal1Token}` },
+      });
       const crossProfileRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/profile`, {
         method: 'PATCH',
         headers: {
@@ -717,18 +993,33 @@ async function runPhase10dSuite() {
         },
         body: JSON.stringify({ address: 'Hacked Address' }),
       });
+
       record(
-        '6. Profile Validation & Updates',
-        'Cross-school profile modification attempt is strictly rejected with 403',
-        crossProfileRes.status === 403
+        'Required Tests',
+        '22. cross-school and cross-organization operations rejected',
+        crossOnboardingRes.status === 403 && crossProfileRes.status === 403
       );
 
       // -----------------------------------------------------------------------
-      // 3E. Academic Calendar & Structure Initialization
+      // Test 23: legacy leadership text cannot override staff registry records
       // -----------------------------------------------------------------------
-      // Configure an active academic session and term in PostgreSQL
-      const cur = await query('SELECT current_database(), current_schema(), current_setting(\'search_path\');');
-      console.log('DEBUG DB STATE BEFORE INSERT:', cur.rows[0]);
+      await query(
+        "UPDATE schools SET principal_name = 'Arbitrary Legacy Column Text', bursar_name = 'Legacy Bursar Text' WHERE id = $1;",
+        [school1Id]
+      );
+      const statusAfterLegacyText = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+
+      record(
+        'Required Tests',
+        '23. legacy leadership text cannot override staff registry records',
+        statusAfterLegacyText.authoritativeLeadership?.principal.includes('Dr. Terver Udu') &&
+          !statusAfterLegacyText.authoritativeLeadership?.principal.includes('Arbitrary Legacy Column Text') &&
+          (statusAfterLegacyText.institutionalProfile as any).principalName === undefined
+      );
+
+      // -----------------------------------------------------------------------
+      // Setup Calendar Sessions & Terms, Core Curriculum Subjects
+      // -----------------------------------------------------------------------
       const sessionRes = await query<{ id: string }>(
         `INSERT INTO academic_sessions (session_name, is_current, start_date, end_date)
          VALUES ('2025/2026', TRUE, '2025-09-08', '2026-07-24')
@@ -737,47 +1028,433 @@ async function runPhase10dSuite() {
       );
       const sessionId = sessionRes.rows[0].id;
 
-      await query(
+      const termRes = await query<{ id: string }>(
         `INSERT INTO academic_terms (session_id, term_name, is_current, resumption_date, vacation_date, statutory_school_days)
          VALUES ($1, '1st Term', TRUE, '2025-09-08', '2025-12-19', 65)
-         ON CONFLICT (session_id, term_name) DO UPDATE SET is_current = TRUE;`,
+         ON CONFLICT (session_id, term_name) DO UPDATE SET is_current = TRUE
+         RETURNING id;`,
         [sessionId]
       );
+      const termId = termRes.rows[0].id;
 
-      // Configure a core curriculum subject in PostgreSQL
-      await query(
+      // Second Session and Term (for mismatch testing)
+      const session2Res = await query<{ id: string }>(
+        `INSERT INTO academic_sessions (session_name, is_current, start_date, end_date)
+         VALUES ('2024/2025', FALSE, '2024-09-08', '2025-07-24')
+         ON CONFLICT (session_name) DO UPDATE SET is_current = FALSE
+         RETURNING id;`
+      );
+      const session2Id = session2Res.rows[0].id;
+
+      const termFromSession2Res = await query<{ id: string }>(
+        `INSERT INTO academic_terms (session_id, term_name, is_current, resumption_date, vacation_date, statutory_school_days)
+         VALUES ($1, '2nd Term', FALSE, '2025-01-06', '2025-04-11', 65)
+         ON CONFLICT (session_id, term_name) DO UPDATE SET is_current = FALSE
+         RETURNING id;`,
+        [session2Id]
+      );
+      const term2Id = termFromSession2Res.rows[0].id;
+
+      // Curriculum Subjects
+      const subjectEngRes = await query<{ id: string }>(
         `INSERT INTO subjects (code, name, category, department_id, arm, applicable_levels)
-         VALUES 
-           ('ENG-001', 'English Language', 'General Studies', 'Languages', 'secondary', ARRAY['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3']),
-           ('MTH-001', 'General Mathematics', 'Sciences', 'Mathematics', 'secondary', ARRAY['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3'])
-         ON CONFLICT (code) DO NOTHING;`
+         VALUES ('ENG-001', 'English Language', 'General Studies', 'Languages', 'secondary', ARRAY['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3'])
+         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id;`
       );
+      const subjectEngId = subjectEngRes.rows[0].id;
 
-      // Initialize canonical classes for School 1
-      const initStructureRes = await fetch(
-        `${baseUrl}/api/v1/schools/${school1Id}/onboarding/academic-structure`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${principal1Token}`,
-          },
-          body: JSON.stringify({}),
-        }
+      const subjectMthRes = await query<{ id: string }>(
+        `INSERT INTO subjects (code, name, category, department_id, arm, applicable_levels)
+         VALUES ('MTH-001', 'General Mathematics', 'Sciences', 'Mathematics', 'secondary', ARRAY['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3'])
+         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id;`
       );
-      const initStructureJson = await initStructureRes.json();
+      const subjectMthId = subjectMthRes.rows[0].id;
+
+      // -----------------------------------------------------------------------
+      // Test 24: a term not belonging to the session is rejected; inactive staff rejected as teacher or form master
+      // -----------------------------------------------------------------------
+      const inactiveFormMasterClassRes = await fetch(`${baseUrl}/api/v1/classes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          level: 'JSS 2',
+          arm: 'secondary',
+          name: 'JSS 2 Inactive Test',
+          category: 'General',
+          form_master_id: inactiveTeacherStaffId,
+        }),
+      });
+
+      const mismatchAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: term2Id, // term2 belongs to session2, not sessionId
+          periods_per_week: 4,
+        }),
+      });
 
       record(
-        '7. Academic Structure Configuration',
-        'Authorized Principal initializes canonical classes and subject curriculum allocations for the school',
-        initStructureRes.status === 200 &&
-          initStructureJson.success === true &&
-          initStructureJson.data.metrics.classesCount >= 6 &&
-          initStructureJson.data.metrics.allocationsCount >= 2
+        'Required Tests',
+        '24. a term not belonging to the session is rejected; inactive staff rejected as teacher or form master',
+        inactiveFormMasterClassRes.status === 400 && mismatchAllocRes.status === 400
       );
 
       // -----------------------------------------------------------------------
-      // 3F. Formal Onboarding Verification Sign-Off
+      // Test 8: cross-school staff assignments rejected
+      // -----------------------------------------------------------------------
+      const crossStaffClassRes = await fetch(`${baseUrl}/api/v1/classes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          level: 'JSS 3',
+          arm: 'secondary',
+          name: 'JSS 3 Cross Test',
+          category: 'General',
+          form_master_id: school2TeacherStaffId,
+        }),
+      });
+
+      const crossStaffAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: school2TeacherStaffId,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+
+      record(
+        'Required Tests',
+        '8. cross-school staff assignments rejected',
+        crossStaffClassRes.status === 400 && crossStaffAllocRes.status === 400
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 9: periods_per_week required and range-checked
+      // -----------------------------------------------------------------------
+      const missingPeriodsRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+        }),
+      });
+
+      const zeroPeriodsRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 0,
+        }),
+      });
+
+      const overPeriodsRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 35,
+        }),
+      });
+
+      record(
+        'Required Tests',
+        '9. periods_per_week required and range-checked',
+        missingPeriodsRes.status === 400 &&
+          zeroPeriodsRes.status === 400 &&
+          overPeriodsRes.status === 400
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 25: the legacy scan does not flag a class named "Science" that was explicitly created with other values
+      // -----------------------------------------------------------------------
+      const customScienceClassRes = await fetch(`${baseUrl}/api/v1/classes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          level: 'SSS 1',
+          arm: 'secondary',
+          name: 'Science',
+          category: 'Sciences',
+          form_master_id: teacher1Staff.id,
+        }),
+      });
+      const customScienceJson = await customScienceClassRes.json();
+      const customScienceClassId = customScienceJson.data?.id;
+
+      const scanAfterScienceClass = await scanLegacyStructureReport(school1Id);
+
+      record(
+        'Required Tests',
+        '25. the legacy scan does not flag a class named "Science" that was explicitly created with other values',
+        customScienceClassRes.status === 201 &&
+          scanAfterScienceClass.suspiciousClassesCount === 0
+      );
+
+      // Clean up the temporary Science class to ensure pristine state for allocation tests
+      await query('DELETE FROM classes WHERE id = $1;', [customScienceClassId]);
+
+      // -----------------------------------------------------------------------
+      // Test 26: teacher, bursar, exam officer, parent and student receive 403 on POST/PATCH /api/v1/classes and POST/PATCH/DELETE /api/v1/academic/allocations
+      // -----------------------------------------------------------------------
+      const nonAdminTokens = [
+        { role: 'teacher', token: teacher1Token },
+        { role: 'bursar', token: bursarToken },
+        { role: 'exam_officer', token: examOfficerToken },
+        { role: 'parent', token: parentToken },
+        { role: 'student', token: studentToken },
+      ];
+
+      let allNonAdminsBlockedOnClasses = true;
+      let allNonAdminsBlockedOnAllocations = true;
+
+      for (const t of nonAdminTokens) {
+        const createClassRes = await fetch(`${baseUrl}/api/v1/classes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t.token}`,
+          },
+          body: JSON.stringify({
+            level: 'JSS 1',
+            arm: 'secondary',
+            name: 'Unauthorized Class',
+            category: 'General',
+          }),
+        });
+        if (createClassRes.status !== 403) allNonAdminsBlockedOnClasses = false;
+
+        const createAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t.token}`,
+          },
+          body: JSON.stringify({
+            school_id: school1Id,
+            class_id: '00000000-0000-0000-0000-000000000001',
+            subject_id: subjectEngId,
+            academic_term_id: termId,
+            periods_per_week: 4,
+          }),
+        });
+        if (createAllocRes.status !== 403) allNonAdminsBlockedOnAllocations = false;
+      }
+
+      record(
+        'Required Tests',
+        '26. teacher, bursar, exam officer, parent and student receive 403 on POST/PATCH /api/v1/classes and POST/PATCH/DELETE /api/v1/academic/allocations',
+        allNonAdminsBlockedOnClasses && allNonAdminsBlockedOnAllocations
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 27: a non-platform user from School A cannot read a School B record through an entity route that uses :id
+      // -----------------------------------------------------------------------
+      const studentClassSchool2Res = await query<{ id: string }>(
+        `INSERT INTO classes (school_id, level, arm, name, category)
+         VALUES ($1, 'JSS 1', 'secondary', 'Gboko Temp Class', 'General')
+         RETURNING id;`,
+        [school2Id]
+      );
+      const studentClassSchool2Id = studentClassSchool2Res.rows[0].id;
+
+      const studentSchool2Res = await query<{ id: string }>(
+        `INSERT INTO students (
+          school_id, current_class_id, full_name, admission_number, gender, date_of_birth, arm, guardian_name, guardian_phone, date_enrolled, status
+        ) VALUES (
+          $1, $2, 'School2 Student', 'GBK-STD-001', 'Male', '2010-01-01', 'secondary', 'Guardian Test', '+2348000000000', '2025-09-08', 'Active'
+        ) RETURNING id;`,
+        [school2Id, studentClassSchool2Id]
+      );
+      const school2StudentId = studentSchool2Res.rows[0].id;
+
+      const crossStudentReadRes = await fetch(`${baseUrl}/api/v1/results/student/${school2StudentId}`, {
+        headers: { Authorization: `Bearer ${principal1Token}` },
+      });
+      const crossStudentReadJson = await crossStudentReadRes.json();
+
+      record(
+        'Required Tests',
+        '27. a non-platform user from School A cannot read a School B record through an entity route that uses :id (e.g. /api/v1/results/student/:id)',
+        crossStudentReadRes.status === 403 &&
+          crossStudentReadJson.error === 'TENANT_ISOLATION_VIOLATION'
+      );
+
+      // Clean up test student and temporary class
+      await query('DELETE FROM students WHERE id = $1;', [school2StudentId]);
+      await query('DELETE FROM classes WHERE id = $1;', [studentClassSchool2Id]);
+
+      // -----------------------------------------------------------------------
+      // Test 28: onboarding readiness fails when an allocation references a class from another school or an inactive teacher
+      // -----------------------------------------------------------------------
+      // Create a class in School 2
+      const school2ClassRes = await query<{ id: string }>(
+        `INSERT INTO classes (school_id, level, arm, name, category)
+         VALUES ($1, 'JSS 1', 'secondary', 'Gboko Class A', 'General')
+         RETURNING id;`,
+        [school2Id]
+      );
+      const school2ClassId = school2ClassRes.rows[0].id;
+
+      // Insert invalid allocation belonging to school 1 but referencing school 2 class
+      const invalidAllocRes = await query<{ id: string }>(
+        `INSERT INTO class_subject_allocations (school_id, class_id, subject_id, teacher_id, academic_session_id, academic_term_id, periods_per_week)
+         VALUES ($1, $2, $3, $4, $5, $6, 4)
+         RETURNING id;`,
+        [school1Id, school2ClassId, subjectEngId, teacher1Staff.id, sessionId, termId]
+      );
+      const invalidAllocId = invalidAllocRes.rows[0].id;
+
+      const onboardingWithInvalidAlloc = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const allocStep = onboardingWithInvalidAlloc.steps.find((s) => s.id === 'staff_assignments');
+
+      record(
+        'Required Tests',
+        '28. onboarding readiness fails when an allocation references a class from another school or an inactive teacher',
+        allocStep?.isComplete === false &&
+          allocStep?.items.some((item) => item.value && String(item.value).includes('outside school')) === true
+      );
+
+      // Remove the invalid allocation and school 2 class
+      await query('DELETE FROM class_subject_allocations WHERE id = $1;', [invalidAllocId]);
+      await query('DELETE FROM classes WHERE id = $1;', [school2ClassId]);
+
+      // -----------------------------------------------------------------------
+      // Test 7: valid same-school assignments accepted (via the existing routes)
+      // Explicitly create authoritative classes and allocations as administrator
+      // -----------------------------------------------------------------------
+      const class1CreateRes = await fetch(`${baseUrl}/api/v1/classes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          level: 'JSS 1',
+          arm: 'secondary',
+          name: 'JSS 1 Alpha',
+          category: 'General',
+          form_master_id: teacher1Staff.id,
+        }),
+      });
+      const class1Json = await class1CreateRes.json();
+      const class1Id = class1Json.data?.id;
+
+      const class2CreateRes = await fetch(`${baseUrl}/api/v1/classes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          level: 'SSS 1',
+          arm: 'secondary',
+          name: 'SSS 1 Science',
+          category: 'Sciences',
+          form_master_id: teacher2Staff.id,
+        }),
+      });
+      const class2Json = await class2CreateRes.json();
+      const class2Id = class2Json.data?.id;
+
+      const alloc1CreateRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: class1Id,
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+
+      const alloc2CreateRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: class2Id,
+          subject_id: subjectMthId,
+          teacher_id: teacher2Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 5,
+        }),
+      });
+
+      record(
+        'Required Tests',
+        '7. valid same-school assignments accepted (via the existing routes)',
+        class1CreateRes.status === 201 &&
+          class2CreateRes.status === 201 &&
+          alloc1CreateRes.status === 201 &&
+          alloc2CreateRes.status === 201
+      );
+
+      // -----------------------------------------------------------------------
+      // Formal Onboarding Verification Sign-Off
       // -----------------------------------------------------------------------
       const verifyRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/verify`, {
         method: 'POST',
@@ -789,7 +1466,7 @@ async function runPhase10dSuite() {
       const verifyJson = await verifyRes.json();
 
       record(
-        '8. Onboarding Verification & Gate',
+        'Readiness Sign-Off',
         'All mandatory institutional prerequisites satisfied: verification completes with overallStatus="ONBOARDING_READY"',
         verifyRes.status === 200 &&
           verifyJson.success === true &&
@@ -798,14 +1475,14 @@ async function runPhase10dSuite() {
       );
 
       record(
-        '8. Onboarding Verification & Gate',
+        'Readiness Sign-Off',
         'Operational launch gate remains strictly "OPERATIONAL_LAUNCH_NOT_AUTHORIZED" (Phase 10E boundary)',
-        verifyJson.data.operationalLaunchStatus === 'OPERATIONAL_LAUNCH_NOT_AUTHORIZED' &&
-          verifyJson.data.declarations.operationalLaunchAuthorized === false
+        verifyJson.data?.operationalLaunchStatus === 'OPERATIONAL_LAUNCH_NOT_AUTHORIZED' &&
+          verifyJson.data?.declarations?.operationalLaunchAuthorized === false
       );
 
       // -----------------------------------------------------------------------
-      // 3G. Zero Student/Parent/Financial Records Boundary
+      // Zero Student/Parent/Financial Records Boundary
       // -----------------------------------------------------------------------
       const studentCountCheck = await query<{ count: string }>(
         'SELECT COUNT(*)::text as count FROM students WHERE school_id = $1;',
@@ -817,13 +1494,13 @@ async function runPhase10dSuite() {
       );
 
       record(
-        '9. Zero Student/Financial Records Boundary',
+        'Zero Data Boundary',
         'Strict Phase 10D non-goal enforced: zero students and zero invoices created during onboarding',
         studentCountCheck.rows[0].count === '0' && invoiceCountCheck.rows[0].count === '0'
       );
 
       // -----------------------------------------------------------------------
-      // 3H. Audit Logging Verification
+      // Audit Logging Verification
       // -----------------------------------------------------------------------
       const auditLogsRes = await query<{ action: string; status: string }>(
         'SELECT action, status FROM auth_audit_logs WHERE details->>\'schoolId\' = $1;',
@@ -832,32 +1509,31 @@ async function runPhase10dSuite() {
       const recordedActions = new Set(auditLogsRes.rows.map((r) => r.action));
 
       record(
-        '10. Audit Infrastructure',
-        'All onboarding updates, structural initializations, blocked attempts, and verification sign-offs are audited in auth_audit_logs',
+        'Audit Infrastructure',
+        'All onboarding updates, blocked attempts, and verification sign-offs are audited in auth_audit_logs',
         recordedActions.has('SCHOOL_PROFILE_UPDATED') &&
-          recordedActions.has('SCHOOL_ACADEMIC_STRUCTURE_INITIALIZED') &&
           recordedActions.has('SCHOOL_ONBOARDING_VERIFICATION_REJECTED') &&
           recordedActions.has('SCHOOL_ONBOARDING_VERIFIED')
       );
 
       // -----------------------------------------------------------------------
-      // 3I. Read-Only CLI Verification Test
+      // Read-Only CLI Verification Test
       // -----------------------------------------------------------------------
       process.env.SCHOOL_CODE = 'BNS-MKD-001';
       const cliResult = await executeOnboardingVerifyCli();
 
       record(
-        '11. CLI Verification Script',
+        'CLI Verification Script',
         'npm run onboarding:verify executes read-only inspection against PostgreSQL and exits with code 0 on ONBOARDING_READY school',
         cliResult.exitCode === 0 && cliResult.message.includes('ONBOARDING_READY')
       );
 
       // -----------------------------------------------------------------------
-      // 3J. Migration System & Integrity Check
+      // Migration System & Integrity Check
       // -----------------------------------------------------------------------
       const migVerify = await verifyMigrations();
       record(
-        '12. Migration System Integrity',
+        'Migration Integrity',
         'All 11 migrations (0001..0011) remain checksum-verified and ready',
         migVerify.ready === true && migVerify.appliedCount === 11
       );

@@ -122,9 +122,6 @@ export interface SchoolProfileUpdates {
   email?: string | null;
   address?: string | null;
   establishedYear?: number | null;
-  principalName?: string | null;
-  bursarName?: string | null;
-  vicePrincipalAcademic?: string | null;
 }
 
 export class OnboardingError extends Error {
@@ -222,7 +219,7 @@ export function assertCallerSchoolAuthority(
 /**
  * Normalizes and validates school profile updates.
  */
-function validateProfileUpdates(updates: SchoolProfileUpdates): SchoolProfileUpdates {
+function validateProfileUpdates(updates: SchoolProfileUpdates & Record<string, any>): SchoolProfileUpdates {
   const clean: SchoolProfileUpdates = {};
 
   if (updates.name !== undefined) {

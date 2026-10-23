@@ -4,156 +4,155 @@
 
 Phase 10D establishes the controlled, provider-neutral, repeatable server-side workflow for onboarding provisioned schools in PostgreSQL until they are institutionally configured and verified as ready for a separately authorized operational launch.
 
-### Strict Non-Goals in Phase 10D
-- **No live cloud production database** is provisioned in this phase.
-- **No real student, parent, fee, invoice, payment, attendance, assessment, or mark records** are loaded during onboarding.
-- **No operational launch authorization** is granted merely because onboarding is complete.
-- **No demo or development seeders** (`auth.seed.ts`, `operational.seed.ts`, `financial.seed.ts`, `lessonNotes.seed.ts`) are ever invoked by production onboarding or verification scripts.
-- **No modification of Phase 10B migration SQL** (all 11 migrations 0001..0011 remain checksum-protected).
+### Strict Core Principle
+> **"Onboarding verifies persisted configuration; it does not create it."**
+
+Onboarding does not create, repair, infer, or select academic configuration during evaluation. Administrators use the standard class creation (`POST /api/v1/classes`) and subject allocation (`POST /api/v1/academic/allocations`) endpoints to configure classrooms and teaching assignments explicitly. Dedicated administrative screens are deferred to a later phase.
+
+### Authoritative School Configuration vs Demo-Only Seed Data
+
+| Property | Authoritative School Configuration | Demo-Only Seed Data |
+| :--- | :--- | :--- |
+| **Origin** | Explicitly entered by authenticated administrators | Hardcoded fixtures in development/test scripts |
+| **Persistence** | Persisted in PostgreSQL relational schema | Seed scripts only (`src/db/seed/`) |
+| **Validation** | Strict server-side validation & foreign keys | Unvalidated mock or sample payloads |
+| **Scoping** | Strictly scoped to tenant organization & school | Demo or simulated global presets |
+| **Production Use** | Evaluated and verified by onboarding readiness | **Never** applied by production onboarding, routes, startup, provisioning, or readiness |
+
+### Strict Non-Goals & Architectural Boundaries in Phase 10D
+- **OPERATIONAL LAUNCH: NOT AUTHORIZED** — Onboarding readiness (`ONBOARDING_READY`) verifies foundational compliance only; operational launch requires distinct ministerial directive in Phase 10E.
+- **LIVE PRODUCTION DATABASE: NOT YET PROVISIONED** — Destructive tests execute strictly against dedicated test databases (`phase10d_*_test`).
+- **REAL SCHOOL DATA: NOT YET LOADED** — Zero real institutional records are populated during onboarding.
+- **REAL STUDENT DATA: NOT YET LOADED** — Strict zero student record boundary (`students` count = 0, `fee_invoices` count = 0).
+- **Zero Seeder Coupling** — Demo seeders (`auth.seed.ts`, `operational.seed.ts`, `financial.seed.ts`, `lessonNotes.seed.ts`) are completely isolated and never invoked.
+- **Migration System Integrity** — All 11 migrations (`0001` through `0011`) remain checksum-verified and immutable.
 
 ---
 
-## 2. The 7-Step Onboarding Lifecycle & Checklist
+## 2. Authoritative Staff Registry vs Deprecated Legacy Columns
 
-Each provisioned school in PostgreSQL follows an authoritative 7-step onboarding checklist managed via `src/auth/onboarding.service.ts`:
+The institutional staff registry (`users` joined with `staff`) is the sole server-authoritative source of truth for school leadership:
+- **School Principal**: Verified through `users.role = 'principal'` atomically linked to `staff.user_id = users.id`, with `users.is_active = TRUE`, `staff.is_active = TRUE`, and matching `school_id`.
+- **Deprecated Columns**: `schools.principal_name`, `schools.vice_principal_academic`, and `schools.bursar_name` are deprecated legacy text columns. Direct updates to these fields via onboarding endpoints are strictly rejected with `400 LEGACY_LEADERSHIP_FIELDS_PROHIBITED`.
+- **Display Labeling**: The onboarding UI and API responses identify staff-derived leadership with `(From staff registry)`. Legacy text columns cannot override active staff registry records.
+
+---
+
+## 3. The 7-Step Institutional Readiness Lifecycle
+
+Each provisioned school in PostgreSQL is evaluated through a 7-step checklist in `src/auth/onboarding.service.ts`:
 
 ### Step 1: School Identity & Institutional Profile
 - **Fields Verified**:
   - `name`: Authoritative registered school name (>= 3 chars)
-  - `code`: Unique institutional code (normalized uppercase)
+  - `code`: Unique institutional code
   - `organization`: Parent organization reference (`organizations` table)
-  - `lga`: Host Local Government Area in Benue State (e.g. Makurdi, Gboko, Otukpo)
-  - `senatorial_zone`: Assigned zone (Zone A, Zone B, or Zone C)
-  - `category`: School category (Secondary, Primary, Basic Education, Science & Technical)
+  - `lga`: Host Local Government Area in Benue State (e.g., Makurdi, Gboko)
+  - `senatorial_zone`: Assigned Benue senatorial zone (Zone A, B, or C)
+  - `category`: School category (e.g., Secondary, Primary, Basic Education)
   - `contact`: Institutional phone number and correspondence email
-  - `address`: Campus physical address in the host LGA
+  - `address`: Campus physical address in host LGA (>= 5 chars)
   - `established_year`: Official year of establishment (1840 to current year)
   - `is_active`: Active status in the institutional registry (`TRUE`)
-- **API**: `PATCH /api/v1/schools/:id/onboarding/profile`
+- **API**: `PATCH /api/v1/schools/:id/onboarding/profile` (requires `schools.manage` and `requireSchoolScope()`)
 
 ### Step 2: Authorized School Leadership & Staff Registry
 - **Requirements**:
-  - Authorized School Principal user account (`users.role = 'principal'`, `users.school_id = school.id`, `users.is_active = TRUE`)
-  - Relational `staff` record atomically linked to the principal (`staff.user_id = users.id`, `staff.school_id = school.id`, `staff.status = 'Active'`)
-  - Teaching staff complement registered in PostgreSQL (`staff.staff_type = 'Teaching'`)
-  - **Zero Simulation Reliance**: Staff identities originate exclusively from PostgreSQL records; frontend simulation presets (`SchoolSimulationContext`, `ActiveSchoolContextBar`) are strictly non-authoritative presentation preferences.
+  - Verified Principal user account (`users.role = 'principal'`, `users.school_id = school.id`, active)
+  - Linked Principal staff registry entry (`staff.user_id = users.id`, `staff.school_id = school.id`, active)
+  - Active teaching staff registry entries (`staff.staff_type = 'Teaching'`, `is_active = TRUE`)
+  - Authoritative identity boundary (no reliance on client simulation presets)
 
 ### Step 3: Academic Calendar & Term Configuration
 - **Requirements**:
   - Active academic session configured in PostgreSQL (`academic_sessions.is_current = TRUE`)
   - Active statutory term configured (`academic_terms.is_current = TRUE`)
-  - Resumption date and vacation date boundary definitions populated
+  - Statutory term belongs to the active session (`term.session_id = session.id`)
+  - Resumption and vacation dates defined
 
 ### Step 4: Class & Subject Configuration
 - **Requirements**:
-  - At least one authoritative classroom/arm created in `classes` (`school_id = school.id`, level, arm, name, category, capacity)
-  - Approved state curriculum subjects available in `subjects` table
-- **API**: `POST /api/v1/schools/:id/onboarding/academic-structure` establishes canonical grade levels (e.g. JSS 1–3, SSS 1–3 or Basic 1–6)
+  - At least one authoritative classroom created in `classes` (`school_id = target_school`)
+  - All classes must have active form masters from the same school assigned (`c.form_master_id` -> active `staff` of same school)
+  - Duplicate form-master assignments across classes in the same school are rejected
+  - Approved state curriculum subjects available in registry (`subjects` table)
 
 ### Step 5: Academic Responsibilities & Staff Allocations
 - **Requirements**:
-  - Class-subject allocations configured in `class_subject_allocations` for the current academic session and term
-  - Qualified teaching staff assigned to allocations (`teacher_id` points to verified active `staff` of the same school)
-  - Form master assigned to oversee classrooms where applicable
+  - Authoritative class-subject allocations configured in `class_subject_allocations`
+  - Explicit `periods_per_week` supplied as an integer between 1 and 30 (no implicit defaults)
+  - Allocations reference classes belonging strictly to the target school
+  - Assigned teachers reference active teaching staff belonging strictly to the target school
+  - Allocation term and session integrity verified (`academic_term_id` matches `academic_session_id`)
 
 ### Step 6: Review & Verification of Onboarding Completeness
 - **Requirements**:
-  - All 5 preceding configuration sections evaluated and verified against real PostgreSQL records
-  - Zero student records boundary verified (`students` count = 0)
+  - All 5 preceding configuration sections evaluated and verified against persisted relational records
+  - Zero student records boundary verified (`students` count = 0, `fee_invoices` count = 0)
   - Formal administrative sign-off executed via `POST /api/v1/schools/:id/onboarding/verify`
-  - Creates a durable `SCHOOL_ONBOARDING_VERIFIED` record in `auth_audit_logs`
+  - Creates a durable `SCHOOL_ONBOARDING_VERIFIED` audit log in `auth_audit_logs`
 
 ### Step 7: Explicit Operational Launch Gate
-- **Distinction**:
-  - Onboarding Readiness Status: transitions from `ONBOARDING_INCOMPLETE` to `ONBOARDING_READY`
-  - Operational Launch Status: remains strictly `OPERATIONAL_LAUNCH_NOT_AUTHORIZED`
-  - Onboarding readiness verifies that institutional profile, staff, calendar, classes, and allocations are ready; operational launch requires distinct ministerial directive and live enrollment authorization in Phase 10E.
+- **Status Distinction**:
+  - Institutional Onboarding State: transitions from `ONBOARDING_INCOMPLETE` to `ONBOARDING_READY`
+  - Separate Operational Launch Gate: remains strictly `OPERATIONAL_LAUNCH_NOT_AUTHORIZED`
+  - Onboarding readiness verifies that institutional profile, staff, calendar, classes, and allocations are complete and valid; operational launch requires distinct ministerial authorization in Phase 10E.
 
 ---
 
-## 3. Existing Capabilities Reused vs Newly Implemented
+## 4. Multi-School Tenant Isolation & Mutation Route Auditing
 
-| Domain | Existing Capability Reused | Newly Implemented in Phase 10D |
-| :--- | :--- | :--- |
-| **Schools & Tenants** | `schools` & `organizations` schema, `SchoolRepository` | Profile update API (`PATCH /api/v1/schools/:id/onboarding/profile`), institutional validation |
-| **Leadership & Staff** | `users` & `staff` tables, `StaffRepository`, RBAC | Leadership verification engine, staff complement evaluation |
-| **Academic Calendar** | `academic_sessions` & `academic_terms` tables | Calendar readiness evaluation |
-| **Classes & Subjects** | `classes`, `subjects`, `class_subject_allocations` | Canonical structure initializer (`POST /api/v1/schools/:id/onboarding/academic-structure`) |
-| **Onboarding Engine** | `withTransaction`, `logAuthEvent` | `src/auth/onboarding.service.ts`, 7-step checklist computation, fail-closed verification |
-| **API Endpoints** | Express server, `authenticateUser` | `/api/v1/schools/:id/onboarding`, `/api/v1/onboarding` routes |
-| **CLI Verification** | `npm run db:migrate:verify`, `npm run provision:verify` | `npm run onboarding:verify` (`src/db/cli/onboarding-verify.ts`) |
-| **User Interface** | `AdminDashboard.tsx` tab infrastructure | `SchoolOnboardingChecklist.tsx` UI component, `'onboarding'` sub-tab |
+Read permissions (`schools.view`, `students.view`, `attendance.view`, `allocations.view`) never authorize mutations:
+- **Class Mutations**: `POST /api/v1/classes` and `PATCH /api/v1/classes/:id` require `schools.manage` and `requireSchoolScope()`.
+- **Allocation Mutations**: `POST /api/v1/academic/allocations`, `PATCH /api/v1/academic/allocations/:id`, and `DELETE /api/v1/academic/allocations/:id` require `allocations.manage` and `requireSchoolScope()`.
+- **Onboarding Mutations**: `PATCH /api/v1/schools/:id/onboarding/profile` and `POST /api/v1/schools/:id/onboarding/verify` require `schools.manage` and `requireSchoolScope()`.
+- **Role Boundary**: Teachers, bursars, exam officers, parents, and students receive `403 FORBIDDEN` on all mutation endpoints, even when their `school_id` matches.
+- **Entity Route Scoping**: Entity routes using `:id` parameters (e.g., `GET /api/v1/results/student/:id`) enforce school scoping in their own queries to block cross-school inspection.
+- **Deprecated Endpoint**: `POST /api/v1/schools/:id/onboarding/academic-structure` returns `410 ENDPOINT_DEPRECATED` with zero writes.
 
 ---
 
-## 4. Tenant Isolation & Authorization Rules
+## 5. Audit Logging Architecture
 
-All onboarding operations enforce strict server-authoritative RBAC:
-1. **Super Administrator & State Officer (`PLATFORM_ADMIN`)**:
-   - May view, update profile, initialize structure, and verify onboarding for any school across the state.
-2. **School Principal (`TENANT_SCHOOL_ADMIN`)**:
-   - Scoped strictly to their own assigned `school_id`.
-   - Any attempt to access or modify onboarding for another school returns `403 TENANT_ISOLATION_VIOLATION`.
-3. **Other Roles & Public Callers**:
-   - Denied access (`401 UNAUTHENTICATED` or `403 FORBIDDEN`).
-4. **Client Preference Boundary**:
-   - Client-side storage (`localStorage.bummpt_ActiveSchoolId_v1`) is strictly a UI presentation preference and cannot authorize access to operational or administrative data.
-
----
-
-## 5. Audit Logging Specifications
-
-All onboarding modifications and verification transitions record structured entries in `auth_audit_logs`:
-- `SCHOOL_PROFILE_UPDATED`: Records actor, school ID, organization ID, and modified field names.
-- `SCHOOL_ACADEMIC_STRUCTURE_INITIALIZED`: Records actor, school ID, classes created, and allocations created.
-- `SCHOOL_ONBOARDING_VERIFIED`: Records actor, school ID, organization ID, `ONBOARDING_READY` status, and completion timestamp.
-- `SCHOOL_ONBOARDING_VERIFICATION_REJECTED`: Records blocked verification attempt with missing prerequisite sections.
-
-Plaintext passwords, secrets, and database connection strings are never logged.
+All onboarding modifications, blocked attempts, and verification transitions record structured entries in `auth_audit_logs`:
+- `SCHOOL_PROFILE_UPDATED`: Records actor, school ID, organization ID, and sanitized field modifications.
+- `SCHOOL_ONBOARDING_VERIFICATION_REJECTED`: Records blocked verification attempts with specific missing prerequisites.
+- `SCHOOL_ONBOARDING_VERIFIED`: Records authorized verification sign-off, actor, school ID, and completion timestamp.
+- Plaintext passwords, credentials, and database connection strings are never logged.
 
 ---
 
 ## 6. Operator Workflow & CLI Procedures
 
-### Step 1: Provision First Organization & Administrator (Phase 10C)
+### Step 1: Provision Organization & School (Phase 10C)
 ```bash
 npm run provision:bootstrap
 npm run provision:verify
 ```
 
-### Step 2: Review Initial Onboarding Status (Read-Only)
+### Step 2: Check Initial Onboarding Status (Read-Only)
 ```bash
+npm run onboarding:verify -- BNS-MKD-001
+# Or via environment variables:
 SCHOOL_CODE="BNS-MKD-001" npm run onboarding:verify
 ```
-*Reports `ONBOARDING_INCOMPLETE` until classes, calendar, and allocations are established.*
+*Requires an explicit school target (exits with code 1 before database access if missing). Reports `ONBOARDING_INCOMPLETE` until configuration is complete.*
 
-### Step 3: Complete Institutional Profile & Academic Setup
-Through the Admin Dashboard (`/admin` -> "School Onboarding" tab) or API:
-1. Review and update institutional contact info, address, established year.
-2. Ensure active academic session and term are configured.
-3. Initialize canonical classes and curriculum allocations.
-4. Execute formal verification sign-off.
+### Step 3: Configure Institutional Profile & Academic Structure
+Through standard API endpoints:
+1. Update institutional profile via `PATCH /api/v1/schools/:id/onboarding/profile`.
+2. Configure active academic session and term in PostgreSQL.
+3. Explicitly create classes via `POST /api/v1/classes` (assigning active same-school form masters).
+4. Explicitly allocate subjects via `POST /api/v1/academic/allocations` (explicit teacher, explicit `periods_per_week` 1–30).
 
-### Step 4: Verify Final Onboarding Readiness
+### Step 4: Optional Read-Only Advisory Scan
 ```bash
-SCHOOL_CODE="BNS-MKD-001" npm run onboarding:verify
+npm run onboarding:verify -- BNS-MKD-001 --scan-legacy
 ```
-*Exits with code `0` and confirms `ONBOARDING_READY`.*
+*Read-only inspection that flags obsolete naming conventions ("Primary N Gold", "JSS N Alpha", "SSS N Science") or principal allocations. Output is labeled "advisory — review manually" and never alters data.*
 
----
-
-## 7. What Remains for Phase 10E (Operational Launch)
-- Live cloud database provisioning (e.g., Cloud SQL / production managed PostgreSQL).
-- Ministerial operational launch directive and accreditation sign-off.
-- Authoritative student admissions, enrollment batches, and parent PIN generation.
-- Production SSL/TLS deployment and domain binding.
-
----
-
-## 8. Declarations & Production Status
-
-- **PHASE 10D CODE STATUS**: READY
-- **LIVE PRODUCTION DATABASE**: NOT YET PROVISIONED
-- **REAL SCHOOL DATA**: NOT YET LOADED
-- **REAL STUDENT DATA**: NOT YET LOADED
-- **PRODUCTION DEPLOYMENT**: NOT YET COMPLETED
+### Step 5: Execute Onboarding Verification Sign-Off
+```bash
+POST /api/v1/schools/:id/onboarding/verify
+```
+*Transitions school status to `ONBOARDING_READY`. Operational launch remains `OPERATIONAL_LAUNCH_NOT_AUTHORIZED`.*
