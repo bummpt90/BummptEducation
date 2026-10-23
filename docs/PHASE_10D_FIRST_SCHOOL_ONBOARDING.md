@@ -77,13 +77,19 @@ Each provisioned school in PostgreSQL is evaluated through a 7-step checklist in
   - Duplicate form-master assignments across classes in the same school are rejected
   - Approved state curriculum subjects available in registry (`subjects` table)
 
-### Step 5: Academic Responsibilities & Staff Allocations
+### Step 5: Academic Responsibilities & Staff Allocations (Session- & Term-Specific)
 - **Requirements**:
-  - Authoritative class-subject allocations configured in `class_subject_allocations`
-  - Explicit `periods_per_week` supplied as an integer between 1 and 30 (no implicit defaults)
-  - Allocations reference classes belonging strictly to the target school
-  - Assigned teachers reference active teaching staff belonging strictly to the target school
-  - Allocation term and session integrity verified (`academic_term_id` matches `academic_session_id`)
+  - Qualifying class-subject allocations must exist for the school's **active academic session and active academic term**.
+  - Historical allocations from past sessions or terms do not satisfy current readiness; if a school has historical allocations but zero valid allocations for the active term, readiness remains `ONBOARDING_INCOMPLETE`.
+  - Allocation creation (`POST /api/v1/academic/allocations`) requires explicit inputs:
+    - `school_id`: Explicit target school ID
+    - `class_id`: Authoritative classroom belonging to target school
+    - `subject_id`: Approved state curriculum subject
+    - `teacher_id`: Explicit active teaching staff member from the same school (never null, never inferred)
+    - `academic_session_id`: Explicit session ID matching the term (session inference is prohibited)
+    - `academic_term_id`: Explicit term ID belonging to the specified session
+    - `periods_per_week`: Explicit integer between 1 and 30 (no implicit default)
+  - Allocations referencing classes outside the school, inactive teachers, cross-school teachers, or with term/session mismatches fail validation closed with HTTP 400.
 
 ### Step 6: Review & Verification of Onboarding Completeness
 - **Requirements**:
@@ -96,7 +102,7 @@ Each provisioned school in PostgreSQL is evaluated through a 7-step checklist in
 - **Status Distinction**:
   - Institutional Onboarding State: transitions from `ONBOARDING_INCOMPLETE` to `ONBOARDING_READY`
   - Separate Operational Launch Gate: remains strictly `OPERATIONAL_LAUNCH_NOT_AUTHORIZED`
-  - Onboarding readiness verifies that institutional profile, staff, calendar, classes, and allocations are complete and valid; operational launch requires distinct ministerial authorization in Phase 10E.
+  - Onboarding readiness verifies that institutional profile, staff, calendar, classes, and active-term allocations are complete and valid; operational launch requires distinct ministerial authorization in Phase 10E.
 
 ---
 
@@ -122,7 +128,23 @@ All onboarding modifications, blocked attempts, and verification transitions rec
 
 ---
 
-## 6. Operator Workflow & CLI Procedures
+## 6. Testing Architecture & Destructive Database Safety Guard
+
+Phase 10D tests implement a strict fail-closed database safety guard (`assertSafeTestDatabaseUrl`):
+
+### Safe-Stop Result vs Full Dedicated Test DB Run
+
+| Aspect | Safe-Stop Result | Full Dedicated Test DB Run |
+| :--- | :--- | :--- |
+| **Trigger** | Run without `PHASE10D_TEST_DATABASE_URL` or `ALLOW_DESTRUCTIVE_PHASE10D_TESTS=true` | Run with dedicated test DB URL (e.g. `bummpt_phase10d_test`) and `ALLOW_DESTRUCTIVE_PHASE10D_TESTS=true` |
+| **Static Checks** | Validates code boundaries, seeder isolation, CLI exit 1 on missing target | Validates code boundaries, seeder isolation, CLI exit 1 on missing target |
+| **Database Actions** | **Zero writes, zero schema drops, zero table creations**; halts safely | Drops/creates isolated test schema, runs migrations 0001–0011, executes full tests |
+| **Pass/Fail Meaning** | Confirms safety guard works and refuses unsafe DB; **not a full passing integration suite** | **Full passing integration suite**; exercises all 28 Phase 10D tests and Stage 2A regression cases |
+| **DATABASE_URL Policy** | Never touched, never used as fallback | Never touched, never used as fallback |
+
+---
+
+## 7. Operator Workflow & CLI Procedures
 
 ### Step 1: Provision Organization & School (Phase 10C)
 ```bash
@@ -143,7 +165,7 @@ Through standard API endpoints:
 1. Update institutional profile via `PATCH /api/v1/schools/:id/onboarding/profile`.
 2. Configure active academic session and term in PostgreSQL.
 3. Explicitly create classes via `POST /api/v1/classes` (assigning active same-school form masters).
-4. Explicitly allocate subjects via `POST /api/v1/academic/allocations` (explicit teacher, explicit `periods_per_week` 1–30).
+4. Explicitly allocate subjects via `POST /api/v1/academic/allocations` (explicit teacher, explicit session/term, explicit `periods_per_week` 1–30).
 
 ### Step 4: Optional Read-Only Advisory Scan
 ```bash
@@ -156,3 +178,4 @@ npm run onboarding:verify -- BNS-MKD-001 --scan-legacy
 POST /api/v1/schools/:id/onboarding/verify
 ```
 *Transitions school status to `ONBOARDING_READY`. Operational launch remains `OPERATIONAL_LAUNCH_NOT_AUTHORIZED`.*
+

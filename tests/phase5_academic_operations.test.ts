@@ -249,6 +249,7 @@ async function runPhase5TestSuite() {
         school_id: schoolA.id,
         class_id: classA.id,
         subject_id: subject1.id,
+        teacher_id: teacherAStaff?.id,
         academic_term_id: testTerm.id,
         academic_session_id: testTerm.session_id,
         periods_per_week: 5,
@@ -272,6 +273,7 @@ async function runPhase5TestSuite() {
         school_id: schoolA.id,
         class_id: classA.id,
         subject_id: subject1.id,
+        teacher_id: teacherAStaff?.id,
         academic_term_id: testTerm.id,
         academic_session_id: testTerm.session_id,
         periods_per_week: 4,
@@ -296,7 +298,9 @@ async function runPhase5TestSuite() {
         school_id: schoolA.id,
         class_id: classB.id, // Class in School B
         subject_id: subject2.id,
+        teacher_id: teacherAStaff?.id,
         academic_term_id: testTerm.id,
+        academic_session_id: testTerm.session_id,
         periods_per_week: 4,
       },
     });
@@ -326,6 +330,7 @@ async function runPhase5TestSuite() {
         subject_id: subject2.id,
         teacher_id: teacherAStaff?.id,
         academic_term_id: testTerm.id,
+        academic_session_id: testTerm.session_id,
         periods_per_week: 4,
       },
     });
@@ -356,6 +361,7 @@ async function runPhase5TestSuite() {
         subject_id: subject2.id,
         teacher_id: teacherBStaff?.id, // Teacher from School B!
         academic_term_id: testTerm.id,
+        academic_session_id: testTerm.session_id,
         periods_per_week: 4,
       },
     });
@@ -376,6 +382,7 @@ async function runPhase5TestSuite() {
         subject_id: subject2.id,
         teacher_id: teacherAStaff?.id,
         academic_term_id: testTerm.id,
+        academic_session_id: testTerm.session_id,
         periods_per_week: 4,
       },
     });

@@ -117,17 +117,46 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       schoolId: string;
       classId: string;
       subjectId: string;
-      teacherId?: string | null;
-      academicSessionId?: string | null;
+      teacherId: string;
+      academicSessionId: string;
       academicTermId: string;
-      periodsPerWeek?: number;
+      periodsPerWeek: number;
     },
     client?: PoolClient
   ): Promise<ClassSubjectAllocationDbEntity> {
-    // 1. Verify class belongs to the school
+    // 1. Validate required fields (no inference or defaults permitted)
+    if (!data.schoolId || typeof data.schoolId !== 'string' || !data.schoolId.trim()) {
+      throw new Error('MISSING_REQUIRED_FIELDS: schoolId is required.');
+    }
+    if (!data.classId || typeof data.classId !== 'string' || !data.classId.trim()) {
+      throw new Error('MISSING_REQUIRED_FIELDS: classId is required.');
+    }
+    if (!data.subjectId || typeof data.subjectId !== 'string' || !data.subjectId.trim()) {
+      throw new Error('MISSING_REQUIRED_FIELDS: subjectId is required.');
+    }
+    if (!data.teacherId || typeof data.teacherId !== 'string' || !data.teacherId.trim()) {
+      throw new Error('MISSING_REQUIRED_FIELDS: teacherId is required. An explicit active teaching staff member must be assigned.');
+    }
+    if (!data.academicSessionId || typeof data.academicSessionId !== 'string' || !data.academicSessionId.trim()) {
+      throw new Error('MISSING_REQUIRED_FIELDS: academicSessionId is required. Session inference is prohibited.');
+    }
+    if (!data.academicTermId || typeof data.academicTermId !== 'string' || !data.academicTermId.trim()) {
+      throw new Error('MISSING_REQUIRED_FIELDS: academicTermId is required.');
+    }
+
+    // 2. Explicit periods_per_week validation (No implicit default)
+    if (data.periodsPerWeek === undefined || data.periodsPerWeek === null) {
+      throw new Error('INVALID_PERIODS: periods_per_week must be explicitly supplied.');
+    }
+    const periods = Number(data.periodsPerWeek);
+    if (!Number.isInteger(periods) || periods < 1 || periods > 30) {
+      throw new Error('INVALID_PERIODS: periods_per_week must be an integer between 1 and 30.');
+    }
+
+    // 3. Verify class belongs to the school
     const classCheck = await query<{ id: string; school_id: string }>(
       'SELECT id, school_id FROM classes WHERE id = $1 LIMIT 1;',
-      [data.classId],
+      [data.classId.trim()],
       client
     );
     if (!classCheck.rows[0]) {
@@ -137,74 +166,59 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       throw new Error('CROSS_SCHOOL_VIOLATION: Class does not belong to the specified school tenant.');
     }
 
-    // 2. Verify subject exists
+    // 4. Verify subject exists
     const subjectCheck = await query<{ id: string }>(
       'SELECT id FROM subjects WHERE id = $1 LIMIT 1;',
-      [data.subjectId],
+      [data.subjectId.trim()],
       client
     );
     if (!subjectCheck.rows[0]) {
       throw new Error('SUBJECT_NOT_FOUND: Specified subject does not exist.');
     }
 
-    // 3. Verify teacher belongs to the same school and is active if assigned
-    if (data.teacherId) {
-      const teacherCheck = await query<{ id: string; school_id: string; is_active: boolean }>(
-        'SELECT id, school_id, is_active FROM staff WHERE id = $1 LIMIT 1;',
-        [data.teacherId],
-        client
-      );
-      if (!teacherCheck.rows[0]) {
-        throw new Error('TEACHER_NOT_FOUND: Specified teacher staff record does not exist.');
-      }
-      if (teacherCheck.rows[0].school_id !== data.schoolId) {
-        throw new Error('CROSS_SCHOOL_TEACHER_VIOLATION: Teacher staff member does not belong to this school.');
-      }
-      if (teacherCheck.rows[0].is_active === false) {
-        throw new Error('INACTIVE_STAFF_VIOLATION: Cannot allocate subject to an inactive staff member.');
-      }
+    // 5. Verify teacher belongs to the same school and is active
+    const teacherCheck = await query<{ id: string; school_id: string; is_active: boolean }>(
+      'SELECT id, school_id, is_active FROM staff WHERE id = $1 LIMIT 1;',
+      [data.teacherId.trim()],
+      client
+    );
+    if (!teacherCheck.rows[0]) {
+      throw new Error('TEACHER_NOT_FOUND: Specified teacher staff record does not exist.');
+    }
+    if (teacherCheck.rows[0].school_id !== data.schoolId) {
+      throw new Error('CROSS_SCHOOL_TEACHER_VIOLATION: Teacher staff member does not belong to this school.');
+    }
+    if (teacherCheck.rows[0].is_active === false) {
+      throw new Error('INACTIVE_STAFF_VIOLATION: Cannot allocate subject to an inactive staff member.');
     }
 
-    // 4. Verify academic term & resolve academic session
+    // 6. Verify academic session exists
+    const sessionCheck = await query<{ id: string }>(
+      'SELECT id FROM academic_sessions WHERE id = $1 LIMIT 1;',
+      [data.academicSessionId.trim()],
+      client
+    );
+    if (!sessionCheck.rows[0]) {
+      throw new Error('SESSION_NOT_FOUND: Specified academic session does not exist.');
+    }
+
+    // 7. Verify academic term exists and belongs to the specified session
     const termCheck = await query<{ id: string; session_id: string }>(
       'SELECT id, session_id FROM academic_terms WHERE id = $1 LIMIT 1;',
-      [data.academicTermId],
+      [data.academicTermId.trim()],
       client
     );
     if (!termCheck.rows[0]) {
       throw new Error('TERM_NOT_FOUND: Specified academic term does not exist.');
     }
-
-    const resolvedSessionId = data.academicSessionId || termCheck.rows[0].session_id;
-
-    // Verify session integrity if session provided
-    if (data.academicSessionId) {
-      const sessionCheck = await query<{ id: string }>(
-        'SELECT id FROM academic_sessions WHERE id = $1 LIMIT 1;',
-        [data.academicSessionId],
-        client
-      );
-      if (!sessionCheck.rows[0]) {
-        throw new Error('SESSION_NOT_FOUND: Specified academic session does not exist.');
-      }
-      if (termCheck.rows[0].session_id !== data.academicSessionId) {
-        throw new Error('SESSION_TERM_MISMATCH: The specified term does not belong to the specified academic session.');
-      }
+    if (termCheck.rows[0].session_id !== data.academicSessionId.trim()) {
+      throw new Error('SESSION_TERM_MISMATCH: The specified term does not belong to the specified academic session.');
     }
 
-    // 5. Check for duplicate allocation
-    const existing = await this.findExisting(data.classId, data.subjectId, data.academicTermId, client);
+    // 8. Check for duplicate allocation
+    const existing = await this.findExisting(data.classId.trim(), data.subjectId.trim(), data.academicTermId.trim(), client);
     if (existing) {
       throw new Error('DUPLICATE_ALLOCATION: An allocation for this class, subject, and term already exists.');
-    }
-
-    // 6. Explicit periods_per_week validation (No implicit default)
-    if (data.periodsPerWeek === undefined || data.periodsPerWeek === null) {
-      throw new Error('INVALID_PERIODS: periods_per_week must be explicitly supplied.');
-    }
-    const periods = Number(data.periodsPerWeek);
-    if (!Number.isInteger(periods) || periods < 1 || periods > 30) {
-      throw new Error('INVALID_PERIODS: periods_per_week must be an integer between 1 and 30.');
     }
 
     const insertSql = `
@@ -216,7 +230,15 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
 
     const res = await query<ClassSubjectAllocationDbEntity>(
       insertSql,
-      [data.schoolId, data.classId, data.subjectId, data.teacherId || null, resolvedSessionId, data.academicTermId, periods],
+      [
+        data.schoolId,
+        data.classId.trim(),
+        data.subjectId.trim(),
+        data.teacherId.trim(),
+        data.academicSessionId.trim(),
+        data.academicTermId.trim(),
+        periods,
+      ],
       client
     );
 

@@ -1113,8 +1113,69 @@ async function runPhase10dSuite() {
         inactiveFormMasterClassRes.status === 400 && mismatchAllocRes.status === 400
       );
 
+      // Task 3: 5. A session/term mismatch is rejected
+      record(
+        'Required Tests',
+        '5. A session/term mismatch is rejected',
+        mismatchAllocRes.status === 400
+      );
+
       // -----------------------------------------------------------------------
-      // Test 8: cross-school staff assignments rejected
+      // Task 3: 3. An allocation with a missing teacher is rejected by the creation API
+      // -----------------------------------------------------------------------
+      const missingTeacherAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+      const missingTeacherJson = await missingTeacherAllocRes.json();
+
+      record(
+        'Required Tests',
+        '3. An allocation with a missing teacher is rejected by the creation API',
+        missingTeacherAllocRes.status === 400 &&
+          (missingTeacherJson.error === 'MISSING_REQUIRED_FIELDS' || missingTeacherJson.error === 'VALIDATION_FAILED')
+      );
+
+      // -----------------------------------------------------------------------
+      // Task 3: 4. An allocation with a missing session is rejected by the creation API
+      // -----------------------------------------------------------------------
+      const missingSessionAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+      const missingSessionJson = await missingSessionAllocRes.json();
+
+      record(
+        'Required Tests',
+        '4. An allocation with a missing session is rejected by the creation API',
+        missingSessionAllocRes.status === 400 &&
+          (missingSessionJson.error === 'MISSING_REQUIRED_FIELDS' || missingSessionJson.error === 'VALIDATION_FAILED')
+      );
+
+      // -----------------------------------------------------------------------
+      // Test 8 & Task 3: 6. An inactive or cross-school teacher is rejected
       // -----------------------------------------------------------------------
       const crossStaffClassRes = await fetch(`${baseUrl}/api/v1/classes`, {
         method: 'POST',
@@ -1148,14 +1209,37 @@ async function runPhase10dSuite() {
         }),
       });
 
+      const inactiveTeacherAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: inactiveTeacherStaffId,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+
       record(
         'Required Tests',
         '8. cross-school staff assignments rejected',
         crossStaffClassRes.status === 400 && crossStaffAllocRes.status === 400
       );
 
+      record(
+        'Required Tests',
+        '6. An inactive or cross-school teacher is rejected',
+        crossStaffAllocRes.status === 400 && inactiveTeacherAllocRes.status === 400
+      );
+
       // -----------------------------------------------------------------------
-      // Test 9: periods_per_week required and range-checked
+      // Test 9 & Task 3: 7. Missing or invalid period counts are rejected
       // -----------------------------------------------------------------------
       const missingPeriodsRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
         method: 'POST',
@@ -1207,12 +1291,39 @@ async function runPhase10dSuite() {
         }),
       });
 
+      const decimalPeriodsRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: '00000000-0000-0000-0000-000000000001',
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4.5,
+        }),
+      });
+
       record(
         'Required Tests',
         '9. periods_per_week required and range-checked',
         missingPeriodsRes.status === 400 &&
           zeroPeriodsRes.status === 400 &&
-          overPeriodsRes.status === 400
+          overPeriodsRes.status === 400 &&
+          decimalPeriodsRes.status === 400
+      );
+
+      record(
+        'Required Tests',
+        '7. Missing or invalid period counts are rejected',
+        missingPeriodsRes.status === 400 &&
+          zeroPeriodsRes.status === 400 &&
+          overPeriodsRes.status === 400 &&
+          decimalPeriodsRes.status === 400
       );
 
       // -----------------------------------------------------------------------
@@ -1287,6 +1398,8 @@ async function runPhase10dSuite() {
             school_id: school1Id,
             class_id: '00000000-0000-0000-0000-000000000001',
             subject_id: subjectEngId,
+            teacher_id: teacher1Staff.id,
+            academic_session_id: sessionId,
             academic_term_id: termId,
             periods_per_week: 4,
           }),
@@ -1410,6 +1523,96 @@ async function runPhase10dSuite() {
       const class2Json = await class2CreateRes.json();
       const class2Id = class2Json.data?.id;
 
+      // -----------------------------------------------------------------------
+      // Task 3: 2. No allocation for the active term means onboarding remains incomplete
+      // -----------------------------------------------------------------------
+      const preAllocReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const preAllocStep = preAllocReport.steps.find((s) => s.id === 'staff_assignments');
+
+      record(
+        'Required Tests',
+        '2. No allocation for the active term means onboarding remains incomplete',
+        preAllocStep?.isComplete === false &&
+          preAllocReport.metrics.allocationsCount === 0 &&
+          preAllocReport.overallStatus === 'ONBOARDING_INCOMPLETE'
+      );
+
+      // -----------------------------------------------------------------------
+      // Task 3: 10. Read-only readiness checks do not create or repair configuration
+      // -----------------------------------------------------------------------
+      const classesCountBefore = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM classes WHERE school_id = $1;', [school1Id]);
+      const allocCountBefore = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM class_subject_allocations WHERE school_id = $1;', [school1Id]);
+      const subjectsCountBefore = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM subjects;');
+
+      // Execute read-only readiness query & HTTP route
+      await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const readCheckRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding`, {
+        headers: { Authorization: `Bearer ${principal1Token}` },
+      });
+      await readCheckRes.json();
+
+      const classesCountAfter = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM classes WHERE school_id = $1;', [school1Id]);
+      const allocCountAfter = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM class_subject_allocations WHERE school_id = $1;', [school1Id]);
+      const subjectsCountAfter = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM subjects;');
+
+      record(
+        'Required Tests',
+        '10. Read-only readiness checks do not create or repair configuration',
+        classesCountBefore.rows[0].count === classesCountAfter.rows[0].count &&
+          allocCountBefore.rows[0].count === allocCountAfter.rows[0].count &&
+          subjectsCountBefore.rows[0].count === subjectsCountAfter.rows[0].count
+      );
+
+      // -----------------------------------------------------------------------
+      // Task 3: 1. Old-term allocations cannot satisfy active-term readiness
+      // & 9. A school with valid historical allocations but incomplete current-term configuration cannot verify onboarding
+      // -----------------------------------------------------------------------
+      // Insert a historical allocation belonging to school 1 but for session2 and term2 (inactive/historical)
+      const histAllocRes = await query<{ id: string }>(
+        `INSERT INTO class_subject_allocations (
+          school_id, class_id, subject_id, teacher_id, academic_session_id, academic_term_id, periods_per_week
+        ) VALUES ($1, $2, $3, $4, $5, $6, 4) RETURNING id;`,
+        [school1Id, class1Id, subjectEngId, teacher1Staff.id, session2Id, term2Id]
+      );
+      const histAllocId = histAllocRes.rows[0].id;
+
+      const histReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const histAllocStep = histReport.steps.find((s) => s.id === 'staff_assignments');
+
+      record(
+        'Required Tests',
+        '1. Old-term allocations cannot satisfy active-term readiness',
+        histAllocStep?.isComplete === false &&
+          histReport.metrics.allocationsCount === 0 &&
+          histAllocStep?.items.some((item) =>
+            item.value && String(item.value).includes('historical allocation(s) exist, but 0 configured for active term')
+          ) === true
+      );
+
+      // Attempt onboarding verification when only historical allocations exist -> must fail closed (400)
+      const verifyWithHistAllocOnlyRes = await fetch(`${baseUrl}/api/v1/schools/${school1Id}/onboarding/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+      });
+      const verifyWithHistAllocOnlyJson = await verifyWithHistAllocOnlyRes.json();
+
+      record(
+        'Required Tests',
+        '9. A school with valid historical allocations but incomplete current-term configuration cannot verify onboarding',
+        verifyWithHistAllocOnlyRes.status === 400 &&
+          verifyWithHistAllocOnlyJson.error === 'ONBOARDING_INCOMPLETE'
+      );
+
+      // Remove the temporary historical allocation before creating active-term allocations
+      await query('DELETE FROM class_subject_allocations WHERE id = $1;', [histAllocId]);
+
+      // -----------------------------------------------------------------------
+      // Task 3: 8. A valid allocation for the active session and term is accepted
+      // & Test 7: valid same-school assignments accepted (via the existing routes)
+      // -----------------------------------------------------------------------
       const alloc1CreateRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
         method: 'POST',
         headers: {
@@ -1446,11 +1649,33 @@ async function runPhase10dSuite() {
 
       record(
         'Required Tests',
+        '8. A valid allocation for the active session and term is accepted',
+        alloc1CreateRes.status === 201 && alloc2CreateRes.status === 201
+      );
+
+      record(
+        'Required Tests',
         '7. valid same-school assignments accepted (via the existing routes)',
         class1CreateRes.status === 201 &&
           class2CreateRes.status === 201 &&
           alloc1CreateRes.status === 201 &&
           alloc2CreateRes.status === 201
+      );
+
+      record(
+        'Required Tests',
+        '11. Existing tenant isolation and RBAC restrictions remain effective',
+        allNonAdminsBlockedOnClasses && allNonAdminsBlockedOnAllocations && crossStudentReadRes.status === 403
+      );
+
+      record(
+        'Required Tests',
+        '12. Phase 10C provisioning behavior remains unchanged',
+        bootstrapRes.organization.code === 'BNS-MOE-HQ' &&
+          bootstrapRes.school?.code === 'BNS-MKD-001' &&
+          superAdminUser.role === 'super_admin' &&
+          principal1User.role === 'principal' &&
+          Boolean(principal1StaffId)
       );
 
       // -----------------------------------------------------------------------

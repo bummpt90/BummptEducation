@@ -97,16 +97,62 @@ allocationsRouter.post(
 
       const targetClassId = class_id || classId;
       const targetSubjectId = subject_id || subjectId;
-      const targetTermId = academic_term_id || academicTermId;
-      const targetSessionId = academic_session_id || academicSessionId;
       const targetTeacherId = teacher_id || teacherId;
+      const targetSessionId = academic_session_id || academicSessionId;
+      const targetTermId = academic_term_id || academicTermId;
       const targetPeriods = periods_per_week !== undefined ? periods_per_week : periodsPerWeek;
 
-      if (!targetSchoolId || !targetClassId || !targetSubjectId || !targetTermId) {
+      // Validate required fields (explicitly require school_id, class_id, subject_id, teacher_id, academic_session_id, academic_term_id)
+      if (!targetSchoolId) {
         res.status(400).json({
           success: false,
           error: 'MISSING_REQUIRED_FIELDS',
-          message: 'class_id, subject_id, and academic_term_id are required fields.',
+          message: 'school_id is required for allocation operations.',
+        });
+        return;
+      }
+
+      if (!targetClassId || typeof targetClassId !== 'string' || !targetClassId.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_REQUIRED_FIELDS',
+          message: 'class_id is required and cannot be empty.',
+        });
+        return;
+      }
+
+      if (!targetSubjectId || typeof targetSubjectId !== 'string' || !targetSubjectId.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_REQUIRED_FIELDS',
+          message: 'subject_id is required and cannot be empty.',
+        });
+        return;
+      }
+
+      if (!targetTeacherId || typeof targetTeacherId !== 'string' || !targetTeacherId.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_REQUIRED_FIELDS',
+          message: 'teacher_id is required and cannot be empty. Allocations require an explicit active teaching staff member.',
+        });
+        return;
+      }
+
+      if (!targetSessionId || typeof targetSessionId !== 'string' || !targetSessionId.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_REQUIRED_FIELDS',
+          message: 'academic_session_id is required and cannot be empty. Session inference is prohibited.',
+        });
+        return;
+      }
+
+      if (!targetTermId || typeof targetTermId !== 'string' || !targetTermId.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'MISSING_REQUIRED_FIELDS',
+          message: 'academic_term_id is required and cannot be empty.',
         });
         return;
       }
@@ -120,14 +166,24 @@ allocationsRouter.post(
         return;
       }
 
+      const periodsNum = Number(targetPeriods);
+      if (!Number.isInteger(periodsNum) || periodsNum < 1 || periodsNum > 30) {
+        res.status(400).json({
+          success: false,
+          error: 'VALIDATION_FAILED',
+          message: 'periods_per_week must be an integer between 1 and 30.',
+        });
+        return;
+      }
+
       const allocation = await classSubjectAllocationRepository.allocateSubject({
         schoolId: targetSchoolId,
-        classId: targetClassId,
-        subjectId: targetSubjectId,
-        teacherId: targetTeacherId || null,
-        academicSessionId: targetSessionId || null,
-        academicTermId: targetTermId,
-        periodsPerWeek: Number(targetPeriods),
+        classId: targetClassId.trim(),
+        subjectId: targetSubjectId.trim(),
+        teacherId: targetTeacherId.trim(),
+        academicSessionId: targetSessionId.trim(),
+        academicTermId: targetTermId.trim(),
+        periodsPerWeek: periodsNum,
       });
 
       res.status(201).json({
@@ -148,8 +204,11 @@ allocationsRouter.post(
       if (
         error.message?.includes('CROSS_SCHOOL') ||
         error.message?.includes('NOT_FOUND') ||
-        error.message?.includes('MISMATCH') ||
-        error.message?.includes('INVALID')
+        error.message?.includes('INACTIVE_STAFF') ||
+        error.message?.includes('SESSION_TERM_MISMATCH') ||
+        error.message?.includes('INVALID_PERIODS') ||
+        error.message?.includes('MISSING_REQUIRED_FIELDS') ||
+        error.message?.includes('VALIDATION')
       ) {
         res.status(400).json({
           success: false,
