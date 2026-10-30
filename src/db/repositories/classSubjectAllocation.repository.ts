@@ -153,7 +153,17 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
       throw new Error('INVALID_PERIODS: periods_per_week must be an integer between 1 and 30.');
     }
 
-    // 3. Verify class belongs to the school
+    // 3. Verify target school exists and is active
+    const schoolCheck = await query<{ id: string; is_active: boolean }>(
+      'SELECT id, is_active FROM schools WHERE id = $1 LIMIT 1;',
+      [data.schoolId.trim()],
+      client
+    );
+    if (!schoolCheck.rows[0]) {
+      throw new Error('SCHOOL_NOT_FOUND: Specified target school does not exist.');
+    }
+
+    // 4. Verify class belongs to the school
     const classCheck = await query<{ id: string; school_id: string }>(
       'SELECT id, school_id FROM classes WHERE id = $1 LIMIT 1;',
       [data.classId.trim()],

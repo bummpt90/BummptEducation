@@ -420,39 +420,49 @@ export async function getSchoolOnboardingStatus(
     ? `${principalRecord.full_name} — Staff ID ${principalRecord.staff_number || principalRecord.staff_id}`
     : null;
 
-  // 3. Fetch Academic Calendar State
-  const calendarRes = await query<{
-    current_session_id: string | null;
-    current_session_name: string | null;
-    current_term_id: string | null;
-    current_term_name: string | null;
-    resumption_date: string | null;
-    vacation_date: string | null;
-    term_session_mismatch: boolean;
+  // 3. Fetch Academic Calendar State (Tenant-scoped evaluation & conflict detection without unscoped LIMIT 1)
+  const sessionsRes = await query<{
+    id: string;
+    session_name: string;
   }>(
-    `SELECT 
-       s.id AS current_session_id,
-       s.session_name AS current_session_name,
-       t.id AS current_term_id,
-       t.term_name AS current_term_name,
-       t.resumption_date::text AS resumption_date,
-       t.vacation_date::text AS vacation_date,
-       CASE WHEN t.id IS NOT NULL AND t.session_id != s.id THEN TRUE ELSE FALSE END AS term_session_mismatch
-     FROM academic_sessions s
-     LEFT JOIN academic_terms t ON t.is_current = TRUE
-     WHERE s.is_current = TRUE
-     LIMIT 1;`,
+    'SELECT id, session_name FROM academic_sessions WHERE is_current = TRUE;',
     [],
     client
   );
-  const calendar = calendarRes.rows[0] || {
-    current_session_id: null,
-    current_session_name: null,
-    current_term_id: null,
-    current_term_name: null,
-    resumption_date: null,
-    vacation_date: null,
-    term_session_mismatch: false,
+
+  const termsRes = await query<{
+    id: string;
+    session_id: string;
+    term_name: string;
+    resumption_date: string | null;
+    vacation_date: string | null;
+  }>(
+    'SELECT id, session_id, term_name, resumption_date::text, vacation_date::text FROM academic_terms WHERE is_current = TRUE;',
+    [],
+    client
+  );
+
+  const hasSessionConflict = sessionsRes.rows.length > 1;
+  const hasTermConflict = termsRes.rows.length > 1;
+  const currentSession = (!hasSessionConflict && sessionsRes.rows.length === 1) ? sessionsRes.rows[0] : null;
+  const currentTerm = (!hasTermConflict && termsRes.rows.length === 1) ? termsRes.rows[0] : null;
+
+  const termSessionMismatch = Boolean(
+    currentSession && currentTerm && currentTerm.session_id !== currentSession.id
+  );
+
+  const calendar = {
+    current_session_id: currentSession?.id || null,
+    current_session_name: currentSession?.session_name || null,
+    current_term_id: currentTerm?.id || null,
+    current_term_name: currentTerm?.term_name || null,
+    resumption_date: currentTerm?.resumption_date || null,
+    vacation_date: currentTerm?.vacation_date || null,
+    term_session_mismatch: termSessionMismatch,
+    has_session_conflict: hasSessionConflict,
+    has_term_conflict: hasTermConflict,
+    conflict_count_sessions: sessionsRes.rows.length,
+    conflict_count_terms: termsRes.rows.length,
   };
 
   // 4. Fetch Classes & Subjects State
@@ -489,19 +499,21 @@ export async function getSchoolOnboardingStatus(
   const stateSubjectsCount = parseInt(subjectsRes.rows[0]?.subject_count || '0', 10);
 
   // 5. Fetch Class-Subject Allocations State (session- and term-specific)
-  const activeSessionId = (!calendar.term_session_mismatch && calendar.current_session_id) ? calendar.current_session_id : null;
-  const activeTermId = (!calendar.term_session_mismatch && calendar.current_term_id) ? calendar.current_term_id : null;
+  const activeSessionId = (!calendar.term_session_mismatch && !calendar.has_session_conflict && calendar.current_session_id) ? calendar.current_session_id : null;
+  const activeTermId = (!calendar.term_session_mismatch && !calendar.has_term_conflict && calendar.current_term_id) ? calendar.current_term_id : null;
 
   const allocationsRes = await query<{
     total_allocations_count: string;
     active_term_allocations_count: string;
     active_allocations_with_teachers: string;
     active_allocations_valid_teachers_count: string;
-    invalid_class_allocations_count: string;
-    invalid_subject_allocations_count: string;
-    invalid_teacher_allocations_count: string;
-    invalid_term_session_allocations_count: string;
+    active_invalid_class_allocations_count: string;
+    active_invalid_subject_allocations_count: string;
+    active_invalid_teacher_allocations_count: string;
+    active_invalid_term_session_count: string;
     active_allocations_missing_teacher_count: string;
+    historical_allocations_count: string;
+    historical_invalid_allocations_count: string;
   }>(
     `SELECT 
        COUNT(*)::text AS total_allocations_count,
@@ -528,34 +540,64 @@ export async function getSchoolOnboardingStatus(
            )
        )::text AS active_allocations_valid_teachers_count,
        COUNT(*) FILTER (
-         WHERE NOT EXISTS (
-           SELECT 1 FROM classes c WHERE c.id = a.class_id AND c.school_id = $1
-         )
-       )::text AS invalid_class_allocations_count,
+         WHERE $2::uuid IS NOT NULL AND $3::uuid IS NOT NULL 
+           AND a.academic_session_id = $2::uuid 
+           AND a.academic_term_id = $3::uuid
+           AND NOT EXISTS (
+             SELECT 1 FROM classes c WHERE c.id = a.class_id AND c.school_id = $1
+           )
+       )::text AS active_invalid_class_allocations_count,
        COUNT(*) FILTER (
-         WHERE NOT EXISTS (
-           SELECT 1 FROM subjects sub WHERE sub.id = a.subject_id
-         )
-       )::text AS invalid_subject_allocations_count,
+         WHERE $2::uuid IS NOT NULL AND $3::uuid IS NOT NULL 
+           AND a.academic_session_id = $2::uuid 
+           AND a.academic_term_id = $3::uuid
+           AND NOT EXISTS (
+             SELECT 1 FROM subjects sub WHERE sub.id = a.subject_id
+           )
+       )::text AS active_invalid_subject_allocations_count,
        COUNT(*) FILTER (
-         WHERE a.teacher_id IS NOT NULL AND NOT EXISTS (
-           SELECT 1 FROM staff st WHERE st.id = a.teacher_id AND st.school_id = $1 AND st.is_active = TRUE
-         )
-       )::text AS invalid_teacher_allocations_count,
+         WHERE $2::uuid IS NOT NULL AND $3::uuid IS NOT NULL 
+           AND a.academic_session_id = $2::uuid 
+           AND a.academic_term_id = $3::uuid
+           AND a.teacher_id IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM staff st WHERE st.id = a.teacher_id AND st.school_id = $1 AND st.is_active = TRUE
+           )
+       )::text AS active_invalid_teacher_allocations_count,
        COUNT(*) FILTER (
-         WHERE (a.academic_term_id IS NULL OR a.academic_session_id IS NULL)
-            OR NOT EXISTS (
-              SELECT 1 FROM academic_terms term 
-              WHERE term.id = a.academic_term_id 
-                AND term.session_id = a.academic_session_id
-            )
-       )::text AS invalid_term_session_allocations_count,
+         WHERE $2::uuid IS NOT NULL AND $3::uuid IS NOT NULL 
+           AND a.academic_session_id = $2::uuid 
+           AND a.academic_term_id = $3::uuid
+           AND NOT EXISTS (
+             SELECT 1 FROM academic_terms term 
+             WHERE term.id = a.academic_term_id 
+               AND term.session_id = a.academic_session_id
+           )
+       )::text AS active_invalid_term_session_count,
        COUNT(*) FILTER (
          WHERE $2::uuid IS NOT NULL AND $3::uuid IS NOT NULL 
            AND a.academic_session_id = $2::uuid 
            AND a.academic_term_id = $3::uuid
            AND a.teacher_id IS NULL
-       )::text AS active_allocations_missing_teacher_count
+       )::text AS active_allocations_missing_teacher_count,
+       COUNT(*) FILTER (
+         WHERE $2::uuid IS NULL OR $3::uuid IS NULL 
+            OR a.academic_session_id != $2::uuid 
+            OR a.academic_term_id != $3::uuid
+       )::text AS historical_allocations_count,
+       COUNT(*) FILTER (
+         WHERE ($2::uuid IS NULL OR $3::uuid IS NULL 
+            OR a.academic_session_id != $2::uuid 
+            OR a.academic_term_id != $3::uuid)
+           AND (
+             NOT EXISTS (SELECT 1 FROM classes c WHERE c.id = a.class_id AND c.school_id = $1)
+             OR NOT EXISTS (SELECT 1 FROM subjects sub WHERE sub.id = a.subject_id)
+             OR a.teacher_id IS NULL
+             OR NOT EXISTS (SELECT 1 FROM staff st WHERE st.id = a.teacher_id AND st.school_id = $1 AND st.is_active = TRUE)
+             OR (a.academic_term_id IS NULL OR a.academic_session_id IS NULL)
+             OR NOT EXISTS (SELECT 1 FROM academic_terms term WHERE term.id = a.academic_term_id AND term.session_id = a.academic_session_id)
+           )
+       )::text AS historical_invalid_allocations_count
      FROM class_subject_allocations a
      WHERE a.school_id = $1;`,
     [schoolId, activeSessionId, activeTermId],
@@ -566,11 +608,13 @@ export async function getSchoolOnboardingStatus(
   const activeTermAllocationsCount = parseInt(allocationsRes.rows[0]?.active_term_allocations_count || '0', 10);
   const activeAllocationsWithTeachers = parseInt(allocationsRes.rows[0]?.active_allocations_with_teachers || '0', 10);
   const activeAllocationsValidTeachersCount = parseInt(allocationsRes.rows[0]?.active_allocations_valid_teachers_count || '0', 10);
-  const invalidClassAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_class_allocations_count || '0', 10);
-  const invalidSubjectAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_subject_allocations_count || '0', 10);
-  const invalidTeacherAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_teacher_allocations_count || '0', 10);
-  const invalidTermSessionAllocationsCount = parseInt(allocationsRes.rows[0]?.invalid_term_session_allocations_count || '0', 10);
+  const activeInvalidClassAllocationsCount = parseInt(allocationsRes.rows[0]?.active_invalid_class_allocations_count || '0', 10);
+  const activeInvalidSubjectAllocationsCount = parseInt(allocationsRes.rows[0]?.active_invalid_subject_allocations_count || '0', 10);
+  const activeInvalidTeacherAllocationsCount = parseInt(allocationsRes.rows[0]?.active_invalid_teacher_allocations_count || '0', 10);
+  const activeInvalidTermSessionCount = parseInt(allocationsRes.rows[0]?.active_invalid_term_session_count || '0', 10);
   const activeAllocationsMissingTeacherCount = parseInt(allocationsRes.rows[0]?.active_allocations_missing_teacher_count || '0', 10);
+  const historicalAllocationsCount = parseInt(allocationsRes.rows[0]?.historical_allocations_count || '0', 10);
+  const historicalInvalidAllocationsCount = parseInt(allocationsRes.rows[0]?.historical_invalid_allocations_count || '0', 10);
 
   // 6. Fetch Student Records (Must be strictly 0 in Phase 10D)
   const studentsRes = await query<{ student_count: string }>(
@@ -720,26 +764,50 @@ export async function getSchoolOnboardingStatus(
       id: 'calendar_session',
       label: 'Active Academic Session',
       description: 'Current academic year / session (e.g. 2025/2026)',
-      isComplete: Boolean(calendar.current_session_id),
-      value: calendar.current_session_name,
+      isComplete: Boolean(calendar.current_session_id && !calendar.has_session_conflict),
+      value: calendar.has_session_conflict
+        ? `Configuration conflict: Multiple (${calendar.conflict_count_sessions}) academic sessions are marked current`
+        : calendar.current_session_name || 'No active academic session configured',
       required: true,
+      details: {
+        currentSessionId: calendar.current_session_id,
+        hasSessionConflict: calendar.has_session_conflict,
+      },
     },
     {
       id: 'calendar_term',
       label: 'Active Academic Term',
       description: 'Active statutory term belonging to the current session',
-      isComplete: Boolean(calendar.current_term_id) && !calendar.term_session_mismatch,
-      value: calendar.term_session_mismatch
+      isComplete: Boolean(
+        calendar.current_term_id &&
+        !calendar.has_term_conflict &&
+        !calendar.term_session_mismatch
+      ),
+      value: calendar.has_term_conflict
+        ? `Configuration conflict: Multiple (${calendar.conflict_count_terms}) academic terms are marked current`
+        : calendar.term_session_mismatch
         ? 'Active term does not belong to active session'
-        : calendar.current_term_name || 'No active term',
+        : calendar.current_term_name || 'No active term configured',
       required: true,
+      details: {
+        currentTermId: calendar.current_term_id,
+        hasTermConflict: calendar.has_term_conflict,
+        termSessionMismatch: calendar.term_session_mismatch,
+      },
     },
     {
       id: 'calendar_dates',
       label: 'Resumption & Vacation Dates',
       description: 'Statutory term resumption and vacation boundary dates',
-      isComplete: Boolean(calendar.resumption_date && calendar.vacation_date),
-      value: calendar.resumption_date ? `${calendar.resumption_date} to ${calendar.vacation_date}` : null,
+      isComplete: Boolean(
+        calendar.resumption_date &&
+        calendar.vacation_date &&
+        !calendar.has_session_conflict &&
+        !calendar.has_term_conflict
+      ),
+      value: calendar.has_session_conflict || calendar.has_term_conflict
+        ? 'Configuration conflict in academic calendar'
+        : calendar.resumption_date ? `${calendar.resumption_date} to ${calendar.vacation_date}` : null,
       required: true,
     },
   ];
@@ -793,16 +861,20 @@ export async function getSchoolOnboardingStatus(
         activeSessionId &&
         activeTermId &&
         !calendar.term_session_mismatch &&
+        !calendar.has_session_conflict &&
+        !calendar.has_term_conflict &&
         activeTermAllocationsCount > 0 &&
-        invalidClassAllocationsCount === 0 &&
-        invalidSubjectAllocationsCount === 0
+        activeInvalidClassAllocationsCount === 0 &&
+        activeInvalidSubjectAllocationsCount === 0
       ),
-      value: !activeSessionId || !activeTermId || calendar.term_session_mismatch
+      value: calendar.has_session_conflict || calendar.has_term_conflict
+        ? 'Incomplete: Configuration conflict in active academic calendar'
+        : !activeSessionId || !activeTermId || calendar.term_session_mismatch
         ? 'Incomplete: No valid active academic session and term configured'
-        : invalidClassAllocationsCount > 0
-        ? `Invalid: ${invalidClassAllocationsCount} allocation(s) reference classes outside school`
-        : invalidSubjectAllocationsCount > 0
-        ? `Invalid: ${invalidSubjectAllocationsCount} allocation(s) reference non-existent subjects`
+        : activeInvalidClassAllocationsCount > 0
+        ? `Invalid: ${activeInvalidClassAllocationsCount} active-term allocation(s) reference classes outside school`
+        : activeInvalidSubjectAllocationsCount > 0
+        ? `Invalid: ${activeInvalidSubjectAllocationsCount} active-term allocation(s) reference non-existent subjects`
         : activeTermAllocationsCount === 0 && totalAllocationsCount > 0
         ? `Incomplete: ${totalAllocationsCount} historical allocation(s) exist, but 0 configured for active term (${calendar.current_term_name || 'No active term'})`
         : activeTermAllocationsCount === 0
@@ -812,8 +884,10 @@ export async function getSchoolOnboardingStatus(
       details: {
         activeTermAllocationsCount,
         totalAllocationsCount,
-        invalidClassAllocationsCount,
-        invalidSubjectAllocationsCount,
+        historicalAllocationsCount,
+        historicalInvalidAllocationsCount: historicalInvalidAllocationsCount > 0 ? `${historicalInvalidAllocationsCount} (Advisory notice: Historical anomaly does not block active-term onboarding readiness)` : 0,
+        activeInvalidClassAllocationsCount,
+        activeInvalidSubjectAllocationsCount,
         activeSessionId,
         activeTermId,
       },
@@ -827,11 +901,11 @@ export async function getSchoolOnboardingStatus(
         activeTermId &&
         activeTermAllocationsCount > 0 &&
         activeAllocationsWithTeachers === activeTermAllocationsCount &&
-        invalidTeacherAllocationsCount === 0 &&
+        activeInvalidTeacherAllocationsCount === 0 &&
         activeAllocationsValidTeachersCount === activeTermAllocationsCount
       ),
-      value: invalidTeacherAllocationsCount > 0
-        ? `Invalid: ${invalidTeacherAllocationsCount} allocation(s) have inactive or outside-school teachers`
+      value: activeInvalidTeacherAllocationsCount > 0
+        ? `Invalid: ${activeInvalidTeacherAllocationsCount} active-term allocation(s) have inactive or outside-school teachers`
         : activeAllocationsMissingTeacherCount > 0
         ? `Incomplete: ${activeAllocationsMissingTeacherCount} of ${activeTermAllocationsCount} active-term allocations lack assigned teachers`
         : activeTermAllocationsCount === 0
@@ -841,7 +915,7 @@ export async function getSchoolOnboardingStatus(
       details: {
         activeAllocationsWithTeachers,
         activeTermAllocationsCount,
-        invalidTeacherAllocationsCount,
+        activeInvalidTeacherAllocationsCount,
         activeAllocationsValidTeachersCount,
         activeAllocationsMissingTeacherCount,
       },
@@ -854,15 +928,15 @@ export async function getSchoolOnboardingStatus(
         activeSessionId &&
         activeTermId &&
         activeTermAllocationsCount > 0 &&
-        invalidTermSessionAllocationsCount === 0
+        activeInvalidTermSessionCount === 0
       ),
-      value: invalidTermSessionAllocationsCount > 0
-        ? `Invalid: ${invalidTermSessionAllocationsCount} allocation(s) have term/session mismatch or missing session/term`
+      value: activeInvalidTermSessionCount > 0
+        ? `Invalid: ${activeInvalidTermSessionCount} active-term allocation(s) have term/session mismatch`
         : activeTermAllocationsCount === 0
         ? 'No allocations configured for active term'
-        : 'All allocations have valid session/term integrity',
+        : 'All active-term allocations have valid session/term integrity',
       required: true,
-      details: { invalidTermSessionAllocationsCount, activeTermAllocationsCount },
+      details: { activeInvalidTermSessionCount, activeTermAllocationsCount },
     },
   ];
   const isAllocationsComplete = allocationItems.every((item) => item.isComplete);

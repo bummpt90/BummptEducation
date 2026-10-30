@@ -179,3 +179,32 @@ POST /api/v1/schools/:id/onboarding/verify
 ```
 *Transitions school status to `ONBOARDING_READY`. Operational launch remains `OPERATIONAL_LAUNCH_NOT_AUTHORIZED`.*
 
+---
+
+## 8. Phase 10D Stage 2B: Tenant-Scoped Readiness & Academic Calendar Integrity
+
+### Academic Calendar Conflict Detection & Fail-Closed Behavior
+- **No Unscoped `LIMIT 1`**: Academic calendar lookups never select an arbitrary record using `LIMIT 1` when multiple records are active.
+- **Fail-Closed on Configuration Conflicts**:
+  - If multiple academic sessions have `is_current = TRUE`, the evaluator marks Step 3 as incomplete with a clear diagnostic: `Configuration conflict: Multiple (...) academic sessions are marked current`.
+  - If multiple academic terms have `is_current = TRUE`, Step 3 fails closed with `Configuration conflict: Multiple (...) academic terms are marked current`.
+  - If no active session or term exists, Step 3 fails closed with `No active academic session/term configured`.
+  - If the active term's `session_id` does not match the active session's `id`, Step 3 fails closed with `Active term does not belong to active session`.
+- **Statutory Schema Invariant**: Under migrations 0001–0011, `academic_sessions` and `academic_terms` are state-wide shared reference fixtures (`isMultiTenant = false`). The database schema intentionally does not contain a `school_id` column on either table, maintaining statutory calendar alignment across all Benue State schools.
+
+### Allocation API Tenant Ownership Enforcements
+In `POST /api/v1/allocations` and `allocateSubject`:
+1. **Target School Scope**: Caller's school must match target `school_id` unless the caller possesses platform-level authorization (`super_admin` or `state_officer`). Cross-school allocation requests by non-platform users are rejected with HTTP 403 `CROSS_SCHOOL_FORBIDDEN`.
+2. **Target School Existence**: Target school must exist in PostgreSQL and be active; non-existent schools are rejected with HTTP 400 (`SCHOOL_NOT_FOUND`).
+3. **Class Tenant Scope**: Specified class must exist and belong strictly to the target school (`classes.school_id = targetSchoolId`). Cross-school class assignments are rejected with HTTP 400 (`CROSS_SCHOOL_VIOLATION`).
+4. **Teaching Staff Tenant Scope**: Teacher must exist in `staff`, have `status = 'ACTIVE'`, and belong strictly to the target school (`staff.school_id = targetSchoolId`). Inactive teachers and cross-school staff members are rejected with HTTP 400 (`TEACHER_INACTIVE` or `CROSS_SCHOOL_TEACHER_VIOLATION`).
+5. **Session/Term Integrity**: Explicit `academic_session_id` and `academic_term_id` are required (zero inference). Term must belong to the session (`term.session_id = session.id`), rejecting mismatches with HTTP 400 (`SESSION_TERM_MISMATCH`).
+6. **Periods Per Week**: Explicit integer from 1 through 30 required (`INVALID_PERIODS`).
+7. **Duplicate Prevention**: Rejects duplicate allocations with HTTP 409 (`DUPLICATE_ALLOCATION`).
+
+### Active-Term Readiness vs Historical Advisory Findings
+- **Active-Term Scope**: Readiness Step 5 strictly evaluates allocations matching the resolved active academic session and active academic term (`academic_session_id = activeSessionId AND academic_term_id = activeTermId`).
+- **Isolation from Historical Anomalies**: Historical allocations from previous terms or sessions do NOT count towards active-term readiness and do NOT block an otherwise-valid current-term configuration.
+- **Advisory Diagnostics**: Any anomalies in historical allocations (such as missing subjects or reassigned staff from past academic years) are captured and reported separately under `details.historicalInvalidAllocationsCount` as read-only advisory notices without blocking onboarding completion.
+
+

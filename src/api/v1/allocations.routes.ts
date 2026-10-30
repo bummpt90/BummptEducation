@@ -92,6 +92,14 @@ allocationsRouter.post(
 
       let targetSchoolId = school_id || schoolId;
       if (!req.user?.isSuperAdmin && !req.user?.isStateOfficer) {
+        if (targetSchoolId && targetSchoolId !== req.user?.schoolId) {
+          res.status(403).json({
+            success: false,
+            error: 'CROSS_SCHOOL_FORBIDDEN',
+            message: 'You are not authorized to create allocations for another school.',
+          });
+          return;
+        }
         targetSchoolId = req.user?.schoolId;
       }
 

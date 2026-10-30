@@ -1753,6 +1753,121 @@ async function runPhase10dSuite() {
         cliResult.exitCode === 0 && cliResult.message.includes('ONBOARDING_READY')
       );
 
+      // =======================================================================
+      // Stage 2B Regression Tests: Tenant-Scoped Readiness & Academic Calendar Integrity
+      // =======================================================================
+
+      // 1. Conflicting current calendar records fail closed
+      await query('UPDATE academic_sessions SET is_current = TRUE WHERE id = $1;', [session2Id]);
+      const conflictReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const conflictStep3 = conflictReport.steps.find((s) => s.id === 'academic_calendar');
+      const conflictStep5 = conflictReport.steps.find((s) => s.id === 'staff_assignments');
+      record(
+        'Regression 2B',
+        '4. Conflicting current calendar records fail closed in readiness evaluation',
+        conflictStep3?.isComplete === false &&
+          conflictStep5?.isComplete === false &&
+          conflictStep3?.items.some((item) =>
+            item.value && String(item.value).includes('Configuration conflict')
+          ) === true
+      );
+      // Restore clean state for sessions
+      await query('UPDATE academic_sessions SET is_current = FALSE WHERE id = $1;', [session2Id]);
+
+      // 2. Missing current session or term for a school leaves readiness incomplete
+      await query('UPDATE academic_sessions SET is_current = FALSE WHERE id = $1;', [sessionId]);
+      const missingSessionReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const missingSessionStep3 = missingSessionReport.steps.find((s) => s.id === 'academic_calendar');
+      record(
+        'Regression 2B',
+        '3. Missing current session or term leaves readiness incomplete',
+        missingSessionStep3?.isComplete === false &&
+          missingSessionReport.overallStatus === 'ONBOARDING_INCOMPLETE'
+      );
+      // Restore current session
+      await query('UPDATE academic_sessions SET is_current = TRUE WHERE id = $1;', [sessionId]);
+
+      // 3. Historical anomaly does not block otherwise valid active-term onboarding readiness (Advisory only)
+      const historicalAnomalyRes = await query<{ id: string }>(
+        `INSERT INTO class_subject_allocations (
+          school_id, class_id, subject_id, teacher_id, academic_session_id, academic_term_id, periods_per_week
+        ) VALUES ($1, $2, $3, NULL, $4, $5, 4) RETURNING id;`,
+        [school1Id, class1Id, subjectEngId, session2Id, term2Id]
+      );
+      const anomalyReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const anomalyStep5 = anomalyReport.steps.find((s) => s.id === 'staff_assignments');
+      const itemPresent = anomalyStep5?.items.find((i) => i.id === 'allocations_present');
+      record(
+        'Regression 2B',
+        '11. Valid active-term configuration passes allocation checks even if historical anomaly exists',
+        anomalyStep5?.isComplete === true &&
+          itemPresent?.details?.historicalInvalidAllocationsCount !== undefined &&
+          String(itemPresent?.details?.historicalInvalidAllocationsCount).includes('Advisory notice')
+      );
+      // Remove historical anomaly allocation
+      await query('DELETE FROM class_subject_allocations WHERE id = $1;', [historicalAnomalyRes.rows[0].id]);
+
+      // 4. Allocation creation rejects cross-school target in caller request (403 for principal)
+      const crossSchoolAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school2Id,
+          class_id: class1Id,
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+      record(
+        'Regression 2B',
+        '5. Allocation creation rejects cross-school target for non-platform caller with 403',
+        crossSchoolAllocRes.status === 403
+      );
+
+      // 5. Allocation creation rejects non-existent school_id
+      const nonExistentSchoolAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${superAdminToken}`,
+        },
+        body: JSON.stringify({
+          school_id: '00000000-0000-0000-0000-000000000099',
+          class_id: class1Id,
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+      record(
+        'Regression 2B',
+        '6. Allocation creation rejects non-existent target school with 400',
+        nonExistentSchoolAllocRes.status === 400
+      );
+
+      // 6. Schema Integrity check: academic_sessions and academic_terms lack school_id by architectural design
+      const sessionCols = await query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns 
+         WHERE table_name = 'academic_sessions' AND column_name = 'school_id';`
+      );
+      const termCols = await query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns 
+         WHERE table_name = 'academic_terms' AND column_name = 'school_id';`
+      );
+      record(
+        'Regression 2B',
+        '1. Existing schema boundary preserved: academic_sessions and academic_terms are state-wide shared entities (0001-0011 unchanged)',
+        sessionCols.rows.length === 0 && termCols.rows.length === 0
+      );
+
       // -----------------------------------------------------------------------
       // Migration System & Integrity Check
       // -----------------------------------------------------------------------
