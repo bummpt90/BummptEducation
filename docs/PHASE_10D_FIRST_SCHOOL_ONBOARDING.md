@@ -181,30 +181,42 @@ POST /api/v1/schools/:id/onboarding/verify
 
 ---
 
-## 8. Phase 10D Stage 2B: Tenant-Scoped Readiness & Academic Calendar Integrity
+## 8. Shared State-Wide Academic Calendar Contract & Conflict Policy
 
-### Academic Calendar Conflict Detection & Fail-Closed Behavior
-- **No Unscoped `LIMIT 1`**: Academic calendar lookups never select an arbitrary record using `LIMIT 1` when multiple records are active.
-- **Fail-Closed on Configuration Conflicts**:
-  - If multiple academic sessions have `is_current = TRUE`, the evaluator marks Step 3 as incomplete with a clear diagnostic: `Configuration conflict: Multiple (...) academic sessions are marked current`.
-  - If multiple academic terms have `is_current = TRUE`, Step 3 fails closed with `Configuration conflict: Multiple (...) academic terms are marked current`.
-  - If no active session or term exists, Step 3 fails closed with `No active academic session/term configured`.
-  - If the active term's `session_id` does not match the active session's `id`, Step 3 fails closed with `Active term does not belong to active session`.
-- **Statutory Schema Invariant**: Under migrations 0001–0011, `academic_sessions` and `academic_terms` are state-wide shared reference fixtures (`isMultiTenant = false`). The database schema intentionally does not contain a `school_id` column on either table, maintaining statutory calendar alignment across all Benue State schools.
+### Architectural Design & Statutory Context
+- **Shared State-Wide Reference Entities**: Under migrations 0001–0011, `academic_sessions` and `academic_terms` are state-wide shared reference fixtures (`isMultiTenant = false`). Neither table contains a `school_id` or `organization_id` column, and the `schools` table contains no calendar session/term foreign key.
+- **Global Current Calendar Policy**: The ministry-wide calendar policy requires:
+  1. Exactly one current academic session (`WHERE is_current = TRUE`).
+  2. Exactly one current academic term (`WHERE is_current = TRUE`).
+  3. The current term must belong to the current session via the relational foreign key (`academic_terms.session_id = academic_sessions.id`).
+- **Global Conflict Detection & Fail-Closed Invariant**:
+  - Academic calendar queries select all records where `is_current = TRUE` without unscoped `LIMIT 1`.
+  - If multiple academic sessions are marked current (`conflict_count_sessions > 1`), readiness evaluation fails closed across all schools: `Configuration conflict: Multiple (...) academic sessions are marked current`.
+  - If multiple academic terms are marked current (`conflict_count_terms > 1`), readiness evaluation fails closed: `Configuration conflict: Multiple (...) academic terms are marked current`.
+  - If no active session or term exists, Step 3 fails closed: `No active academic session/term configured`.
+  - If the active term's `session_id` does not match the active session's `id`, Step 3 fails closed: `Active term does not belong to active session`.
+  - Resolving configuration conflicts immediately restores valid readiness if all other institutional configuration is correct.
+- **Tenant Isolation with Shared Calendar**: Every school uses this shared current calendar when configuring class-subject allocations. Allocations remain strictly tenant-isolated through their own `school_id` and `class_id` relationships (`classes.school_id = school_id`).
 
-### Allocation API Tenant Ownership Enforcements
-In `POST /api/v1/allocations` and `allocateSubject`:
-1. **Target School Scope**: Caller's school must match target `school_id` unless the caller possesses platform-level authorization (`super_admin` or `state_officer`). Cross-school allocation requests by non-platform users are rejected with HTTP 403 `CROSS_SCHOOL_FORBIDDEN`.
-2. **Target School Existence**: Target school must exist in PostgreSQL and be active; non-existent schools are rejected with HTTP 400 (`SCHOOL_NOT_FOUND`).
-3. **Class Tenant Scope**: Specified class must exist and belong strictly to the target school (`classes.school_id = targetSchoolId`). Cross-school class assignments are rejected with HTTP 400 (`CROSS_SCHOOL_VIOLATION`).
-4. **Teaching Staff Tenant Scope**: Teacher must exist in `staff`, have `status = 'ACTIVE'`, and belong strictly to the target school (`staff.school_id = targetSchoolId`). Inactive teachers and cross-school staff members are rejected with HTTP 400 (`TEACHER_INACTIVE` or `CROSS_SCHOOL_TEACHER_VIOLATION`).
-5. **Session/Term Integrity**: Explicit `academic_session_id` and `academic_term_id` are required (zero inference). Term must belong to the session (`term.session_id = session.id`), rejecting mismatches with HTTP 400 (`SESSION_TERM_MISMATCH`).
-6. **Periods Per Week**: Explicit integer from 1 through 30 required (`INVALID_PERIODS`).
-7. **Duplicate Prevention**: Rejects duplicate allocations with HTTP 409 (`DUPLICATE_ALLOCATION`).
+---
 
-### Active-Term Readiness vs Historical Advisory Findings
-- **Active-Term Scope**: Readiness Step 5 strictly evaluates allocations matching the resolved active academic session and active academic term (`academic_session_id = activeSessionId AND academic_term_id = activeTermId`).
-- **Isolation from Historical Anomalies**: Historical allocations from previous terms or sessions do NOT count towards active-term readiness and do NOT block an otherwise-valid current-term configuration.
-- **Advisory Diagnostics**: Any anomalies in historical allocations (such as missing subjects or reassigned staff from past academic years) are captured and reported separately under `details.historicalInvalidAllocationsCount` as read-only advisory notices without blocking onboarding completion.
+## 9. Phase 10D Stage 2C: School-State Validation & Allocation Contract
+
+### Inactive School Allocation Rejection
+In `classSubjectAllocationRepository.allocateSubject` and `POST /api/v1/academic/allocations`:
+- **Pre-Insertion School Status Validation**: The repository verifies target school existence and active status before attempting any insertion.
+- **Missing School**: Returns `SCHOOL_NOT_FOUND` (HTTP 400).
+- **Inactive School**: Returns `SCHOOL_INACTIVE` (HTTP 400: `"Cannot create allocation for an inactive school."`).
+- **Zero Row Insertion**: If a school is inactive or non-existent, the operation terminates prior to database insertion; 0 rows are inserted into `class_subject_allocations`.
+- **Active School Allocations**: An active school with valid class, subject, teacher, and explicit periods creates valid allocations.
+
+### Tenant Ownership & Readiness Scope
+1. **Target School Scope**: Caller's school must match target `school_id` unless caller has platform-level authorization (`super_admin` or `state_officer`). Cross-school allocation requests by non-platform users are rejected with HTTP 403 `CROSS_SCHOOL_FORBIDDEN`.
+2. **Class Tenant Scope**: Classroom must exist and belong strictly to target school (`classes.school_id = targetSchoolId`). Mismatches rejected with HTTP 400 (`CROSS_SCHOOL_VIOLATION`).
+3. **Teaching Staff Tenant Scope**: Teacher must exist, belong to target school, and be active (`staff.school_id = targetSchoolId AND staff.is_active = TRUE`). Inactive or cross-school teachers rejected with HTTP 400.
+4. **Session/Term Integrity**: Explicit `academic_session_id` and `academic_term_id` are required (zero inference). Term must belong to session (`term.session_id = session.id`), rejecting mismatches with HTTP 400 (`SESSION_TERM_MISMATCH`).
+5. **Periods Per Week**: Explicit integer from 1 through 30 required (`INVALID_PERIODS`).
+6. **Active-Term Readiness vs Historical Diagnostics**: Step 5 strictly evaluates allocations matching the resolved shared active academic session and active academic term. Historical allocations from past sessions or terms do not count toward active-term readiness and do not block current-term readiness; anomalies in historical allocations are surfaced purely as read-only advisory notices (`details.historicalInvalidAllocationsCount`).
+7. **Operational Launch Boundary**: Institutional readiness status `ONBOARDING_READY` verifies institutional configuration completeness only. Operational launch remains strictly `OPERATIONAL_LAUNCH_NOT_AUTHORIZED` pending separate Phase 10E ministerial authorization.
 
 

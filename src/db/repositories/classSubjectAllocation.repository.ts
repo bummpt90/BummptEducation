@@ -162,6 +162,9 @@ export class ClassSubjectAllocationRepository extends BaseRepository<ClassSubjec
     if (!schoolCheck.rows[0]) {
       throw new Error('SCHOOL_NOT_FOUND: Specified target school does not exist.');
     }
+    if (schoolCheck.rows[0].is_active === false) {
+      throw new Error('SCHOOL_INACTIVE: Cannot create allocation for an inactive school.');
+    }
 
     // 4. Verify class belongs to the school
     const classCheck = await query<{ id: string; school_id: string }>(

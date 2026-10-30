@@ -420,7 +420,7 @@ export async function getSchoolOnboardingStatus(
     ? `${principalRecord.full_name} — Staff ID ${principalRecord.staff_number || principalRecord.staff_id}`
     : null;
 
-  // 3. Fetch Academic Calendar State (Tenant-scoped evaluation & conflict detection without unscoped LIMIT 1)
+  // 3. Fetch Academic Calendar State (Shared state-wide reference evaluation & conflict detection without unscoped LIMIT 1)
   const sessionsRes = await query<{
     id: string;
     session_name: string;

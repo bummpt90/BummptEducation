@@ -1868,6 +1868,136 @@ async function runPhase10dSuite() {
         sessionCols.rows.length === 0 && termCols.rows.length === 0
       );
 
+      // =======================================================================
+      // Stage 2C Regression Tests: School-State Validation & Shared Calendar Contract
+      // =======================================================================
+
+      // 1. Inactive-school allocation creation is rejected with SCHOOL_INACTIVE and zero rows inserted
+      await query('UPDATE schools SET is_active = FALSE WHERE id = $1;', [school2Id]);
+      const allocCountBeforeInactive = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM class_subject_allocations WHERE school_id = $1;',
+        [school2Id]
+      );
+      const inactiveSchoolAllocRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${superAdminToken}`,
+        },
+        body: JSON.stringify({
+          school_id: school2Id,
+          class_id: class1Id,
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+      const inactiveSchoolAllocJson = await inactiveSchoolAllocRes.json();
+      const allocCountAfterInactive = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM class_subject_allocations WHERE school_id = $1;',
+        [school2Id]
+      );
+
+      record(
+        'Regression 2C',
+        '8. Inactive-school allocation creation is rejected without a database write',
+        inactiveSchoolAllocRes.status === 400 &&
+          inactiveSchoolAllocJson.error === 'SCHOOL_INACTIVE' &&
+          allocCountBeforeInactive.rows[0].count === allocCountAfterInactive.rows[0].count
+      );
+      // Restore school2 is_active = TRUE
+      await query('UPDATE schools SET is_active = TRUE WHERE id = $1;', [school2Id]);
+
+      // 2. More than one current term causes readiness to fail closed
+      await query('UPDATE academic_terms SET is_current = TRUE WHERE id = $1;', [term2Id]);
+      const termConflictReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const termConflictStep3 = termConflictReport.steps.find((s) => s.id === 'academic_calendar');
+      const termConflictStep5 = termConflictReport.steps.find((s) => s.id === 'staff_assignments');
+
+      record(
+        'Regression 2C',
+        '4. More than one current term causes readiness to fail closed',
+        termConflictStep3?.isComplete === false &&
+          termConflictStep5?.isComplete === false &&
+          termConflictReport.overallStatus === 'ONBOARDING_INCOMPLETE' &&
+          termConflictStep3?.items.some((item) =>
+            item.value && String(item.value).includes('Configuration conflict')
+          ) === true
+      );
+
+      // 3. Removing the conflict restores valid readiness when remaining configuration is correct
+      await query('UPDATE academic_terms SET is_current = FALSE WHERE id = $1;', [term2Id]);
+      const restoredReport = await getSchoolOnboardingStatus(school1Id, { user: principal1User });
+      const restoredStep3 = restoredReport.steps.find((s) => s.id === 'academic_calendar');
+      const restoredStep5 = restoredReport.steps.find((s) => s.id === 'staff_assignments');
+
+      record(
+        'Regression 2C',
+        '5. Removing the conflict restores valid readiness when the remaining configuration is correct',
+        restoredStep3?.isComplete === true &&
+          restoredStep5?.isComplete === true &&
+          restoredReport.overallStatus === 'ONBOARDING_READY'
+      );
+
+      // 4. A school cannot use a nonexistent session or term
+      const nonExistentSessionRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: class1Id,
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: '00000000-0000-0000-0000-000000000001',
+          academic_term_id: termId,
+          periods_per_week: 4,
+        }),
+      });
+      const nonExistentTermRes = await fetch(`${baseUrl}/api/v1/academic/allocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${principal1Token}`,
+        },
+        body: JSON.stringify({
+          school_id: school1Id,
+          class_id: class1Id,
+          subject_id: subjectEngId,
+          teacher_id: teacher1Staff.id,
+          academic_session_id: sessionId,
+          academic_term_id: '00000000-0000-0000-0000-000000000002',
+          periods_per_week: 4,
+        }),
+      });
+
+      record(
+        'Regression 2C',
+        '6. A school cannot use a nonexistent session or term',
+        nonExistentSessionRes.status === 400 && nonExistentTermRes.status === 400
+      );
+
+      // 5. School allocation records remain tenant-isolated even though academic calendar records are shared
+      const school1AllocsRes = await query<{ school_id: string }>(
+        'SELECT school_id FROM class_subject_allocations WHERE school_id = $1;',
+        [school1Id]
+      );
+      const crossAllocQuery = await query<{ count: string }>(
+        'SELECT COUNT(*)::text as count FROM class_subject_allocations WHERE school_id = $1 AND school_id != $2;',
+        [school1Id, school2Id]
+      );
+
+      record(
+        'Regression 2C',
+        '7. School allocation records remain tenant-isolated even though academic calendar records are shared',
+        school1AllocsRes.rows.every((r) => r.school_id === school1Id) &&
+          crossAllocQuery.rows[0].count === String(school1AllocsRes.rows.length)
+      );
+
       // -----------------------------------------------------------------------
       // Migration System & Integrity Check
       // -----------------------------------------------------------------------

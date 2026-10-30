@@ -209,6 +209,24 @@ allocationsRouter.post(
         return;
       }
 
+      if (error.message?.includes('SCHOOL_INACTIVE')) {
+        res.status(400).json({
+          success: false,
+          error: 'SCHOOL_INACTIVE',
+          message: 'Cannot create allocation for an inactive school.',
+        });
+        return;
+      }
+
+      if (error.message?.includes('SCHOOL_NOT_FOUND')) {
+        res.status(400).json({
+          success: false,
+          error: 'SCHOOL_NOT_FOUND',
+          message: 'Target school does not exist.',
+        });
+        return;
+      }
+
       if (
         error.message?.includes('CROSS_SCHOOL') ||
         error.message?.includes('NOT_FOUND') ||
